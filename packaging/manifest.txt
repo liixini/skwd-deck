@@ -1,0 +1,10 @@
+usr/bin/skwd-walld
+usr/bin/skwd-wall-scan
+usr/bin/skwd-wall-effects
+usr/bin/skwd-steam
+usr/bin/skwd-helm
+usr/bin/libsteam_api.so
+usr/lib/systemd/user/skwd-walld.service
+usr/share/licenses/skwd-deck/
+usr/share/licenses/skwd-deck/ffmpeg-sys-the-third-LICENSE
+usr/share/skwd-wall-v2/data/matugen/templates/

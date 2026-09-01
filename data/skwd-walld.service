@@ -1,0 +1,14 @@
+[Unit]
+Description=Skwd Deck wallpaper service
+After=basic.target
+Conflicts=skwd-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/skwd-walld --wait-for-session
+Restart=on-failure
+RestartSec=2
+Slice=session.slice
+
+[Install]
+WantedBy=default.target

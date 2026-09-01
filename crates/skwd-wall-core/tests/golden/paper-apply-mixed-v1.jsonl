@@ -1,0 +1,1 @@
+{"id":7,"method":"paper.apply","params":{"assignments":[{"outputs":["DP-1"],"source":{"kind":"static","path":"/wall/a.png"}},{"outputs":["DP-2"],"source":{"kind":"video","path":"/wall/b.mp4","engine":"default"}},{"outputs":["HDMI-A-1"],"source":{"kind":"we","path":"/scene/forest"}}],"replace_all":true}}

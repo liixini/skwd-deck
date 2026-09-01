@@ -1,0 +1,34 @@
+/target
+
+# profiling output
+/dhat-heap.json
+
+# runtime/library databases
+*.sqlite
+
+# stray zero-byte files
+/the
+/World
+/Mods
+
+# packaging build artifacts (rebuilt by packaging scripts or CI)
+/packaging/*/out*/
+
+# profiling
+massif.out.*
+perf.data*
+
+/test-results*/
+__pycache__/
+
+# CI and release staging
+/artifacts/
+/dist/
+/*.cdx.json
+/*.lcov
+/clippy*.json
+/semgrep-*.json
+/cargo-geiger*.txt
+/semver-no-baseline.txt
+
+.scannerwork/

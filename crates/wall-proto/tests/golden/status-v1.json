@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "version": "0.1.0",
+  "service": {
+    "name": "skwd-deck",
+    "component": "skwd-walld"
+  },
+  "protocol": {
+    "name": "skwd-wall",
+    "version": 1
+  },
+  "capabilities": [
+    "effects",
+    "events",
+    "history",
+    "picker-session",
+    "playlists",
+    "schedules",
+    "sources",
+    "tasks",
+    "wallpapers"
+  ]
+}

@@ -1,0 +1,22 @@
+[package]
+name = "skwd-e2e"
+version.workspace = true
+edition = "2024"
+rust-version = "1.93"
+license.workspace = true
+publish = false
+description = "Process-level Skwd Deck integration tests"
+
+[[bin]]
+name = "theme-provider-contract"
+path = "src/bin/theme_provider_contract.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+wall-proto = { path = "../wall-proto" }
+paper-control = { path = "../../../skwd-paper/crates/paper-control" }
+skwd-wall-core = { path = "../skwd-wall-core", features = ["daemon"] }
+rusqlite = { version = "0.32", features = ["bundled"] }

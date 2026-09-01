@@ -1,0 +1,49 @@
+[package]
+name = "skwd-wall-core"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Skwd Deck wallpaper orchestration core"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wall-proto = { path = "../wall-proto" }
+paper-control = { path = "../../../skwd-paper/crates/paper-control" }
+wall-geom = { package = "paper-geom", path = "../../../skwd-paper/crates/paper-geom" }
+skwd-config = { path = "../skwd-config" }
+skwd-log = { path = "../skwd-log", features = ["alloc", "proc"] }
+skwd-palette = { path = "../skwd-palette", optional = true }
+material-colors = { version = "0.4.2", default-features = false, features = ["std", "serde"], optional = true }
+log = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+wayland-client = "0.31"
+libc = "0.2"
+walkdir = { version = "2", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "gif", "tiff"], optional = true }
+webp = { version = "0.3", optional = true }
+ffmpeg-the-third = { version = "6", optional = true, default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+rayon = { version = "1", optional = true }
+tracing = { version = "0.1", optional = true }
+texpresso = { workspace = true, optional = true }
+intel_tex_2 = { version = "0.5", optional = true }
+loom = { version = "0.7", optional = true }
+
+[features]
+daemon = ["dep:skwd-palette", "dep:material-colors"]
+media = ["daemon", "dep:walkdir", "dep:image", "dep:webp", "dep:ffmpeg-the-third", "dep:rayon", "dep:texpresso", "dep:intel_tex_2"]
+obs-heap = []
+obs-trace = ["dep:tracing"]
+loom = ["dep:loom"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+proptest = "1"
+
+[package.metadata.cargo-machete]
+ignored = ["tracing"]
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "skwd-config"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+description = "Shared Skwd Wall config paths, atomic persistence, schema, and value primitives"
+
+[dependencies]
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints.rust]
+dead_code = "allow"

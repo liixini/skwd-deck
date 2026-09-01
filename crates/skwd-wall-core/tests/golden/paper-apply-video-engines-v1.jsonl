@@ -1,0 +1,1 @@
+{"id":13,"method":"paper.apply","params":{"assignments":[{"outputs":["DP-1"],"source":{"kind":"video","path":"/wall/default.mp4","engine":"default"}},{"outputs":["DP-3"],"source":{"kind":"video","path":"/wall/tinier.ivf","engine":"tinier","frame_rate":"30000/1001"}}]}}

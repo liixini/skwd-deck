@@ -1,0 +1,20 @@
+[package]
+name = "skwd-helm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Control client for Skwd Deck and the running Skwd Wall picker"
+publish = false
+
+[dependencies]
+serde_json.workspace = true
+wall-proto = { path = "../wall-proto" }
+paper-control = { path = "../../../skwd-paper/crates/paper-control" }
+skwd-config = { path = "../skwd-config" }
+skwd-wall-core = { path = "../skwd-wall-core" }
+wgpu = { version = "27", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
+
+[lints]
+workspace = true

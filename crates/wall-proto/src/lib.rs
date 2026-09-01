@@ -1,0 +1,42 @@
+pub mod client;
+mod download;
+mod envelope;
+mod event_catalog;
+pub mod helm;
+mod library_watch;
+pub mod net;
+mod output_status;
+pub mod picker_control;
+mod playlist;
+mod redaction;
+mod renderer;
+mod rpc_catalog;
+mod socket;
+pub mod sources;
+mod status;
+mod task_status;
+mod theme;
+pub mod transitions;
+mod wallpaper_item;
+mod we_property;
+mod workspace;
+
+pub use download::{DownloadEvent, dl_status};
+pub use envelope::{ErrorInfo, Event, Request, Response, ServerMessage};
+pub use event_catalog::ev;
+pub use library_watch::{LibraryWatchRootStatus, LibraryWatchStatus, mode as library_watch_mode};
+pub use output_status::{OutputStatus, outputs_from};
+pub use playlist::{PlaylistAssign, PlaylistRow};
+pub const EFFECT_PREVIEW_MAX_EDGE: u32 = 1600;
+pub use redaction::{redact_known_secrets, redact_sensitive};
+pub use renderer::{RendererKind, kind};
+pub use rpc_catalog::rpc;
+pub use socket::{resolve_socket, socket_path};
+pub use status::{
+    CAPABILITIES, PROTOCOL_NAME, PROTOCOL_VERSION, SERVICE_COMPONENT, SERVICE_NAME, deck_status,
+};
+pub use task_status::{TaskCapabilities, TaskControl, TaskState, TaskStatus};
+pub use theme::THEME_BACKENDS;
+pub use wallpaper_item::WallpaperItem;
+pub use we_property::{WeProperty, WePropertyOption, we_property_kind};
+pub use workspace::WorkspaceRow;

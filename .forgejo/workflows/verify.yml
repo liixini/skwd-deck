@@ -1,0 +1,145 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forgejo-deck-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deck:
+    name: Forgejo / Deck required
+    runs-on: skwd-wall-next-ci
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
+      SKWD_RUNNER_IMAGE: sha256:66058d5c15a5011188ee634bb909d730c279ab0d65408581b5d70e99a6970edb
+      SKWD_VERIFY_ROOT: ../skwd-verify
+    defaults:
+      run:
+        working-directory: skwd-deck
+    steps:
+      - name: Check out Deck
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: skwd-deck
+          persist-credentials: false
+
+      - name: Check out Paper contracts
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: liixini/skwd-paper
+          path: skwd-paper
+          token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Check out Lens contracts
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: liixini/skwd-lens
+          path: skwd-lens
+          token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Check out system verifier
+        uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: liixini/skwd-verify
+          ref: 43766a72f2d3f46072c68c4fb4735d9482bf5059
+          path: skwd-verify
+          token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Verify toolchain and isolation
+        run: |
+          set -euo pipefail
+          test "$(rustc --version | awk '{print $2}')" = "1.94.1"
+          test ! -S /var/run/docker.sock
+          test ! -S /run/docker.sock
+
+      - name: Restore Cargo download cache
+        uses: https://code.forgejo.org/actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+          key: deck-cargo-${{ github.event_name }}-rust-1.94.1-${{ hashFiles('skwd-deck/Cargo.lock') }}
+          restore-keys: |
+            deck-cargo-${{ github.event_name }}-rust-1.94.1-
+
+      - name: Create result directory
+        run: mkdir -p ci-artifacts/results
+
+      - name: Verify system-test repository
+        working-directory: skwd-verify
+        continue-on-error: true
+        run: >-
+          python3 scripts/ci-report.py wrap
+          --suite verify.repository --out ../skwd-deck/ci-artifacts/results/verify-repository.json
+          -- scripts/test-all.sh
+
+      - name: Format
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.format --out ci-artifacts/results/deck-format.json -- cargo fmt --check
+
+      - name: Clippy
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.clippy --out ci-artifacts/results/deck-clippy.json -- cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Release build
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.release --out ci-artifacts/results/deck-release.json -- cargo build --locked --release --workspace
+
+      - name: Workspace tests
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.tests --out ci-artifacts/results/deck-tests.json -- cargo test --locked --release --workspace
+
+      - name: Layer guards
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.layers --out ci-artifacts/results/deck-layers.json -- scripts/test-layers.sh
+
+      - name: Repository guard
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.repository --out ci-artifacts/results/deck-repository.json -- cargo test --locked --release -p skwd-e2e --test repository
+
+      - name: Loom model
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.loom --out ci-artifacts/results/deck-loom.json -- cargo test --locked --release -p skwd-wall-core --features loom --test loom_ready_gate
+
+      - name: Packaging and workflow tests
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.packaging --out ci-artifacts/results/deck-packaging.json -- env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
+
+      - name: Process E2E
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.process-e2e --out ci-artifacts/results/deck-process-e2e.json -- scripts/test-e2e.sh
+
+      - name: Record deliberate VM coverage
+        if: always()
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.vm --reason 'requires KVM and the declared distribution/compositor image matrix' --out ci-artifacts/results/deck-vm.json
+
+      - name: Record exact execution provenance
+        if: always()
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-provenance.py" --out ci-artifacts/provenance.json --runner-image "$SKWD_RUNNER_IMAGE" --toolchains --catalog scripts/ci-suites.json
+
+      - name: Aggregate required results
+        if: always()
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" aggregate --catalog scripts/ci-suites.json --results ci-artifacts/results
+
+      - name: Retain reports and provenance
+        if: always()
+        uses: https://code.forgejo.org/actions/upload-artifact@c6a3b2bd78b3985e4b2f15397fec357f0fd808de
+        with:
+          name: deck-required-${{ github.sha }}
+          path: skwd-deck/ci-artifacts
+          if-no-files-found: error
+          retention-days: 14

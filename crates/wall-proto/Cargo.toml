@@ -1,0 +1,19 @@
+[package]
+name = "wall-proto"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+description = "JSON-RPC wire types for the skwd-wall resident"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+url = "2"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+paper-shaders = { path = "../../../skwd-paper/crates/paper-shaders" }

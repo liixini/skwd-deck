@@ -1,0 +1,16 @@
+pub const THEME_BACKENDS: [&str; 14] = [
+    "off",
+    "native",
+    "static",
+    "skwd-iris",
+    "skwd-pywal",
+    "skwd-wallust",
+    "matugen",
+    "wallust",
+    "pywal",
+    "iris",
+    "caelestia",
+    "noctalia",
+    "dms",
+    "end4",
+];

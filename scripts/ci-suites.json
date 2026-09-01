@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "suites": [
+    {"id": "verify.repository", "expectedSkips": 0, "coverage": "external verifier self-tests and repository boundary"},
+    {"id": "deck.format", "expectedSkips": 0, "coverage": "Rust formatting"},
+    {"id": "deck.clippy", "expectedSkips": 0, "coverage": "workspace all-target lint gate"},
+    {"id": "deck.release", "expectedSkips": 0, "coverage": "release workspace build"},
+    {"id": "deck.tests", "expectedSkips": 21, "coverage": "workspace unit and integration tests with process and Loom cases declared separately"},
+    {"id": "deck.layers", "expectedSkips": 0, "coverage": "Core and daemon dependency-layer guards"},
+    {"id": "deck.repository", "expectedSkips": 0, "coverage": "repository ownership and dependency guard"},
+    {"id": "deck.loom", "expectedSkips": 0, "coverage": "ready-gate concurrency model"},
+    {"id": "deck.packaging", "expectedSkips": 0, "coverage": "package staging and Fedora Steamworks companion contracts"},
+    {"id": "deck.process-e2e", "expectedSkips": 0, "coverage": "RPC, schedule, lifecycle, apply, restore, WE, concurrency, hotplug, and library processes"},
+    {"id": "deck.vm", "expectedSkips": 1, "coverage": "distribution and compositor VM matrix"}
+  ]
+}

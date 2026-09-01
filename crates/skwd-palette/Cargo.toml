@@ -1,0 +1,12 @@
+[package]
+name = "skwd-palette"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+description = "Dependency-light palette quantization + Material-style theme derivation"
+
+[dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

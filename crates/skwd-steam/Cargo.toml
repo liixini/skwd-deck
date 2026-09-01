@@ -1,0 +1,14 @@
+[package]
+name = "skwd-steam"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+description = "Transient Steam Workshop downloader for Skwd Deck"
+
+[dependencies]
+steamworks = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
+
+[lints]
+workspace = true

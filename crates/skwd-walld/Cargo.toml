@@ -1,0 +1,41 @@
+[package]
+name = "skwd-walld"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+description = "Skwd Deck resident wallpaper service"
+
+[dependencies]
+wall-proto = { path = "../wall-proto" }
+skwd-lens-proto = { path = "../../../skwd-lens/crates/skwd-lens-proto" }
+wall-rules = { path = "../wall-rules" }
+skwd-config = { path = "../skwd-config" }
+skwd-log = { path = "../skwd-log" }
+skwd-wall-core = { path = "../skwd-wall-core", features = ["daemon"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+env_logger = "0.11"
+libc = "0.2"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "net", "process", "sync", "time", "io-util", "macros"] }
+notify = { version = "6", default-features = false }
+ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "gif"] }
+libwebp-sys = "0.9"
+walkdir = "2"
+dhat = { workspace = true, optional = true }
+
+[features]
+obs-heap = ["skwd-wall-core/obs-heap"]
+obs-dhat = ["dep:dhat"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { version = "1", default-features = false, features = ["test-util"] }
+
+[package.metadata.cargo-machete]
+ignored = ["dhat"]
+
+[lints]
+workspace = true

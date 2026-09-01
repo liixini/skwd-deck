@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "arch_image": {
+    "url": "https://geo.mirror.pkgbuild.com/images/v20260815.573966/Arch-Linux-x86_64-cloudimg-20260815.573966.qcow2",
+    "sha256": "5d8be8d28cfd290f051b0f67df0a6874596ad23de3f3f18b90c91aeb758eb878"
+  },
+  "dependencies": {
+    "libcava": {
+      "url": "https://github.com/karlstav/cava.git",
+      "commit": "bbfbd0566bd3ced82b3d2a195d9c343b31b8b419"
+    }
+  },
+  "providers": {
+    "caelestia": {
+      "url": "https://github.com/caelestia-dots/shell.git",
+      "commit": "817a220e8e87c4df9f3681033a0d8a8054cdaa30"
+    },
+    "dms": {
+      "url": "https://github.com/AvengeMedia/DankMaterialShell.git",
+      "commit": "ba360213ddfa8c5afdcb3da2324c453bed69d8b3"
+    },
+    "noctalia": {
+      "url": "https://github.com/noctalia-dev/noctalia.git",
+      "commit": "3f66cfafb46a73299815ca9fcd2e58ed1dc46baf"
+    },
+    "end4": {
+      "url": "https://github.com/end-4/dots-hyprland.git",
+      "commit": "42d0aae17b744a38cd05c9044c189bfc9b13869a"
+    }
+  }
+}
