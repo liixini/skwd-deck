@@ -2,6 +2,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-for suite in rpc schedule lifecycle apply apply_model restore we concurrent hotplug library; do
-    cargo test --locked --release -p skwd-e2e --test "$suite" -- --ignored --nocapture
-done
+cargo test --locked --release --workspace \
+    --test rpc --test schedule --test lifecycle --test apply --test apply_model \
+    --test restore --test we --test concurrent --test hotplug --test library \
+    -- --ignored --nocapture

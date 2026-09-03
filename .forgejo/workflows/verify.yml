@@ -16,10 +16,12 @@ concurrency:
 jobs:
   deck:
     name: Forgejo / Deck required
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '(#')
     runs-on: skwd-wall-next-ci
-    timeout-minutes: 75
+    timeout-minutes: 35
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_RELEASE_PANIC: unwind
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: "1"
       SKWD_RUNNER_IMAGE: sha256:66058d5c15a5011188ee634bb909d730c279ab0d65408581b5d70e99a6970edb
@@ -91,41 +93,63 @@ jobs:
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.format --out ci-artifacts/results/deck-format.json -- cargo fmt --check
 
-      - name: Clippy
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.clippy --out ci-artifacts/results/deck-clippy.json -- cargo clippy --locked --workspace --all-targets -- -D warnings
-
-      - name: Release build
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.release --out ci-artifacts/results/deck-release.json -- cargo build --locked --release --workspace
-
-      - name: Workspace tests
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.tests --out ci-artifacts/results/deck-tests.json -- cargo test --locked --release --workspace
-
-      - name: Layer guards
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.layers --out ci-artifacts/results/deck-layers.json -- scripts/test-layers.sh
-
-      - name: Repository guard
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.repository --out ci-artifacts/results/deck-repository.json -- cargo test --locked --release -p skwd-e2e --test repository
-
-      - name: Loom model
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.loom --out ci-artifacts/results/deck-loom.json -- cargo test --locked --release -p skwd-wall-core --features loom --test loom_ready_gate
-
       - name: Packaging and workflow tests
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.packaging --out ci-artifacts/results/deck-packaging.json -- env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
 
+      - name: Clippy
+        id: clippy
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.clippy --out ci-artifacts/results/deck-clippy.json -- cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Release build
+        id: release
+        if: steps.clippy.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.release --out ci-artifacts/results/deck-release.json -- cargo build --locked --release --workspace
+
+      - name: Workspace tests
+        id: tests
+        if: steps.clippy.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.tests --out ci-artifacts/results/deck-tests.json -- cargo test --locked --release --workspace
+
+      - name: Layer guards
+        if: steps.tests.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.layers --out ci-artifacts/results/deck-layers.json -- scripts/test-layers.sh
+
+      - name: Repository guard
+        if: steps.tests.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.repository --out ci-artifacts/results/deck-repository.json -- cargo test --locked --release --workspace --test repository
+
+      - name: Loom model
+        if: steps.tests.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.loom --out ci-artifacts/results/deck-loom.json -- cargo test --locked --release -p skwd-wall-core --features loom --test loom_ready_gate
+
       - name: Process E2E
+        if: steps.tests.outcome == 'success' && steps.release.outcome == 'success'
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.process-e2e --out ci-artifacts/results/deck-process-e2e.json -- scripts/test-e2e.sh
 
       - name: Record deliberate VM coverage
         if: always()
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.vm --reason 'requires KVM and the declared distribution/compositor image matrix' --out ci-artifacts/results/deck-vm.json
+
+      - name: Record blocked suites
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          present=$(jq -r .suite ci-artifacts/results/*.json)
+          jq -r '.suites[].id' scripts/ci-suites.json | while read -r suite; do
+            if ! printf '%s\n' "$present" | grep -qx -- "$suite"; then
+              python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" emit --suite "$suite" --ok false --detail 'BLOCKED: an earlier required gate failed' --out "ci-artifacts/results/$(printf '%s' "$suite" | tr . -).json"
+            fi
+          done
 
       - name: Record exact execution provenance
         if: always()

@@ -51,6 +51,18 @@ fn scanner_deadlines_match_job_kind() {
     );
 }
 
+fn wait_for_idle_banner(stats: &crate::infrastructure::stats::Stats) -> String {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let banner = stats.banner(0, 0, 0, 0, 0, 0, 0, 0);
+        if banner.contains("task       : idle") {
+            return banner;
+        }
+        assert!(std::time::Instant::now() < deadline, "stats banner did not return to idle");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn bounded_wait_kills_stuck_helper() {
     let mut command = std::process::Command::new("/bin/sh");
@@ -79,7 +91,7 @@ fn successful_exit_finishes_unreported_scan() {
     );
     let task = wait_for_task(&tasks, wall_proto::TaskState::Completed);
     assert_eq!(task.detail, "Scan completed");
-    assert!(stats.banner(0, 0, 0, 0, 0, 0, 0, 0).contains("task       : idle"));
+    wait_for_idle_banner(&stats);
 }
 
 #[test]
