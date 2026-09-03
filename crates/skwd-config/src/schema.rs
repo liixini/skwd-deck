@@ -637,6 +637,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::responsive_number(crate::keys::selector::SLICE_WIDTH, 135.0, 90.0),
     SettingSpec::responsive_number(crate::keys::selector::VISIBLE_COUNT, 12.0, 8.0),
     SettingSpec::responsive_number(crate::keys::selector::SKEW_OFFSET, 35.0, 25.0),
+    SettingSpec::bounded_number(crate::keys::selector::SLICE_EDGE_TILT, 0.0, -240.0, 240.0),
     SettingSpec::number(crate::keys::selector::SLICE_SPACING, -30.0),
     SettingSpec::number(crate::keys::selector::SLICE_WOBBLE_STRENGTH, 100.0),
     SettingSpec::number(crate::keys::selector::CORNER_TL, 16.0),

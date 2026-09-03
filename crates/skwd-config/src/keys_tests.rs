@@ -233,6 +233,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::SANDY_TWIST, "components.wallpaperSelector.sandyTwist");
     assert_eq!(keys::selector::SANDY_WAIST, "components.wallpaperSelector.sandyWaist");
     assert_eq!(keys::selector::SKEW_OFFSET, "components.wallpaperSelector.skewOffset");
+    assert_eq!(keys::selector::SLICE_EDGE_TILT, "components.wallpaperSelector.sliceEdgeTilt");
     assert_eq!(keys::selector::SLICE_HEIGHT, "components.wallpaperSelector.sliceHeight");
     assert_eq!(keys::selector::SLICE_STAGE_X, "components.wallpaperSelector.sliceStageX");
     assert_eq!(keys::selector::SLICE_STAGE_Y, "components.wallpaperSelector.sliceStageY");

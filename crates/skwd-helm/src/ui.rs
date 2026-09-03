@@ -5,7 +5,7 @@ pub(super) fn run(args: &[String]) -> Result<(), CliError> {
     let command = command.trim();
     if command.is_empty() {
         return Err(CliError::BadArgs(String::from(
-            "usage: ui <toggle|show|hide|close|dismiss|mode M|filter TEXT|clear|open PANEL|playlist ID|playlist-demo ACTION|settings-search TEXT|settings-result N|tab NAME|section N|nav DIR|pick|select KEY|flip|kind K|orient O|resolution R|bar ACTION|badges ACTION|demo ACTION|tune PATH VALUE|motion SCALE|recolour PALETTE|sort MODE|colour NAME|stage-blur RADIUS|apply OUTPUT [SHADER] [MS]|set PATH VALUE|state>",
+            "usage: ui <toggle|show|hide|close|dismiss|mode M|filter TEXT|clear|open PANEL|playlist ID|playlist-demo ACTION|schedule-demo ACTION|scroll-demo RATE|settings-search TEXT|settings-result N|tab NAME|section N|nav DIR|pick|select KEY|flip|kind K|orient O|resolution R|bar ACTION|badges ACTION|demo ACTION|tune PATH VALUE|motion SCALE|recolour PALETTE|sort MODE|colour NAME|stage-blur RADIUS|apply OUTPUT [SHADER] [MS]|set PATH VALUE|state>",
         )));
     }
     if command == "state" || command.starts_with("state ") {

@@ -287,6 +287,7 @@ pub mod keys {
             "components.wallpaperSelector.sliceFilterBarOffsetX";
         pub const SLICE_FILTER_BAR_OFFSET_Y: &str =
             "components.wallpaperSelector.sliceFilterBarOffsetY";
+        pub const SLICE_EDGE_TILT: &str = "components.wallpaperSelector.sliceEdgeTilt";
         pub const SLICE_HEIGHT: &str = "components.wallpaperSelector.sliceHeight";
         pub const SLICE_SEARCH_PANEL_OFFSET_X: &str =
             "components.wallpaperSelector.sliceSearchPanelOffsetX";
