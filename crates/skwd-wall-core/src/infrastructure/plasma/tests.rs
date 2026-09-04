@@ -1,4 +1,7 @@
-use super::{PLUGIN_ID, assignments, desktop_is_plasma, enabled_for, plugin_installed_in, script};
+use super::{
+    PLUGIN_ID, assignments, desktop_is_plasma, enabled_for, plugin_installed_in, qdbus_program_in,
+    script,
+};
 
 #[test]
 fn desktop_tokens() {
@@ -19,6 +22,23 @@ fn plugin_data_roots() {
     assert!(enabled_for("KDE", &[directory.path().to_path_buf()], false));
     assert!(!enabled_for("niri", &[directory.path().to_path_buf()], false));
     assert!(!enabled_for("KDE", &[directory.path().to_path_buf()], true));
+}
+
+#[test]
+fn qdbus_prefers_arch_name_and_accepts_fedora_name() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let fedora = directory.path().join("qdbus-qt6");
+    std::fs::write(&fedora, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&fedora, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(qdbus_program_in(Some(directory.path().as_os_str())), Some(fedora.clone()));
+
+    let arch = directory.path().join("qdbus6");
+    std::fs::write(&arch, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&arch, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(qdbus_program_in(Some(directory.path().as_os_str())), Some(arch));
+    assert_eq!(qdbus_program_in(None), None);
 }
 
 #[test]

@@ -2,4 +2,4 @@ mod command;
 
 pub use command::tool;
 #[cfg(feature = "daemon")]
-pub(crate) use command::{renderer, spawn_reaped};
+pub(crate) use command::{renderer, spawn_reaped, spawn_reaped_pid_result};

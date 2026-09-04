@@ -62,6 +62,7 @@ fn paths_unique_kinds_stable() {
 fn dynamic_default_families() {
     assert_eq!(boolean_default("filterBar.show.folder"), Some(true));
     assert_eq!(boolean_default("components.wallpaperSelector.hexArc"), Some(true));
+    assert_eq!(boolean_default(crate::keys::selector::SLICE_WOBBLE), Some(false));
     assert_eq!(boolean_default("display.outputLocks.DP-1"), Some(false));
     assert_eq!(value_kind("display.fillModes.DP-1"), Some(ValueKind::Text));
     assert_eq!(value_kind("transition.shaderScopes.sand-donut"), Some(ValueKind::Text));

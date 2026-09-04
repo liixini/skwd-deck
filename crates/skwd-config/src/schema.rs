@@ -500,7 +500,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::general::RANDOM_ROTATE, false),
     SettingSpec::boolean(crate::keys::general::WEATHER_MATCH, false),
     SettingSpec::boolean(crate::keys::selector::ROUND_CORNERS, false),
-    SettingSpec::boolean(crate::keys::selector::SLICE_WOBBLE, true),
+    SettingSpec::boolean(crate::keys::selector::SLICE_WOBBLE, false),
     SettingSpec::boolean(crate::keys::paper::PERFORMANCE_MODE, false),
     SettingSpec::boolean(crate::keys::paper::VIDEO_MULTI_PROCESS, true),
     SettingSpec::boolean(crate::keys::performance::AUTO_DELETE_IMAGE_TRASH, false),

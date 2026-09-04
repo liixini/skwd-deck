@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,6 +10,7 @@ use super::paper::{
 use crate::state::WallState;
 
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
+const QDBUS_PROGRAMS: &[&str] = &["qdbus6", "qdbus-qt6"];
 
 pub struct LockScreenCurrent<'a> {
     pub kind: &'a str,
@@ -61,6 +63,14 @@ fn running_on_plasma() -> bool {
     desktop_is_plasma(&std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default())
 }
 
+fn qdbus_program_in(search_path: Option<&OsStr>) -> Option<PathBuf> {
+    crate::paths::resolve_preferred_binary(None, search_path, QDBUS_PROGRAMS)
+}
+
+fn qdbus_program() -> Option<PathBuf> {
+    qdbus_program_in(std::env::var_os("PATH").as_deref())
+}
+
 fn kconfig_write(groups: &[&str], key: &str, value: &str) -> anyhow::Result<()> {
     let mut command = Command::new("kwriteconfig6");
     command.args(["--file", "kscreenlockerrc"]);
@@ -83,7 +93,13 @@ fn select_lock_screen_plugin(plugin: &str) -> anyhow::Result<()> {
 }
 
 fn notify_lock_screen() {
-    let status = Command::new("qdbus6")
+    let Some(program) = qdbus_program() else {
+        log::debug!(
+            "could not ask KScreenLocker to reload configuration: qdbus6 or qdbus-qt6 is not in PATH"
+        );
+        return;
+    };
+    let status = Command::new(program)
         .args(["org.kde.screensaver", "/ScreenSaver", "org.kde.screensaver.configure"])
         .status();
     match status {
@@ -287,7 +303,8 @@ pub fn apply(
     transitions: &std::collections::BTreeMap<String, TransitionPolicy>,
 ) -> anyhow::Result<()> {
     let payload = assignments(state, outputs, map, transitions)?;
-    let status = Command::new("qdbus6")
+    let program = qdbus_program().context("find qdbus6 or qdbus-qt6 in PATH")?;
+    let status = Command::new(program)
         .args([
             "org.kde.plasmashell",
             "/PlasmaShell",

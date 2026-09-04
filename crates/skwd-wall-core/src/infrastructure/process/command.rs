@@ -62,17 +62,39 @@ pub(crate) fn spawn_reaped(command: &mut Command, what: &str) -> bool {
 
 #[cfg(feature = "daemon")]
 pub(crate) fn spawn_reaped_pid(command: &mut Command, what: &str) -> Option<u32> {
-    match command.spawn() {
-        Ok(mut child) => {
-            let pid = child.id();
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
-            Some(pid)
-        }
+    match spawn_reaped_pid_result(command) {
+        Ok(pid) => Some(pid),
         Err(error) => {
             log::warn!("{what} spawn failed: {error}");
             None
         }
+    }
+}
+
+#[cfg(feature = "daemon")]
+pub(crate) fn spawn_reaped_pid_result(command: &mut Command) -> std::io::Result<u32> {
+    let mut child = command.spawn()?;
+    let pid = child.id();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(pid)
+}
+
+#[cfg(all(test, feature = "daemon"))]
+mod tests {
+    #[test]
+    fn short_lived_children_are_reaped() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "exit 0"]);
+        let pid = super::spawn_reaped_pid_result(&mut command).unwrap();
+        let process = std::path::PathBuf::from(format!("/proc/{pid}"));
+        for _ in 0..100 {
+            if !process.exists() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("child {pid} was not reaped");
     }
 }

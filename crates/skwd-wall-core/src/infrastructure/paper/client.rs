@@ -122,13 +122,14 @@ impl PaperClient {
     }
 
     fn start(&self) -> Result<()> {
-        Command::new(&self.binary)
+        let mut command = Command::new(&self.binary);
+        command
             .arg("serve")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .process_group(0)
-            .spawn()
+            .process_group(0);
+        crate::infrastructure::process::spawn_reaped_pid_result(&mut command)
             .with_context(|| format!("start Paper controller {}", self.binary.display()))?;
         Ok(())
     }
