@@ -163,10 +163,23 @@ async fn report_remote(source: &str) -> anyhow::Result<()> {
 }
 
 fn library_policy(config: &Config) -> sandbox::Policy {
-    sandbox::Policy::new()
+    let workshop = config.we_dir();
+    let mut policy = sandbox::Policy::new()
         .read(config.wallpaper_dir())
         .read(config.video_dir())
-        .read(config.we_dir())
+        .read(&workshop);
+    for entry in std::fs::read_dir(&workshop).into_iter().flatten().filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_symlink()
+            && path.is_dir()
+            && path.join("project.json").is_file()
+            && let Ok(target) = path.canonicalize()
+            && target != std::path::Path::new("/")
+        {
+            policy = policy.read(target);
+        }
+    }
+    policy
 }
 
 fn storage_policy(config: &Config) -> sandbox::Policy {
@@ -229,3 +242,7 @@ fn command_deadline(command: &Command) -> std::time::Duration {
     };
     std::time::Duration::from_secs(seconds)
 }
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;

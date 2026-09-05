@@ -468,3 +468,24 @@ fn warm_swap_transition_policy() {
     assert_eq!(enabled["shader"], "sand-globe");
     assert_eq!(enabled["duration_ms"], 725);
 }
+
+#[test]
+fn preview_metadata_takes_precedence_and_stays_inside_item() {
+    let dir = tempfile::tempdir().unwrap();
+    let item = dir.path().join("item");
+    std::fs::create_dir_all(item.join("images")).unwrap();
+    std::fs::write(item.join("preview.png"), b"fallback").unwrap();
+    std::fs::write(item.join("images/thumbnail.png"), b"preferred").unwrap();
+    std::fs::write(item.join("project.json"), r#"{"preview":"images/thumbnail.png"}"#).unwrap();
+    assert_eq!(find_preview(&item), Some(item.join("images/thumbnail.png")));
+    std::fs::write(dir.path().join("outside.png"), b"outside").unwrap();
+    std::os::unix::fs::symlink(dir.path().join("outside.png"), item.join("escape.png")).unwrap();
+    for preview in ["../outside.png", "/etc/passwd", "escape.png", "images", "missing.png"] {
+        std::fs::write(
+            item.join("project.json"),
+            serde_json::json!({"preview":preview}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(find_preview(&item), Some(item.join("preview.png")));
+    }
+}

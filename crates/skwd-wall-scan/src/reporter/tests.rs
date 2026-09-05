@@ -85,3 +85,23 @@ async fn daemon_responses_are_drained() {
     let line = lines.next_line().await.unwrap().unwrap();
     assert!(line.contains("scan.done"));
 }
+
+#[tokio::test]
+async fn partial_response_does_not_starve_later_messages() {
+    let dir = TempDir::new("partial");
+    let listener = tokio::net::UnixListener::bind(dir.0.join("sock")).unwrap();
+    let reporter = Reporter::connect_at(&dir.0.join("sock")).await;
+    let (mut stream, _) = listener.accept().await.unwrap();
+    stream.write_all(b"{\"ok\":true,\"id\":0}\n").await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    reporter.send("scan.done", &json!({"count": 1}));
+    let mut reader = tokio::io::BufReader::new(stream);
+    let mut line = String::new();
+    tokio::time::timeout(std::time::Duration::from_secs(2), reader.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(line.contains("scan.done"));
+    reader.get_mut().shutdown().await.unwrap();
+    reporter.finish().await;
+}

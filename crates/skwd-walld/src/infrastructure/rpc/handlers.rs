@@ -40,6 +40,8 @@ pub(super) fn runtime_status(ctx: &Ctx) -> Value {
         .capabilities()
         .map_err(|error| format!("runtime renderer capabilities are unavailable: {error:#}"));
     let mut status = status_payload(result);
+    status["steam_helper_available"] =
+        json!(crate::infrastructure::steam_download::require_steam_helper().is_ok());
     status["library_watch"] = json!(crate::infrastructure::watcher::current_status());
     status
 }

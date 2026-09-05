@@ -18,6 +18,7 @@ impl CoreWallpaperApplication {
     }
 
     fn stop_paper(&self) -> anyhow::Result<()> {
+        crate::plasma::require_backend()?;
         let socket = crate::infrastructure::paper::paper_socket_path();
         if socket.exists() {
             crate::infrastructure::paper::PaperClient::new(
@@ -30,6 +31,7 @@ impl CoreWallpaperApplication {
     }
 
     fn apply_tinier(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+        crate::plasma::require_backend()?;
         let outputs = crate::outputs::enumerate();
         if outputs.is_empty() {
             bail!("Tinier requires at least one named output");

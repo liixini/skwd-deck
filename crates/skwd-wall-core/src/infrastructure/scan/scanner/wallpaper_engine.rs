@@ -74,16 +74,24 @@ fn generate_thumbnails(
             }
         })
     } else {
-        let preview = crate::we::find_preview(item_directory)?;
-        let _permit = decode_budget().acquire(image_decode_weight(&preview));
-        media::generate_image_thumbs(&preview, thumb, thumb_small)
+        match crate::we::find_preview(item_directory) {
+            Some(preview) => {
+                let _permit = decode_budget().acquire(image_decode_weight(&preview));
+                media::generate_image_thumbs(&preview, thumb, thumb_small)
+            }
+            None => Err(anyhow::anyhow!("project has no usable preview")),
+        }
     };
 
     match result {
         Ok(result) => Some(result),
         Err(error) => {
-            log::warn!("we thumb failed for {wallpaper_engine_id}: {error}");
-            None
+            log::warn!("we thumb failed for {wallpaper_engine_id}: {error}; using placeholder");
+            media::generate_placeholder_thumbs(thumb, thumb_small)
+                .inspect_err(|error| {
+                    log::warn!("we placeholder failed for {wallpaper_engine_id}: {error}");
+                })
+                .ok()
         }
     }
 }
@@ -122,7 +130,8 @@ where
     let thumb_small = paths::we_thumb_sm(wallpaper_engine_id);
     let fresh = known.get(&key).is_some_and(|(known_mtime, known_type, known_video_file)| {
         *known_mtime == mtime && known_type == entry_type && *known_video_file == video_file
-    }) && artifacts_ready(&thumb);
+    }) && artifacts_ready(&thumb)
+        && sources_unchanged(item_directory, video_path.as_deref(), &thumb);
     if fresh {
         return false;
     }
@@ -211,3 +220,17 @@ where
     }));
     true
 }
+
+fn sources_unchanged(item: &Path, video: Option<&Path>, thumb: &Path) -> bool {
+    let modified = |path: &Path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
+    let Some(generated) = modified(thumb) else { return false };
+    let preview = crate::we::find_preview(item);
+    [Some(item), Some(item.join("project.json").as_path()), preview.as_deref(), video]
+        .into_iter()
+        .flatten()
+        .all(|source| modified(source).is_some_and(|modified| modified <= generated))
+}
+
+#[cfg(test)]
+#[path = "wallpaper_engine_tests.rs"]
+mod tests;

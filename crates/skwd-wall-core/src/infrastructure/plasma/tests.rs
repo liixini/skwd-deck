@@ -131,3 +131,21 @@ fn lock_screen_uses_the_same_paper_connector() {
     assert!(!source.contains("org.kde.image"));
     assert!(!source.contains("use_lock_screen_image"));
 }
+
+#[test]
+fn plasma_without_its_plugin_reports_the_missing_package() {
+    let root = tempfile::tempdir().unwrap();
+    let roots = [root.path().to_path_buf()];
+    assert!(
+        super::require_backend_for("KDE", &roots, false)
+            .unwrap_err()
+            .to_string()
+            .contains("skwd-paper-plasma")
+    );
+    assert!(super::require_backend_for("niri", &roots, false).is_ok());
+    assert!(super::require_backend_for("KDE", &roots, true).is_ok());
+    let metadata = root.path().join("plasma/wallpapers").join(PLUGIN_ID).join("metadata.json");
+    std::fs::create_dir_all(metadata.parent().unwrap()).unwrap();
+    std::fs::write(metadata, "{}").unwrap();
+    assert!(super::require_backend_for("KDE", &roots, false).is_ok());
+}

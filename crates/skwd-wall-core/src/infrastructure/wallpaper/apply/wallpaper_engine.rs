@@ -3,6 +3,7 @@ use crate::state::WallState;
 use super::resolver::resolve_we_from_state;
 
 pub fn reload_we(state: &WallState) -> anyhow::Result<()> {
+    crate::plasma::require_backend()?;
     let cache = state.config().cache_dir();
     let current = crate::audio::read_state(&cache);
     let Some(map) = current.as_object() else {

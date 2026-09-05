@@ -1,11 +1,11 @@
-%global skwd_version 1.0.0~beta.7
+%{!?skwd_version:%global skwd_version 1.0.0~beta.8}
 
 Name:           skwd-deck-steamworks
 Version:        %{skwd_version}
 Release:        1%{?dist}
 Summary:        Optional Steam Workshop runtime for Skwd Deck
 License:        LicenseRef-Proprietary
-URL:            http://192.168.1.41:3000/liixini/skwd-deck
+URL:            https://github.com/liixini/skwd-deck
 Source0:        skwd-steam
 Source1:        libsteam_api.so
 BuildArch:      x86_64
@@ -32,6 +32,8 @@ ln -s ../libexec/skwd-deck/skwd-steam %{buildroot}%{_bindir}/skwd-steam
 %{_libexecdir}/skwd-deck/libsteam_api.so
 
 %changelog
+* Sat Sep 05 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.8-1
+- Prepare coordinated release 1.0.0-beta.8.
 * Sat Sep 05 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.7-1
 - Prepare coordinated release 1.0.0-beta.7.
 * Fri Sep 04 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.6-1

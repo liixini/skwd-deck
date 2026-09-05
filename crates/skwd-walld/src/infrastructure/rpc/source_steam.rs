@@ -43,7 +43,12 @@ pub(super) fn steam_search(ctx: &Ctx, request: &Request) -> Response {
     } {
         Ok(page) => page,
         Err(error) => {
-            return crate::infrastructure::rpc::fail_msg(stats, request.id, -1, error.to_string());
+            return crate::infrastructure::rpc::fail_msg(
+                stats,
+                request.id,
+                -1,
+                format!("{error:#}"),
+            );
         }
     };
     let local = steam::downloaded_ids(&wallpaper_engine_dir);
@@ -118,6 +123,11 @@ pub(super) fn steam_download(ctx: &Ctx, request: &Request) -> Response {
     if wallpaper_engine_dir.join(&id).is_dir() {
         steam_dl_event(events.as_ref(), &id, "done", 1.0);
         return Response::ok(request.id, json!({"id": id, "status": "exists"}));
+    }
+    if state.config().steam_backend() == "steam"
+        && let Err(error) = crate::infrastructure::steam_download::require_steam_helper()
+    {
+        return crate::infrastructure::rpc::fail_msg(stats, request.id, -1, format!("{error:#}"));
     }
     if !steam_inflight_begin(&id) {
         return Response::ok(request.id, json!({"id": id, "status": "in_progress"}));

@@ -53,7 +53,16 @@ install -m755 "$binary_directory/skwd-steam" "$workspace/SOURCES/skwd-steam"
 install -m755 "$binary_directory/libsteam_api.so" "$workspace/SOURCES/libsteam_api.so"
 install -m644 "$root/packaging/fedora/skwd-deck-steamworks.spec" \
     "$workspace/SPECS/skwd-deck-steamworks.spec"
-rpmbuild -bb --define "_topdir $workspace" "$workspace/SPECS/skwd-deck-steamworks.spec"
+version=$("$binary_directory/skwd-steam" --version)
+case "$version" in
+    'skwd-steam '*) version=${version#skwd-steam } ;;
+    *) echo "Steamworks helper did not report its version" >&2; exit 1 ;;
+esac
+case "$version" in
+    ''|*[!0-9A-Za-z.+-]*) echo "invalid Steamworks helper version: $version" >&2; exit 1 ;;
+esac
+rpm_version=$(printf '%s' "$version" | sed 's/-/~/')
+rpmbuild -bb --define "_topdir $workspace" --define "skwd_version $rpm_version" "$workspace/SPECS/skwd-deck-steamworks.spec"
 set -- "$workspace"/RPMS/x86_64/skwd-deck-steamworks-*.rpm
 if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
     echo "RPM build did not produce exactly one companion package" >&2

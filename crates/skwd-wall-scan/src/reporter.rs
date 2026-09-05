@@ -2,6 +2,7 @@ use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use serde_json::{Value, json};
+use tokio::io::Interest;
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -77,21 +78,22 @@ async fn write_messages(stream: OwnedWriteHalf, mut queue: UnboundedReceiver<Val
 async fn write_all(stream: &OwnedWriteHalf, mut bytes: &[u8]) -> std::io::Result<()> {
     while !bytes.is_empty() {
         stream.writable().await?;
-        let written =
-            unsafe { libc::write(stream.as_ref().as_raw_fd(), bytes.as_ptr().cast(), bytes.len()) };
-        if written > 0 {
-            bytes = &bytes[written as usize..];
-            continue;
+        let result = stream.as_ref().try_io(Interest::WRITABLE, || {
+            let written = unsafe {
+                libc::write(stream.as_ref().as_raw_fd(), bytes.as_ptr().cast(), bytes.len())
+            };
+            if written < 0 { Err(std::io::Error::last_os_error()) } else { Ok(written as usize) }
+        });
+        match result {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(written) => bytes = &bytes[written..],
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                ) => {}
+            Err(error) => return Err(error),
         }
-        if written == 0 {
-            return Err(std::io::ErrorKind::WriteZero.into());
-        }
-        let error = std::io::Error::last_os_error();
-        if matches!(error.kind(), std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock)
-        {
-            continue;
-        }
-        return Err(error);
     }
     Ok(())
 }
@@ -102,19 +104,21 @@ async fn drain_responses(stream: OwnedReadHalf) {
         if stream.readable().await.is_err() {
             return;
         }
-        let read = unsafe {
-            libc::read(stream.as_ref().as_raw_fd(), bytes.as_mut_ptr().cast(), bytes.len())
-        };
-        if read > 0 {
-            continue;
-        }
-        if read == 0 {
-            return;
-        }
-        let error = std::io::Error::last_os_error();
-        if !matches!(error.kind(), std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock)
-        {
-            return;
+        let result = stream.as_ref().try_io(Interest::READABLE, || {
+            let read = unsafe {
+                libc::read(stream.as_ref().as_raw_fd(), bytes.as_mut_ptr().cast(), bytes.len())
+            };
+            if read < 0 { Err(std::io::Error::last_os_error()) } else { Ok(read) }
+        });
+        match result {
+            Ok(0) => return,
+            Ok(_) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                ) => {}
+            Err(_) => return,
         }
     }
 }

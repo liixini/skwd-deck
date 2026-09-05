@@ -429,3 +429,15 @@ fn watch_subscribes() {
     let req = daemon.reqs.recv().expect("subscribe sent");
     assert_eq!(req["method"], "subscribe");
 }
+
+#[test]
+fn workshop_video_uses_indexed_media_path() {
+    let item = serde_json::from_value(
+        json!({"key":"we:42", "type":"video", "video_file":"/workshop/42/movie.mp4"}),
+    )
+    .unwrap();
+    assert_eq!(
+        apply_params_for_item(&item, "/images", "/videos", "DP-1"),
+        Some(json!({"type":"video", "path":"/workshop/42/movie.mp4", "output":"DP-1"}))
+    );
+}

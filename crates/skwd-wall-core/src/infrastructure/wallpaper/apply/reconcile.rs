@@ -90,6 +90,7 @@ fn reconcile_outputs_inner(
     monitors: &[String],
     intent: &ReconcileIntent,
 ) -> anyhow::Result<()> {
+    crate::plasma::require_backend()?;
     let transition = intent.transition();
     let transition = transition.filter(|plan| plan.enabled());
     let cache = state.config().cache_dir();

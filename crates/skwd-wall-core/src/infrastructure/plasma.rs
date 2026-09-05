@@ -9,6 +9,8 @@ use super::paper::{
 };
 use crate::state::WallState;
 
+mod presentation;
+
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
 const QDBUS_PROGRAMS: &[&str] = &["qdbus6", "qdbus-qt6"];
 
@@ -57,6 +59,22 @@ fn enabled_for(desktop: &str, roots: &[PathBuf], disabled: bool) -> bool {
 pub fn available() -> bool {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     enabled_for(&desktop, &data_roots(), std::env::var("SKWD_PLASMA_BACKEND").as_deref() == Ok("0"))
+}
+
+fn require_backend_for(desktop: &str, roots: &[PathBuf], disabled: bool) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !desktop_is_plasma(desktop) || disabled || plugin_installed_in(roots),
+        "Plasma wallpaper support needs skwd-paper-plasma. Install the plugin and restart Plasma before applying a wallpaper."
+    );
+    Ok(())
+}
+
+pub(crate) fn require_backend() -> anyhow::Result<()> {
+    require_backend_for(
+        &std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        &data_roots(),
+        std::env::var("SKWD_PLASMA_BACKEND").as_deref() == Ok("0"),
+    )
 }
 
 fn running_on_plasma() -> bool {
@@ -302,7 +320,8 @@ pub fn apply(
     map: &serde_json::Map<String, serde_json::Value>,
     transitions: &std::collections::BTreeMap<String, TransitionPolicy>,
 ) -> anyhow::Result<()> {
-    let payload = assignments(state, outputs, map, transitions)?;
+    let mut payload = assignments(state, outputs, map, transitions)?;
+    let presentation = presentation::Pending::new(&mut payload)?;
     let program = qdbus_program().context("find qdbus6 or qdbus-qt6 in PATH")?;
     let status = Command::new(program)
         .args([
@@ -316,7 +335,9 @@ pub fn apply(
     if !status.success() {
         anyhow::bail!("Plasma wallpaper script exited with {status}");
     }
-    Ok(())
+    let transition_ms =
+        transitions.values().filter_map(|transition| transition.duration_ms).max().unwrap_or(0);
+    presentation.wait(std::time::Duration::from_millis(15_000 + transition_ms.min(60_000)))
 }
 
 pub fn apply_current(state: &WallState) -> anyhow::Result<()> {

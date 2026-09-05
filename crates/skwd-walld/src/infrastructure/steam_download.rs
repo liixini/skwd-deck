@@ -1,5 +1,7 @@
+use anyhow::Context;
 use skwd_wall_core::lock;
 use std::io::{BufRead, BufReader};
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Mutex;
 
 use serde_json::json;
@@ -8,16 +10,45 @@ use wall_proto::ev;
 use crate::backend::events::EventPublisher;
 use crate::infrastructure::steam;
 
+const MISSING_STEAM_HELPER: &str = "Steam Client support needs the optional skwd-deck-steamworks package (skwd-steam). Install it, or select SteamCMD in Settings > Steam.";
+
 fn steam_bin() -> std::path::PathBuf {
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        let cand = dir.join("skwd-steam");
-        if cand.exists() {
-            return cand;
-        }
+    resolve_steam_bin(std::env::current_exe().ok().as_deref(), std::env::var_os("PATH").as_deref())
+        .unwrap_or_else(|| "skwd-steam".into())
+}
+
+fn resolve_steam_bin(
+    exe: Option<&std::path::Path>,
+    search: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    let sibling = exe.and_then(std::path::Path::parent).map(|dir| dir.join("skwd-steam"));
+    sibling
+        .into_iter()
+        .chain(search.into_iter().flat_map(std::env::split_paths).map(|dir| dir.join("skwd-steam")))
+        .find(|path| {
+            path.metadata()
+                .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        })
+}
+
+pub(crate) fn require_steam_helper() -> anyhow::Result<()> {
+    anyhow::ensure!(
+        resolve_steam_bin(
+            std::env::current_exe().ok().as_deref(),
+            std::env::var_os("PATH").as_deref()
+        )
+        .is_some(),
+        MISSING_STEAM_HELPER
+    );
+    Ok(())
+}
+
+fn helper_spawn_error(error: &std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        MISSING_STEAM_HELPER.to_string()
+    } else {
+        format!("Cannot start the Steam Client helper (skwd-steam): {error}")
     }
-    std::path::PathBuf::from("skwd-steam")
 }
 
 pub(crate) fn run_unsubscribe(
@@ -142,6 +173,7 @@ fn finalize_steam_batch(
 pub(crate) fn steam_helper_search(
     params: &steam::SearchParams,
 ) -> anyhow::Result<steam::SearchPage> {
+    require_steam_helper()?;
     let req = json!({
         "query": params.query,
         "query_type": params.query_type,
@@ -156,10 +188,17 @@ pub(crate) fn steam_helper_search(
         .arg(&req)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .output()?;
+        .output()
+        .map_err(|error| anyhow::anyhow!(helper_spawn_error(&error)))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let line = stdout.lines().rev().find(|line| line.trim_start().starts_with('{')).unwrap_or("");
-    steam::parse_helper_search(line, params.page)
+    if !out.status.success() && line.is_empty() {
+        anyhow::bail!(
+            "Steam Client helper exited with {}. Check that native Steam is running and signed in.",
+            out.status
+        );
+    }
+    steam::parse_helper_search(line, params.page).context("Steam Client search failed")
 }
 
 pub(crate) fn run_steamcmd_download(
@@ -270,7 +309,7 @@ pub(crate) fn run_steamworks_download(
                     id,
                     wall_proto::dl_status::ERROR,
                     0.0,
-                    "Steam helper missing - rebuild skwd-wall, or switch to the steamcmd backend",
+                    &helper_spawn_error(&err),
                 );
             }
             return false;

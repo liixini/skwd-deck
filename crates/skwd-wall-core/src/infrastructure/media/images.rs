@@ -71,6 +71,15 @@ pub struct ThumbResult {
     pub duration_ms: i64,
 }
 
+pub fn generate_placeholder_thumbs(thumb: &Path, small: &Path) -> anyhow::Result<ThumbResult> {
+    let image =
+        DynamicImage::ImageRgb8(image::RgbImage::from_pixel(16, 9, image::Rgb([48, 48, 48])));
+    let mut result = write_thumbs(image, thumb, small)?;
+    result.width = 0;
+    result.height = 0;
+    Ok(result)
+}
+
 fn encode_webp(img: &DynamicImage, dest: &Path, quality: f32) -> anyhow::Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).ok();

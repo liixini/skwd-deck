@@ -103,13 +103,27 @@ pub fn read_project_title(item_dir: &Path) -> Option<String> {
 }
 
 pub fn find_preview(item_dir: &Path) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(item_dir).ok()?;
-    for entry in entries.flatten() {
-        if entry.file_name().to_string_lossy().to_lowercase().starts_with("preview.") {
-            return Some(entry.path());
-        }
+    let project = std::fs::read(item_dir.join("project.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    if let Some(preview) = project
+        .as_ref()
+        .and_then(|project| project.get("preview"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(|file| safe_item_join(item_dir, file))
+        .filter(|path| path.is_file())
+    {
+        return Some(preview);
     }
-    None
+    let mut previews: Vec<_> = std::fs::read_dir(item_dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().to_lowercase().starts_with("preview."))
+        .filter_map(|entry| safe_item_join(item_dir, &entry.file_name().to_string_lossy()))
+        .filter(|path| path.is_file())
+        .collect();
+    previews.sort();
+    previews.into_iter().next()
 }
 
 pub(crate) fn spawn_scene_for<'a>(

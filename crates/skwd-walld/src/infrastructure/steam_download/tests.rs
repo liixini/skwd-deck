@@ -74,3 +74,25 @@ fn reconcile_and_finalize() {
     assert_eq!(failed.data["status"], json!("error"));
     assert_eq!(failed.data["message"], json!("boom"));
 }
+
+#[test]
+fn steam_helper_resolution_requires_an_executable_and_prefers_siblings() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let bin = root.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let sibling = root.path().join("skwd-steam");
+    let searched = bin.join("skwd-steam");
+    std::fs::write(&sibling, b"helper").unwrap();
+    std::fs::write(&searched, b"helper").unwrap();
+    std::fs::set_permissions(&searched, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let exe = root.path().join("skwd-walld");
+    assert_eq!(super::resolve_steam_bin(Some(&exe), Some(bin.as_os_str())), Some(searched));
+    std::fs::set_permissions(&sibling, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(super::resolve_steam_bin(Some(&exe), Some(bin.as_os_str())), Some(sibling));
+    assert_eq!(super::resolve_steam_bin(None, None), None);
+    assert!(
+        super::helper_spawn_error(&std::io::ErrorKind::NotFound.into())
+            .contains("skwd-deck-steamworks")
+    );
+}
