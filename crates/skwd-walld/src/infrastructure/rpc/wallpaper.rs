@@ -47,6 +47,22 @@ pub(super) fn signal_ready(
     }
 }
 
+pub(super) fn signal_failed(
+    renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
+    req: &Request,
+) {
+    if let Some(pid) = req
+        .params
+        .get("pid")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|pid| u32::try_from(pid).ok())
+    {
+        let message: String =
+            req.str_param("message", "Renderer failed").chars().take(4096).collect();
+        renderers.signal_failed(pid, &message);
+    }
+}
+
 pub(super) fn preheat(req: &Request) -> Response {
     let path = req.str_param("path", "").to_string();
     if !path.is_empty() {

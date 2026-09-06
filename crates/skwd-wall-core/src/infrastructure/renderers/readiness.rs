@@ -6,7 +6,7 @@ use crate::lock;
 
 #[derive(Default)]
 struct ReadyGate {
-    done: Mutex<bool>,
+    done: Mutex<Option<Result<(), String>>>,
     changed: Condvar,
 }
 
@@ -25,9 +25,9 @@ impl ReadyWaiter {
         let (done, _) = self
             .gate
             .changed
-            .wait_timeout_while(done, timeout, |ready| !*ready)
+            .wait_timeout_while(done, timeout, |ready| ready.is_none())
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *done
+        matches!(*done, Some(Ok(())))
     }
 }
 
@@ -46,8 +46,19 @@ impl ReadinessRegistry {
 
     pub(super) fn signal(&self, pid: u32) {
         let gate = self.gate(pid);
-        *lock(&gate.done) = true;
-        gate.changed.notify_all();
+        Self::complete_gate(&gate, Ok(()));
+    }
+
+    pub(super) fn fail(&self, pid: u32, message: &str) {
+        Self::complete_gate(&self.gate(pid), Err(message.to_owned()));
+    }
+
+    fn complete_gate(gate: &ReadyGate, result: Result<(), String>) {
+        let mut done = lock(&gate.done);
+        if done.is_none() {
+            *done = Some(result);
+            gate.changed.notify_all();
+        }
     }
 
     pub(super) fn arm(&self, pid: u32) {
@@ -63,13 +74,17 @@ impl ReadinessRegistry {
     }
 
     pub(super) fn wait(&self, pid: u32, timeout: Duration) -> bool {
+        self.wait_result(pid, timeout).is_ok()
+    }
+
+    pub(super) fn wait_result(&self, pid: u32, timeout: Duration) -> Result<(), String> {
         let gate = self.gate(pid);
         let done = lock(&gate.done);
         let (done, _) = gate
             .changed
-            .wait_timeout_while(done, timeout, |ready| !*ready)
+            .wait_timeout_while(done, timeout, |ready| ready.is_none())
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ready = *done;
+        let ready = done.clone().unwrap_or_else(|| Err("Renderer readiness timed out".into()));
         drop(done);
         lock(&self.gates).remove(&pid);
         ready

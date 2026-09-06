@@ -316,9 +316,11 @@ fn native_scene<'a>(
             state.renderers().scene_swap(&renderer_key, &dir, mute, volume, overrides)
         };
         if swapped {
-            if pid.is_some_and(|pid| {
-                state.renderers().wait_ready(pid, apply::NATIVE_SCENE_READY_TIMEOUT)
-            }) {
+            if let Some(pid) = pid {
+                state
+                    .renderers()
+                    .wait_ready_result(pid, apply::NATIVE_SCENE_READY_TIMEOUT)
+                    .map_err(anyhow::Error::msg)?;
                 log::info!("we scene: warm swap via running native renderer");
                 return Ok(NativeSceneCandidate {
                     key: renderer_key,

@@ -78,37 +78,36 @@ pub(super) fn supervise_scan(
     timeout: Duration,
     tracking: Option<(Arc<TaskRegistry>, Arc<Stats>)>,
 ) {
-    match command.spawn() {
+    let binary = binary.to_path_buf();
+    let state = Arc::clone(state);
+    std::thread::spawn(move || match command.spawn() {
         Ok(mut child) => {
             let pid = child.id();
             state.scanner().set_scanner_pid(pid);
             log::info!("spawned scanner {} (pid {pid})", binary.display());
-            let state = Arc::clone(state);
-            std::thread::spawn(move || {
-                let (task_state, detail) = match wait_bounded(&mut child, timeout) {
-                    Ok(WaitOutcome::Exited(status)) if status.success() => {
-                        (TaskState::Completed, "Scan completed".to_string())
-                    }
-                    Ok(WaitOutcome::Exited(status)) => {
-                        log::warn!("scanner pid {pid} exited with {status}");
-                        (TaskState::Failed, format!("Scanner exited with {status}"))
-                    }
-                    Ok(WaitOutcome::TimedOut) => {
-                        log::warn!("scanner pid {pid} exceeded {timeout:?} and was killed");
-                        (TaskState::Failed, format!("Scan timed out after {timeout:?}"))
-                    }
-                    Err(error) => {
-                        log::warn!("scanner pid {pid} wait failed: {error}");
-                        (TaskState::Failed, format!("Scanner wait failed: {error}"))
-                    }
-                };
-                state.scanner().set_scanner_pid(0);
-                if let Some((tasks, stats)) = tracking
-                    && tasks.finish_if_active("scan", task_state, detail)
-                {
-                    stats.set_task("idle");
+            let (task_state, detail) = match wait_bounded(&mut child, timeout) {
+                Ok(WaitOutcome::Exited(status)) if status.success() => {
+                    (TaskState::Completed, "Scan completed".to_string())
                 }
-            });
+                Ok(WaitOutcome::Exited(status)) => {
+                    log::warn!("scanner pid {pid} exited with {status}");
+                    (TaskState::Failed, format!("Scanner exited with {status}"))
+                }
+                Ok(WaitOutcome::TimedOut) => {
+                    log::warn!("scanner pid {pid} exceeded {timeout:?} and was killed");
+                    (TaskState::Failed, format!("Scan timed out after {timeout:?}"))
+                }
+                Err(error) => {
+                    log::warn!("scanner pid {pid} wait failed: {error}");
+                    (TaskState::Failed, format!("Scanner wait failed: {error}"))
+                }
+            };
+            state.scanner().set_scanner_pid(0);
+            if let Some((tasks, stats)) = tracking
+                && tasks.finish_if_active("scan", task_state, detail)
+            {
+                stats.set_task("idle");
+            }
         }
         Err(error) => {
             log::warn!("failed to spawn scanner {}: {error}", binary.display());
@@ -122,7 +121,7 @@ pub(super) fn supervise_scan(
                 stats.set_task("idle");
             }
         }
-    }
+    });
 }
 
 pub(super) fn spawn_remote_thumbnails(source: &str, jobs: &[(String, String)]) {

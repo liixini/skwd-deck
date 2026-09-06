@@ -121,6 +121,7 @@ pub(super) fn steam_download(ctx: &Ctx, request: &Request) -> Response {
     }
     let wallpaper_engine_dir = state.config().we_dir();
     if wallpaper_engine_dir.join(&id).is_dir() {
+        workers.scan(&[], None);
         steam_dl_event(events.as_ref(), &id, "done", 1.0);
         return Response::ok(request.id, json!({"id": id, "status": "exists"}));
     }

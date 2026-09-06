@@ -489,3 +489,93 @@ fn preview_metadata_takes_precedence_and_stays_inside_item() {
         assert_eq!(find_preview(&item), Some(item.join("preview.png")));
     }
 }
+
+#[test]
+fn rejected_warm_swaps_preserve_incumbent_and_allow_next_scene() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::tempdir().unwrap();
+    for id in ["42", "43", "44"] {
+        let item = dir.path().join("we").join(id);
+        std::fs::create_dir_all(&item).unwrap();
+        std::fs::write(item.join("scene.pkg"), b"renderer fixture").unwrap();
+    }
+    let bin = dir.path().join("renderer");
+    let input = dir.path().join("input");
+    std::fs::write(
+        &bin,
+        format!(
+            "#!/bin/sh\nwhile IFS= read -r line; do printf '%s\\n' \"$line\" >> '{}'; done\n",
+            input.display(),
+        ),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+    std::fs::set_permissions(&bin, permissions).unwrap();
+    let state = WallState::test_new(serde_json::json!({
+        "paths": {
+            "steamWorkshop": dir.path().join("we").display().to_string(),
+            "paperVkBin": bin.display().to_string(),
+            "cache": dir.path().join("cache").display().to_string(),
+        },
+        "transition": {"enabled": false},
+        "weRender": {"native": true},
+    }));
+    std::fs::create_dir_all(state.config().cache_dir()).unwrap();
+    let stop = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| {
+            let mut started = false;
+            let mut consumed = 0;
+            while !stop.load(Ordering::Relaxed) {
+                if let Some(pid) = state.renderers().wallpaper_pids().first().copied() {
+                    if !started {
+                        state.renderers().signal_ready(pid);
+                        started = true;
+                    }
+                    let text = std::fs::read_to_string(&input).unwrap_or_default();
+                    for line in text.lines().skip(consumed) {
+                        let request: serde_json::Value = serde_json::from_str(line).unwrap();
+                        if request["to"].as_str().is_some_and(|path| path.ends_with("/43")) {
+                            state
+                                .renderers()
+                                .signal_failed(pid, "parse scene.pkg: truncated entry");
+                        } else {
+                            state.renderers().signal_ready(pid);
+                        }
+                        consumed += 1;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+        let result = (|| -> anyhow::Result<()> {
+            let first = spawn_scene_for(&state, &["DP-1".into()], "42", true, 100, true)?;
+            commit_scene_set(&state, vec![first])?;
+            let incumbent = state.renderers().video_paper_pid("DP-1").unwrap();
+            let started = Instant::now();
+            for _ in 0..4 {
+                let error = spawn_scene_for(&state, &["DP-1".into()], "43", true, 100, true)
+                    .err()
+                    .expect("broken scene must be rejected");
+                assert_eq!(error.to_string(), "parse scene.pkg: truncated entry");
+                assert_eq!(state.renderers().video_paper_pid("DP-1"), Some(incumbent));
+            }
+            let next = spawn_scene_for(&state, &["DP-1".into()], "44", true, 100, true)?;
+            assert!(next.renderer.is_none(), "reuse the incumbent after rejection");
+            commit_scene_set(&state, vec![next])?;
+            assert_eq!(state.renderers().video_paper_pid("DP-1"), Some(incumbent));
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "rejections must not build a timeout backlog"
+            );
+            Ok(())
+        })();
+        stop.store(true, Ordering::Relaxed);
+        worker.join().unwrap();
+        state.renderers().kill_all();
+        result.unwrap();
+    });
+}

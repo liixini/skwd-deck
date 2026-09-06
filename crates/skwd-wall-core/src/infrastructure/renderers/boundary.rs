@@ -9,6 +9,10 @@ impl RendererSupervision for RendererSupervisor {
         Self::signal_ready(self, pid);
     }
 
+    fn signal_failed(&self, pid: u32, message: &str) {
+        Self::signal_failed(self, pid, message);
+    }
+
     fn reap_exited(&self) {
         self.reap_exited_paper();
     }

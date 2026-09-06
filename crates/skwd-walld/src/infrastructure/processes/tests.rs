@@ -95,6 +95,33 @@ fn successful_exit_finishes_unreported_scan() {
 }
 
 #[test]
+fn scanner_survives_the_download_thread_that_requested_it() {
+    let (_guard, root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({}));
+    let (state, events, stats) = crate::testenv::harness();
+    let tasks = Arc::new(crate::infrastructure::tasks::TaskRegistry::new(events));
+    tasks.update(wall_proto::TaskStatus::running("scan", "scan", "Scanning wallpapers"));
+    let gate = root.join("download-thread-exited");
+    let _ = std::fs::remove_file(&gate);
+    let mut command = crate::infrastructure::proc::tool("/bin/sh");
+    command.args(["-c", "while ! test -e \"$1\"; do sleep 0.01; done", "scanner"]).arg(&gate);
+    let tracked = Arc::clone(&tasks);
+    std::thread::spawn(move || {
+        super::scanner::supervise_scan(
+            std::path::Path::new("/bin/sh"),
+            command,
+            &state,
+            std::time::Duration::from_secs(1),
+            Some((tracked, stats)),
+        );
+    })
+    .join()
+    .unwrap();
+    std::fs::write(gate, b"download thread has exited").unwrap();
+    wait_for_task(&tasks, wall_proto::TaskState::Completed);
+}
+
+#[test]
 fn exit_fallback_preserves_reported_completion() {
     let (_guard, _root) = crate::testenv::lock();
     crate::testenv::write_config(serde_json::json!({}));

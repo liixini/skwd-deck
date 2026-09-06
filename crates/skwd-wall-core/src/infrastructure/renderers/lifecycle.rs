@@ -15,6 +15,14 @@ impl RendererSupervisor {
         self.ready.signal(pid);
     }
 
+    pub fn signal_failed(&self, pid: u32, message: &str) {
+        self.ready.fail(pid, message);
+    }
+
+    pub fn wait_ready_result(&self, pid: u32, timeout: Duration) -> Result<(), String> {
+        self.ready.wait_result(pid, timeout)
+    }
+
     pub fn wait_ready(&self, pid: u32, timeout: Duration) -> bool {
         self.ready.wait(pid, timeout)
     }

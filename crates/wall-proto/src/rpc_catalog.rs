@@ -5,6 +5,7 @@ pub mod rpc {
     pub const SUBSCRIBE: &str = "subscribe";
     pub const DIAG: &str = "diag";
     pub const PAPER_READY: &str = "paper.ready";
+    pub const PAPER_FAILED: &str = "paper.failed";
 
     pub const PICKER_SESSION_BEGIN: &str = "picker.session.begin";
     pub const PICKER_SESSION_END: &str = "picker.session.end";
@@ -98,6 +99,7 @@ pub mod rpc {
         SUBSCRIBE,
         DIAG,
         PAPER_READY,
+        PAPER_FAILED,
         PICKER_SESSION_BEGIN,
         PICKER_SESSION_END,
         WALL_LIST,

@@ -7,6 +7,8 @@ use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
 
+mod steamworks_process;
+
 fn event_hub() -> Arc<EventHub> {
     Arc::new(EventHub::new(Arc::new(crate::infrastructure::stats::Stats::new())))
 }

@@ -800,3 +800,44 @@ fn noop_gate_needs_all_alive() {
     assert!(!st.renderer_alive("video"));
     st.kill_video_papers();
 }
+
+#[test]
+fn rejected_ready_wait_wakes_with_reason() {
+    let registry = Arc::new(ReadinessRegistry::default());
+    let waiting = Arc::clone(&registry);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        sender.send(waiting.wait_result(7, Duration::from_secs(10))).unwrap();
+    });
+    registry.fail(7, "Broken scene texture");
+    let result = receiver.recv_timeout(Duration::from_secs(1)).expect("failure must wake waiter");
+    assert_eq!(result, Err("Broken scene texture".into()));
+    waiter.join().unwrap();
+}
+
+#[test]
+fn rejected_ready_waiter_is_not_success() {
+    let registry = ReadinessRegistry::default();
+    let waiter = registry.waiter(7);
+    registry.fail(7, "Broken scene texture");
+    registry.signal(7);
+    assert!(!waiter.wait(Duration::ZERO));
+}
+
+#[test]
+fn rejection_does_not_delay_next_selection() {
+    let registry = ReadinessRegistry::default();
+    let start = std::time::Instant::now();
+    for _ in 0..4 {
+        registry.arm(7);
+        registry.fail(7, "Broken scene texture");
+        assert_eq!(
+            registry.wait_result(7, Duration::from_secs(10)),
+            Err("Broken scene texture".into())
+        );
+    }
+    registry.arm(7);
+    registry.signal(7);
+    assert!(registry.wait_result(7, Duration::from_secs(10)).is_ok());
+    assert!(start.elapsed() < Duration::from_secs(1));
+}

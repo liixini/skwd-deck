@@ -65,6 +65,10 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         signal_ready(ctx.renderers.as_ref(), req);
         return Response::ok(req.id, json!({"ok": true}));
     }
+    if req.method == rpc::PAPER_FAILED {
+        signal_failed(ctx.renderers.as_ref(), req);
+        return Response::ok(req.id, json!({"ok": true}));
+    }
     match req.method.as_str() {
         rpc::STATUS => Response::ok(req.id, runtime_status(ctx)),
         rpc::PICKER_SESSION_BEGIN => Response::ok(req.id, json!({"ok": true, "visible": true})),

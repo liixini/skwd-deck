@@ -245,6 +245,20 @@ fn steam_download_gates() {
 }
 
 #[test]
+fn existing_workshop_download_refreshes_the_library() {
+    let (_guard, _root) = testenv::lock();
+    testenv::write_config(json!({}));
+    let (state, subs, stats) = harness();
+    let directory = state.config().we_dir().join("123456789");
+    std::fs::create_dir_all(&directory).unwrap();
+    let scans_before = testenv::scan_calls();
+    let response = call(&state, &subs, &stats, "steam.download", json!({"id": "123456789"}));
+    assert_eq!(response.result.as_ref().unwrap()["status"], "exists");
+    assert_eq!(testenv::scan_calls(), scans_before + 1);
+    std::fs::remove_dir(&directory).unwrap();
+}
+
+#[test]
 fn source_alias_routing() {
     let (_guard, _root) = testenv::lock();
     testenv::write_config(json!({"features": {"steam": false}}));
@@ -792,6 +806,65 @@ fn ready_fast_path_saturated_pool() {
     );
     let resp: Response = serde_json::from_str(&line).unwrap();
     assert_eq!(rr(resp)["ok"], json!(true));
+    stall.store(false, Ordering::Release);
+    drop(writer);
+    drop(reader);
+    runtime.block_on(task).unwrap();
+}
+
+#[test]
+fn failure_fast_path_saturated_pool() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (_guard, _root) = testenv::lock();
+    testenv::write_config(json!({}));
+    let (state, subs, stats) = harness();
+    let ctx = testenv::context(&state, &subs, &stats);
+    state.renderers().arm_ready_gate(424242);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    let stall = std::sync::Arc::new(AtomicBool::new(true));
+    for _ in 0..64 {
+        let stall = std::sync::Arc::clone(&stall);
+        runtime.spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
+                while stall.load(Ordering::Acquire) {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            })
+            .await;
+        });
+    }
+    let (client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+    client.set_read_timeout(Some(std::time::Duration::from_millis(200))).unwrap();
+    let task = runtime.spawn(async move {
+        server.set_nonblocking(true).unwrap();
+        let server = tokio::net::UnixStream::from_std(server).unwrap();
+        super::handle_conn(server, &ctx).await;
+    });
+    let mut writer = client.try_clone().unwrap();
+    let mut reader = BufReader::new(client);
+    let mut line = String::new();
+    let started = std::time::Instant::now();
+    writer
+        .write_all(b"{\"method\":\"paper.failed\",\"id\":11,\"params\":{\"pid\":424242}}\n")
+        .unwrap();
+    reader.read_line(&mut line).expect("paper.failed reply");
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(200),
+        "elapsed {:?}",
+        started.elapsed()
+    );
+    let resp: Response = serde_json::from_str(&line).unwrap();
+    assert_eq!(rr(resp)["ok"], json!(true));
+    assert_eq!(
+        state.renderers().wait_ready_result(424242, std::time::Duration::ZERO),
+        Err("Renderer failed".into())
+    );
     stall.store(false, Ordering::Release);
     drop(writer);
     drop(reader);

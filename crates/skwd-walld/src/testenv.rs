@@ -36,6 +36,11 @@ static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
 
 static LOCK: Mutex<()> = Mutex::new(());
 static IMAGE_OPTIMIZE_CALLS: AtomicUsize = AtomicUsize::new(0);
+static SCAN_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn scan_calls() -> usize {
+    SCAN_CALLS.load(Ordering::Acquire)
+}
 #[derive(Clone, Copy)]
 pub(crate) enum TinierTestOutcome {
     Success,
@@ -97,7 +102,9 @@ pub(crate) fn write_config(extra: serde_json::Value) {
 struct TestWorkers;
 
 impl MediaWorkerSupervisor for TestWorkers {
-    fn scan(&self, _extra: &[&str], _request_id: Option<&str>) {}
+    fn scan(&self, _extra: &[&str], _request_id: Option<&str>) {
+        SCAN_CALLS.fetch_add(1, Ordering::AcqRel);
+    }
 
     fn remote_thumbnails(&self, _source: &str, _jobs: &[(String, String)]) {}
 

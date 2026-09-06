@@ -294,7 +294,15 @@ pub(crate) fn run_steamworks_download(
     we_dir: &std::path::Path,
     ids: &[String],
 ) -> bool {
-    let mut cmd = crate::infrastructure::proc::tool(steam_bin());
+    run_steamworks_command(publisher, we_dir, ids, crate::infrastructure::proc::tool(steam_bin()))
+}
+
+fn run_steamworks_command(
+    publisher: &dyn EventPublisher,
+    we_dir: &std::path::Path,
+    ids: &[String],
+    mut cmd: std::process::Command,
+) -> bool {
     cmd.args(ids)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

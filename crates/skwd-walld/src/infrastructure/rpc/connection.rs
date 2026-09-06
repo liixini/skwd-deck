@@ -15,8 +15,13 @@ use crate::infrastructure::stats::Stats;
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_GENERATED_LISTS_PER_CONNECTION: usize = 8;
-const INLINE_METHODS: [&str; 4] =
-    [rpc::PAPER_READY, rpc::SUBSCRIBE, rpc::PICKER_SESSION_BEGIN, rpc::PICKER_SESSION_END];
+const INLINE_METHODS: [&str; 5] = [
+    rpc::PAPER_READY,
+    rpc::PAPER_FAILED,
+    rpc::SUBSCRIBE,
+    rpc::PICKER_SESSION_BEGIN,
+    rpc::PICKER_SESSION_END,
+];
 
 fn next_conn_id() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
