@@ -257,6 +257,15 @@ pub fn has_entry(conn: &Connection, key: &str) -> bool {
     .unwrap_or(false)
 }
 
+pub fn invalidate_source_mtimes(
+    conn: &Connection,
+    images: bool,
+    videos: bool,
+    workshop: bool,
+) -> rusqlite::Result<usize> {
+    conn.execute("UPDATE meta SET mtime = -1 WHERE (?1 AND key LIKE 'static:%') OR (?2 AND key LIKE 'video:%') OR (?3 AND key LIKE 'we:%')", params![images, videos, workshop])
+}
+
 pub fn known_keys(conn: &Connection) -> rusqlite::Result<Vec<(String, i64)>> {
     let mut stmt = conn.prepare("SELECT key, COALESCE(mtime, 0) FROM meta")?;
     let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;

@@ -47,6 +47,19 @@ pub fn battery_wallpaper_performance(root: &Value) -> bool {
     crate::bool_false_unless_true(root, keys::performance::BATTERY_WALLPAPER_PERFORMANCE)
 }
 
+pub fn configured_gpu_device(root: &Value) -> String {
+    let value = str_at(root, keys::performance::GPU_DEVICE, "auto");
+    let value = value.trim();
+    if value
+        .strip_prefix("uuid:")
+        .is_some_and(|uuid| uuid.len() == 32 && uuid.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    {
+        value.to_ascii_lowercase()
+    } else {
+        String::from("auto")
+    }
+}
+
 pub fn configured_gpu_preference(root: &Value) -> &'static str {
     match str_at(root, keys::performance::GPU_PREFERENCE, "auto").as_str() {
         "low" => "low",

@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::sync::Mutex;
 
 fn walld_log_path() -> std::path::PathBuf {
@@ -7,12 +7,15 @@ fn walld_log_path() -> std::path::PathBuf {
 }
 
 struct TeeLog {
-    file: Mutex<std::fs::File>,
+    file: Mutex<skwd_log::RotatingWriter>,
+    mirror_stderr: bool,
 }
 
 impl Write for TeeLog {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let _ = std::io::stderr().write_all(buf);
+        if self.mirror_stderr {
+            let _ = std::io::stderr().write_all(buf);
+        }
         if let Ok(mut file) = self.file.lock() {
             let _ = file.write_all(buf);
         }
@@ -50,18 +53,11 @@ pub(crate) fn init_logging(level: &str) {
         let _ = std::fs::create_dir_all(dir);
     }
     let redirected = stderr_is(&path);
-    skwd_log::rotate_if_large(&path, skwd_log::ROTATE_BYTES);
-    if let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(&path)
-    {
-        let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
-        if redirected {
-            use std::os::fd::AsRawFd;
-            unsafe {
-                libc::dup2(file.as_raw_fd(), 2);
-            }
-        } else {
-            builder.target(env_logger::Target::Pipe(Box::new(TeeLog { file: Mutex::new(file) })));
-        }
+    if let Ok(file) = skwd_log::RotatingWriter::new(path) {
+        builder.target(env_logger::Target::Pipe(Box::new(TeeLog {
+            file: Mutex::new(file),
+            mirror_stderr: !redirected,
+        })));
     }
     builder.init();
 }

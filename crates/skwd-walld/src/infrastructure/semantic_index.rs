@@ -108,21 +108,24 @@ async fn refresh(
 ) -> anyhow::Result<()> {
     let snapshot_config = Arc::clone(config);
     let snapshot_database = Arc::clone(database);
-    let snapshot =
-        tokio::task::spawn_blocking(move || -> anyhow::Result<Option<RefreshSnapshot>> {
-            let paths = discover_paths(&snapshot_config)
-                .ok_or_else(|| anyhow::anyhow!("semantic pack unavailable"))?;
-            let request = catalog_request(&snapshot_database, paths.multiview)?;
-            if request.entries.is_empty() {
-                return Ok(None);
-            }
-            let rebuilt = !index_current(&paths, request.fingerprint);
-            Ok(Some((paths, request, rebuilt)))
-        })
-        .await??;
-    let Some((paths, request, rebuilt)) = snapshot else {
+    let snapshot = tokio::task::spawn_blocking(move || -> anyhow::Result<RefreshSnapshot> {
+        let paths = discover_paths(&snapshot_config)
+            .ok_or_else(|| anyhow::anyhow!("semantic pack unavailable"))?;
+        let request = catalog_request(&snapshot_database, paths.multiview)?;
+        let rebuilt = !index_current(&paths, request.fingerprint);
+        Ok((paths, request, rebuilt))
+    })
+    .await??;
+    let (paths, request, rebuilt) = snapshot;
+    if request.entries.is_empty() {
+        let index = paths.index.clone();
+        tokio::task::spawn_blocking(move || clear_index(&index)).await??;
+        events.publish(
+            ev::SEMANTIC_INDEX_READY,
+            serde_json::json!({"items": 0, "fingerprint": request.fingerprint}),
+        );
         return Ok(());
-    };
+    }
     if rebuilt {
         let mut task = TaskStatus::running("semantic-index", "index", "Updating search index");
         task.detail = String::from("Checking cached embeddings");
@@ -137,6 +140,17 @@ async fn refresh(
             ev::SEMANTIC_INDEX_READY,
             serde_json::json!({"items": request.entries.len(), "fingerprint": request.fingerprint}),
         );
+    }
+    Ok(())
+}
+
+fn clear_index(index: &Path) -> std::io::Result<()> {
+    for path in [index.to_path_buf(), PathBuf::from(format!("{}.fingerprint", index.display()))] {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
     }
     Ok(())
 }
@@ -281,6 +295,7 @@ fn request_from_rows(rows: &[serde_json::Value], multiview: bool) -> BuildReques
         key.hash(&mut catalog_hasher);
         thumb.hash(&mut catalog_hasher);
         mtime.hash(&mut catalog_hasher);
+        entry_fingerprint(thumb, mtime, ImageView::Full).hash(&mut catalog_hasher);
         entries.push(BuildEntry {
             key: key.to_string(),
             path: PathBuf::from(thumb),
@@ -323,6 +338,10 @@ fn entry_fingerprint(thumb: &str, mtime: i64, view: ImageView) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     thumb.hash(&mut hasher);
     mtime.hash(&mut hasher);
+    if let Ok(metadata) = std::fs::metadata(thumb) {
+        metadata.len().hash(&mut hasher);
+        metadata.modified().ok().hash(&mut hasher);
+    }
     match view {
         ImageView::Full => {}
         ImageView::Center => "center".hash(&mut hasher),

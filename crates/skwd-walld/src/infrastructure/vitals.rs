@@ -119,11 +119,7 @@ pub(crate) fn vitals_path() -> std::path::PathBuf {
 
 fn append_sample(line: &serde_json::Value) {
     let path = vitals_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    skwd_log::rotate_if_large(&path, skwd_log::ROTATE_BYTES);
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut file) = skwd_log::RotatingWriter::new(path) {
         let _ = writeln!(file, "{line}");
     }
 }

@@ -50,6 +50,7 @@ pub mod keys {
         pub const CLOSE_ON_SELECTION: &str = "general.closeOnSelection";
         pub const FILTER_BAR_ALWAYS_VISIBLE: &str = "general.filterBarAlwaysVisible";
         pub const LOCALE: &str = "general.locale";
+        pub const LANGUAGE: &str = "general.language";
         pub const MAX_FPS: &str = "general.maxFps";
         pub const NOTIFY_ON_WALLPAPER_CHANGE: &str = "general.notifyOnWallpaperChange";
         pub const OPEN_FADE_FROM: &str = "general.openFadeFrom";
@@ -476,6 +477,7 @@ pub mod keys {
         pub const BATTERY_SAVER: &str = "performance.batterySaver";
         pub const BATTERY_VIDEO_IDLE_SECONDS: &str = "performance.batteryVideoIdleSeconds";
         pub const BATTERY_WALLPAPER_PERFORMANCE: &str = "performance.batteryWallpaperPerformance";
+        pub const GPU_DEVICE: &str = "performance.gpuDevice";
         pub const GPU_PREFERENCE: &str = "performance.gpuPreference";
         pub const IMAGE_OPTIMIZE_PRESET: &str = "performance.imageOptimizePreset";
         pub const IMAGE_OPTIMIZE_RESOLUTION: &str = "performance.imageOptimizeResolution";

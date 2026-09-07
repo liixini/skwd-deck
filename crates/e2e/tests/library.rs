@@ -312,3 +312,27 @@ fn library_scan_watch_move_delete() {
     }
     checks.finish();
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn localized_pictures_default_imports_without_configured_path() {
+    let mut sandbox = Sandbox::new("localized-pictures");
+    let home = sandbox.root.join("home");
+    let library = home.join("Imágenes/Wallpapers");
+    fs::create_dir_all(&library).unwrap();
+    sandbox.set_env("HOME", home.to_str().unwrap());
+    fs::write(sandbox.root.join("config/user-dirs.dirs"), "XDG_PICTURES_DIR=\"$HOME/Imágenes\"\n")
+        .unwrap();
+    let image = library.join("夜の空 con espacios.png");
+    assert!(ffmpeg_still(&image, "color=c=blue:s=96x64"));
+    sandbox.write_config(&json!({"pickOnlyMode":true,"restoreOnStartup":false}));
+    let walld = Walld::start(&sandbox);
+    let (_, _, count) =
+        wait_count(&mut walld.client(), &library, 1, walld.pid(), Duration::from_secs(30));
+    assert_eq!(count, 1, "{}", walld.log_contents());
+    assert_eq!(list_items(&mut walld.client(), &library)[0].path, image);
+    assert!(!home.join("Pictures/Wallpapers").exists());
+}
+
+#[path = "library/source_switch.rs"]
+mod source_switch;

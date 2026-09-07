@@ -16,6 +16,8 @@ const WATCH_BATCH_CAP: usize = 512;
 static WATCH_SCAN_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 mod polling;
+mod session;
+pub(crate) use session::start_watcher;
 mod status;
 
 fn watch_status_path() -> std::path::PathBuf {
@@ -179,87 +181,6 @@ fn flush_watch_batch(
 fn next_scan_request_id() -> String {
     let sequence = WATCH_SCAN_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     format!("watch-{}-{sequence}", std::process::id())
-}
-
-pub(crate) fn start_watcher(ctx: crate::composition::context::Ctx) {
-    let crate::composition::context::Ctx { state, events, workers, stats, .. } = ctx;
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
-    let roots = media_roots(&state);
-    let (polling_enabled, poll_interval) = {
-        let config = state.config();
-        (
-            config.library_polling_fallback(),
-            std::time::Duration::from_secs(config.library_polling_interval_seconds()),
-        )
-    };
-    let cfg_path = skwd_wall_core::config::config_path();
-    let mut watcher = match create_watcher(tx.clone()) {
-        Ok(watcher) => watcher,
-        Err(error) => {
-            let detail = format!("watcher init failed: {error}");
-            if !polling_enabled || roots.is_empty() {
-                record_watch_failure(events.as_ref(), &detail);
-                return;
-            }
-            let polling_roots = roots
-                .iter()
-                .cloned()
-                .map(|path| polling::PollingRoot::new(path, detail.clone()))
-                .collect::<Vec<_>>();
-            record_polling_fallback(events.as_ref(), &polling_roots, poll_interval);
-            tokio::spawn(watch_loop(
-                None,
-                rx,
-                tx.clone(),
-                cfg_path.clone(),
-                state.clone(),
-                events.clone(),
-                workers.clone(),
-                stats.clone(),
-            ));
-            tokio::spawn(poll_failed_roots(
-                polling_roots,
-                poll_interval,
-                tx,
-                cfg_path,
-                true,
-                state,
-                events,
-                workers,
-                stats,
-            ));
-            return;
-        }
-    };
-
-    let polling_roots = watch_media_dirs(&mut watcher, &roots);
-    watch_config_dir(&mut watcher, &cfg_path);
-    watch_theme_dirs(&mut watcher);
-    if polling_roots.is_empty() {
-        status::record_native(events.as_ref(), "native library watch is active", false);
-    } else if polling_enabled {
-        record_polling_fallback(events.as_ref(), &polling_roots, poll_interval);
-        tokio::spawn(poll_failed_roots(
-            polling_roots,
-            poll_interval,
-            tx.clone(),
-            cfg_path.clone(),
-            false,
-            state.clone(),
-            events.clone(),
-            workers.clone(),
-            stats.clone(),
-        ));
-    } else {
-        let detail = polling_roots
-            .iter()
-            .map(|root| format!("{}: {}", root.path.display(), root.reason))
-            .collect::<Vec<_>>()
-            .join("; ");
-        record_watch_failure(events.as_ref(), &detail);
-    }
-
-    tokio::spawn(watch_loop(Some(watcher), rx, tx, cfg_path, state, events, workers, stats));
 }
 
 fn create_watcher(
@@ -579,11 +500,10 @@ async fn watch_loop(
     mut rx: UnboundedReceiver<notify::Event>,
     _keepalive: UnboundedSender<notify::Event>,
     cfg_path: std::path::PathBuf,
-    state: Arc<WallState>,
-    publisher: Arc<EventHub>,
-    workers: Arc<dyn MediaWorkerSupervisor>,
-    stats: Arc<Stats>,
-) {
+    ctx: crate::composition::context::Ctx,
+    settings: session::WatchSettings,
+) -> bool {
+    let crate::composition::context::Ctx { state, events: publisher, workers, stats, .. } = ctx;
     let mut pending: Vec<std::path::PathBuf> = Vec::new();
     let mut removed: Vec<std::path::PathBuf> = Vec::new();
     let mut first_seen: Option<std::time::Instant> = None;
@@ -600,8 +520,30 @@ async fn watch_loop(
                 &mut first_seen,
             ),
             WatchStep::Flush => true,
-            WatchStep::Closed => break,
+            WatchStep::Closed => return false,
         };
+        let current = session::WatchSettings::read(&state);
+        if settings != current {
+            let changed = std::array::from_fn::<_, 3, _>(|index| {
+                settings.directories[index] != current.directories[index]
+            });
+            let invalidate_state = state.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                invalidate_state.with_db(|connection| {
+                    db::invalidate_source_mtimes(
+                        connection,
+                        changed[0],
+                        changed[0] || changed[1],
+                        changed[2],
+                    )
+                })
+            })
+            .await;
+            if !matches!(result, Ok(Ok(_))) {
+                log::warn!("failed to invalidate previous source metadata: {result:?}");
+            }
+            return true;
+        }
         if flush_now {
             flush(&state, &publisher, &workers, &stats, &mut pending, &mut removed).await;
             first_seen = None;

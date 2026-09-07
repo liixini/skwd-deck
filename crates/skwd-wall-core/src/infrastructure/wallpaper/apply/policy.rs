@@ -11,6 +11,7 @@ const NATIVE_SCENE_PROPERTIES_KEY: &str = "sceneproperties";
 #[allow(clippy::struct_excessive_bools)]
 pub(super) struct PaperPolicy {
     pub(super) performance_mode: bool,
+    pub(super) gpu_device: String,
     pub(super) idle_pause_seconds: u32,
     pub(super) renderer_bin: String,
     pub(super) renderer_identity: String,
@@ -30,7 +31,8 @@ pub(super) struct PaperPolicy {
 impl PaperPolicy {
     pub(super) fn signature(&self) -> String {
         serde_json::json!([
-            "v4",
+            "v5",
+            self.gpu_device,
             self.performance_mode,
             self.idle_pause_seconds,
             self.renderer_bin,
@@ -80,6 +82,7 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         String::from("all")
     };
     PaperPolicy {
+        gpu_device: config.renderer().gpu_device(),
         performance_mode: config.renderer().performance_mode(),
         idle_pause_seconds: config.renderer().idle_pause_seconds(),
         renderer_bin: renderer.bin,

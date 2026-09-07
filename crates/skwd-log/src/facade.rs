@@ -1,14 +1,11 @@
-use std::fs::{File, OpenOptions};
 use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
 struct Logger {
-    file: Mutex<Option<File>>,
+    file: Mutex<Option<crate::RotatingWriter>>,
 }
 
 static LOGGER: Logger = Logger { file: Mutex::new(None) };
@@ -29,7 +26,7 @@ impl Log for Logger {
             level_tag(record.level()),
             record.args()
         );
-        eprint!("{line}");
+        let _ = std::io::stderr().write_all(line.as_bytes());
         if let Ok(mut guard) = self.file.lock()
             && let Some(file) = guard.as_mut()
         {
@@ -83,17 +80,10 @@ mod tests;
 pub fn init_facade(app: &str, debug: bool) {
     let level =
         level_filter(crate::level_from(debug, std::env::var("SKWD_WALL_LOG").ok().as_deref()));
-    if let Some(path) = super::prepare(app)
-        && let Ok(file) = {
-            let mut options = OpenOptions::new();
-            options.create(true).append(true);
-            #[cfg(unix)]
-            options.mode(0o600);
-            options.open(&path)
-        }
+    if let Some(path) = super::log_path(app)
+        && let Ok(file) = crate::RotatingWriter::new(path)
         && let Ok(mut guard) = LOGGER.file.lock()
     {
-        super::files::secure_mode(&path, 0o600);
         *guard = Some(file);
     }
     let _ = log::set_logger(&LOGGER);

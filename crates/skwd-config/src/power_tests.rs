@@ -124,3 +124,17 @@ fn percent_none_without_capacity() {
     std::fs::write(root.path().join("BAT0/capacity"), "101").unwrap();
     assert_eq!(battery_percent_at(root.path()), None);
 }
+
+#[test]
+fn manual_gpu_is_a_stable_uuid_or_automatic() {
+    let selected = serde_json::json!({"performance":{"gpuDevice":"uuid:ABCDEF0123456789ABCDEF0123456789", "batterySaver":true}});
+    assert_eq!(super::configured_gpu_device(&selected), "uuid:abcdef0123456789abcdef0123456789");
+    for value in
+        ["auto", "uuid:bad", "uuid:gggggggggggggggggggggggggggggggg", "0", "Integrated GPU"]
+    {
+        assert_eq!(
+            super::configured_gpu_device(&serde_json::json!({"performance":{"gpuDevice":value}})),
+            "auto"
+        );
+    }
+}

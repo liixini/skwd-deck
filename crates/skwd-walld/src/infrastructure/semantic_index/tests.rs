@@ -215,3 +215,16 @@ fn make_executable(path: &Path) {
 fn make_executable(path: &Path) {
     std::fs::write(path, b"").unwrap();
 }
+
+#[test]
+fn empty_catalog_removes_index_and_fingerprint() {
+    let directory = tempfile::tempdir().unwrap();
+    let index = directory.path().join("index.sidx");
+    let fingerprint = directory.path().join("index.sidx.fingerprint");
+    std::fs::write(&index, b"old embeddings").unwrap();
+    std::fs::write(&fingerprint, b"123").unwrap();
+    clear_index(&index).unwrap();
+    assert!(!index.exists());
+    assert!(!fingerprint.exists());
+    clear_index(&index).unwrap();
+}

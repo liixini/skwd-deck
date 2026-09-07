@@ -87,3 +87,13 @@ fn normalizes_writes() {
     assert_eq!(value_kind("filterBar.resolutionPresets.2.to"), Some(ValueKind::Text));
     assert_eq!(value_kind("filterBar.resolutionPresets.2.orientation"), Some(ValueKind::Text));
 }
+
+#[test]
+fn interface_language_is_independent_of_weather_location() {
+    let language = crate::keys::general::LANGUAGE;
+    assert_eq!(text_default(language), Some("auto"));
+    assert_eq!(normalize_value(language, &json!("es-ES")), Some(json!("es-ES")));
+    let data = json!({"general": {"language": "es-ES", "locale": "Stockholm"}});
+    assert_eq!(crate::str_at(&data, language, "auto"), "es-ES");
+    assert_eq!(crate::locale(&data), "Stockholm");
+}

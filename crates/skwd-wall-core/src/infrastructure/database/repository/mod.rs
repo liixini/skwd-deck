@@ -26,11 +26,11 @@ pub use tags::{
 };
 pub use wallpapers::{
     TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET, bump_apply_count, clear_cache, color_rows,
-    delete_by_name, delete_entries, has_entry, item_count, key_for_video_file, known_keys,
-    known_we_meta, list_wallpapers, list_wallpapers_json, random_pick, retire_video_converts,
-    set_favourite, thumb_for_key, thumb_for_video, tinier_convert_delete, tinier_convert_entry,
-    tinier_convert_record, tinier_convert_src, update_colors, update_duration, update_user_tags,
-    upsert_cache_entry,
+    delete_by_name, delete_entries, has_entry, invalidate_source_mtimes, item_count,
+    key_for_video_file, known_keys, known_we_meta, list_wallpapers, list_wallpapers_json,
+    random_pick, retire_video_converts, set_favourite, thumb_for_key, thumb_for_video,
+    tinier_convert_delete, tinier_convert_entry, tinier_convert_record, tinier_convert_src,
+    update_colors, update_duration, update_user_tags, upsert_cache_entry,
 };
 pub use we_properties::{
     MAX_WE_PROPERTIES, MAX_WE_PROPERTY_NAME, clear_we_properties, set_we_property,

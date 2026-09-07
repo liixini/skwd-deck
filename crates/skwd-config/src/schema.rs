@@ -535,6 +535,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::paper::AWWW_TRANSITION_POS, "center"),
     SettingSpec::text(crate::keys::performance::IMAGE_OPTIMIZE_PRESET, "balanced"),
     SettingSpec::text(crate::keys::performance::IMAGE_OPTIMIZE_RESOLUTION, "2k"),
+    SettingSpec::text(crate::keys::performance::GPU_DEVICE, "auto"),
     SettingSpec::text(crate::keys::performance::GPU_PREFERENCE, "auto"),
     SettingSpec::text(crate::keys::effects::AUTO_THEME, "Catppuccin"),
     SettingSpec::text(
@@ -543,6 +544,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     ),
     SettingSpec::text(crate::keys::system::MONITOR, ""),
     SettingSpec::text(crate::keys::general::LOCALE, ""),
+    SettingSpec::text(crate::keys::general::LANGUAGE, "auto"),
     SettingSpec::text(crate::keys::launch::ANIMATION, "fade"),
     SettingSpec::text(crate::keys::motion::FILTER_SWAP_SPEED, "slow"),
     SettingSpec::text(crate::keys::motion::LAUNCH_SPEED, "standard"),

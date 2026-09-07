@@ -533,7 +533,7 @@ fn read_root_garbage() {
 fn getters_non_object_root() {
     for root in [Value::Null, json!([]), json!("oops"), json!(42), json!(true)] {
         let cfg = Config::from_root(root.clone());
-        assert!(cfg.wallpaper_dir().ends_with("Pictures/Wallpapers"));
+        assert_eq!(cfg.wallpaper_dir(), skwd_config::wallpaper_dir(&Value::Null));
         assert_eq!(cfg.video_dir(), cfg.wallpaper_dir());
         assert!(!cfg.cache_dir().is_empty());
         assert_eq!(cfg.display().fill_mode(), "fill");

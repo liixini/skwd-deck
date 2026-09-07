@@ -6,6 +6,7 @@ license.workspace = true
 description = "Shared Skwd Wall config paths, atomic persistence, schema, and value primitives"
 
 [dependencies]
+dirs = "6"
 serde_json = { workspace = true }
 
 [dev-dependencies]

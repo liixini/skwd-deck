@@ -1,4 +1,5 @@
 mod scanner;
+mod scanner_log;
 mod supervisor;
 mod video_optimizer;
 

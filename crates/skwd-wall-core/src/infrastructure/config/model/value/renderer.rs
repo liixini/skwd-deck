@@ -22,6 +22,10 @@ impl<'a> RendererConfig<'a> {
         self.config.root()
     }
 
+    pub fn gpu_device(&self) -> String {
+        skwd_config::configured_gpu_device(self.root())
+    }
+
     pub fn video_engine(&self) -> String {
         match self.config.str_at(skwd_config::keys::paper::VIDEO_ENGINE, "vulkan").as_str() {
             "tinier" => "tinier".to_string(),

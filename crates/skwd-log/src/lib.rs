@@ -17,3 +17,6 @@ pub mod alloc;
 
 #[cfg(feature = "proc")]
 pub mod proc;
+
+mod writer;
+pub use writer::RotatingWriter;

@@ -29,43 +29,54 @@ fn landlock_abi_contract() {
     assert!(landlock::abi_version().unwrap() >= 3);
 }
 
+fn isolated_probe(name: &str, probe: impl FnOnce(&std::path::Path) -> i32) {
+    if std::env::var("SKWD_SANDBOX_TEST_CHILD").as_deref() == Ok(name) {
+        let root = std::env::var_os("SKWD_SANDBOX_TEST_DIR").unwrap();
+        std::process::exit(64 + probe(std::path::Path::new(&root)));
+    }
+    let root = std::env::temp_dir().join(format!("skwd-sandbox-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .env("SKWD_SANDBOX_TEST_CHILD", name)
+        .env("SKWD_SANDBOX_TEST_DIR", &root)
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let _ = std::fs::remove_dir_all(root);
+    assert_eq!(status.and_then(|status| status.code()), Some(64), "{name}: {status:?}");
+}
+
 #[test]
 fn enforcement_blocks_new_sockets_and_exec() {
-    let filter = deny_filter(BLOCKED);
-    let pid = unsafe { libc::fork() };
-    assert!(pid >= 0, "fork failed");
-    if pid == 0 {
-        let code = child_probe(&filter, true);
-        unsafe { libc::_exit(code) };
-    }
-    let mut status = 0;
-    unsafe { libc::waitpid(pid, &mut status, 0) };
-    assert!(libc::WIFEXITED(status), "child did not exit");
-    let code = libc::WEXITSTATUS(status);
-    assert_eq!(code, 0, "probe {code:#b}: bit1=inet bit2=unix bit3=exec bit4=inherited");
+    isolated_probe("sandbox::tests::enforcement_blocks_new_sockets_and_exec", |_| {
+        child_probe(&deny_filter(BLOCKED), true)
+    });
 }
 
 #[test]
 fn filesystem_policy_blocks_unlisted_paths() {
-    let root = std::env::temp_dir().join(format!("skwd-sandbox-{}", std::process::id()));
-    let allowed = root.join("allowed");
-    let denied = root.join("denied");
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&allowed).unwrap();
-    std::fs::create_dir_all(&denied).unwrap();
-    std::fs::write(allowed.join("read"), b"allowed").unwrap();
-    std::fs::write(denied.join("secret"), b"denied").unwrap();
-    let pid = unsafe { libc::fork() };
-    assert!(pid >= 0, "fork failed");
-    if pid == 0 {
-        let code = filesystem_probe(&allowed, &denied);
-        unsafe { libc::_exit(code) };
-    }
-    let mut status = 0;
-    unsafe { libc::waitpid(pid, &mut status, 0) };
-    let _ = std::fs::remove_dir_all(root);
-    assert!(libc::WIFEXITED(status), "child did not exit");
-    assert_eq!(libc::WEXITSTATUS(status), 0, "filesystem policy probe failed");
+    isolated_probe("sandbox::tests::filesystem_policy_blocks_unlisted_paths", |root| {
+        let allowed = root.join("allowed");
+        let denied = root.join("denied");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&denied).unwrap();
+        std::fs::write(allowed.join("read"), b"allowed").unwrap();
+        std::fs::write(denied.join("secret"), b"denied").unwrap();
+        filesystem_probe(&allowed, &denied)
+    });
 }
 
 fn filesystem_probe(allowed: &std::path::Path, denied: &std::path::Path) -> i32 {
@@ -97,22 +108,11 @@ fn filesystem_probe(allowed: &std::path::Path, denied: &std::path::Path) -> i32 
 
 #[test]
 fn root_alias_is_rejected() {
-    use std::os::unix::fs::symlink;
-
-    let root = std::env::temp_dir().join(format!("skwd-sandbox-root-{}", std::process::id()));
-    let _ = std::fs::remove_file(&root);
-    symlink("/", &root).unwrap();
-    let pid = unsafe { libc::fork() };
-    assert!(pid >= 0, "fork failed");
-    if pid == 0 {
-        let rejected = restrict_decode(&Policy::new().read(&root)).is_err();
-        unsafe { libc::_exit(i32::from(!rejected)) };
-    }
-    let mut status = 0;
-    unsafe { libc::waitpid(pid, &mut status, 0) };
-    let _ = std::fs::remove_file(root);
-    assert!(libc::WIFEXITED(status), "child did not exit");
-    assert_eq!(libc::WEXITSTATUS(status), 0, "root alias policy was accepted");
+    isolated_probe("sandbox::tests::root_alias_is_rejected", |root| {
+        let alias = root.join("root");
+        std::os::unix::fs::symlink("/", &alias).unwrap();
+        i32::from(restrict_decode(&Policy::new().read(&alias)).is_ok())
+    });
 }
 
 fn limit(resource: libc::__rlimit_resource_t) -> Option<u64> {

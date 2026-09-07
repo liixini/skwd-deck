@@ -1,4 +1,3 @@
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,30 +14,6 @@ const PREVIEW_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 fn scanner_bin() -> std::path::PathBuf {
     skwd_wall_core::paths::sibling_bin("skwd-wall-scan")
-}
-
-fn scanner_log() -> Option<std::fs::File> {
-    let path = skwd_wall_core::paths::cache_dir().join("skwd-wall-scan.log");
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    let file = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path).ok()?;
-    let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
-    Some(file)
-}
-
-fn attach_scanner_log(command: &mut std::process::Command) {
-    match scanner_log() {
-        Some(file) => {
-            if let Ok(stdout) = file.try_clone() {
-                command.stdout(stdout);
-            }
-            command.stderr(file);
-        }
-        None => {
-            command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-        }
-    }
 }
 
 pub(super) fn scanner_args(debug: bool, extra: &[&str], request_id: Option<&str>) -> Vec<String> {
@@ -67,7 +42,11 @@ pub(crate) fn spawn_scan(
     command.args(scanner_args(debug, extra, request_id));
     apply_scan_limits(&mut command, state.config().max_thumb_jobs());
     command.stdin(std::process::Stdio::null());
-    attach_scanner_log(&mut command);
+    let log_path = skwd_wall_core::paths::cache_dir().join("skwd-wall-scan.log");
+    if let Err(error) = super::scanner_log::attach(&mut command, log_path) {
+        log::warn!("scanner log capture unavailable: {error}");
+        command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    }
     supervise_scan(&binary, command, state, scanner_timeout(extra), tracking);
 }
 

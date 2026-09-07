@@ -22,7 +22,7 @@ fn wall_directory_fallbacks() {
     let value = json!({"paths": {"wallpaper": "~/walls", "videoWallpaper": ""}});
     assert_eq!(wallpaper_dir(&value), format!("{}/walls", crate::home()));
     assert_eq!(video_dir(&value), wallpaper_dir(&value));
-    assert_eq!(wallpaper_dir(&json!({})), format!("{}/Pictures/Wallpapers", crate::home()));
+    assert_eq!(wallpaper_dir(&json!({})), default_wallpaper_dir());
     assert_eq!(cache_dir_of(&json!({"paths": {"cache": "/x/c"}})), "/x/c");
 }
 
@@ -128,4 +128,22 @@ fn explicit_theme_model_wins() {
         assert_eq!(theme_authority(&root), authority);
         assert_eq!(theme_backend(&root), authority);
     }
+}
+
+#[test]
+fn localized_default_and_existing_library() {
+    let root = tempfile::tempdir().unwrap();
+    let pictures = root.path().join("Imágenes");
+    assert_eq!(
+        wallpaper_dir_from(root.path(), Some(pictures.clone())),
+        pictures.join("Wallpapers")
+    );
+    assert_eq!(wallpaper_dir_from(root.path(), None), root.path().join("Pictures/Wallpapers"));
+    std::fs::create_dir_all(root.path().join("Pictures/Wallpapers")).unwrap();
+    assert_eq!(
+        wallpaper_dir_from(root.path(), Some(pictures)),
+        root.path().join("Pictures/Wallpapers")
+    );
+    let chosen = root.path().join("壁紙/夜の空 🌙");
+    assert_eq!(wallpaper_dir(&json!({"paths":{"wallpaper":chosen}})), chosen.to_string_lossy());
 }

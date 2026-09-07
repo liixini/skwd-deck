@@ -4,11 +4,7 @@ use crate::{bool_true_unless_false, str_at};
 
 pub fn wallpaper_dir(root: &Value) -> String {
     let dir = str_at(root, crate::keys::paths::WALLPAPER, "");
-    if dir.is_empty() {
-        format!("{}/Pictures/Wallpapers", crate::home())
-    } else {
-        crate::resolve(&dir)
-    }
+    if dir.is_empty() { default_wallpaper_dir() } else { crate::resolve(&dir) }
 }
 
 pub fn video_dir(root: &Value) -> String {
@@ -171,3 +167,25 @@ pub fn theme_backend(root: &Value) -> String {
 #[cfg(test)]
 #[path = "settings_tests.rs"]
 mod tests;
+
+fn default_wallpaper_dir() -> String {
+    static DEFAULT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DEFAULT
+        .get_or_init(|| {
+            wallpaper_dir_from(std::path::Path::new(&crate::home()), dirs::picture_dir())
+                .to_string_lossy()
+                .into_owned()
+        })
+        .clone()
+}
+
+fn wallpaper_dir_from(
+    home: &std::path::Path,
+    pictures: Option<std::path::PathBuf>,
+) -> std::path::PathBuf {
+    let previous = home.join("Pictures/Wallpapers");
+    if previous.is_dir() {
+        return previous;
+    }
+    pictures.map_or(previous, |pictures| pictures.join("Wallpapers"))
+}

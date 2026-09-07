@@ -17,6 +17,7 @@ pub(super) const PERF_SCENE_EFFECT_PASSES: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct NativeScenePolicy {
+    pub gpu_device: String,
     pub fill_mode: String,
     pub assets_dir: String,
     pub fps: u32,
@@ -29,7 +30,8 @@ pub(super) struct NativeScenePolicy {
 impl NativeScenePolicy {
     pub(super) fn signature(&self) -> String {
         format!(
-            "v6:{}:{}:{}:{}:{}:{}:{}",
+            "v7:{}:{}:{}:{}:{}:{}:{}:{}",
+            self.gpu_device,
             self.fill_mode,
             self.assets_dir,
             self.fps,
@@ -47,6 +49,7 @@ pub(super) fn native_scene_policy(
     disable_particles: bool,
 ) -> NativeScenePolicy {
     NativeScenePolicy {
+        gpu_device: String::from("auto"),
         fill_mode: String::new(),
         assets_dir: String::new(),
         fps: if performance_mode { configured_fps.min(PERF_SCENE_FPS) } else { configured_fps },
@@ -63,6 +66,7 @@ pub(super) fn current_native_scene_policy(state: &WallState) -> NativeScenePolic
         state.config().renderer().performance_mode(),
         state.config().renderer().we_disable_particles(),
     );
+    policy.gpu_device = state.config().renderer().gpu_device();
     policy.fill_mode = state.config().renderer().we_scene_fill_mode();
     policy.assets_dir = state.config().we_assets_dir();
     policy
@@ -282,6 +286,10 @@ impl RendererLaunchSpec {
             .stdin(if self.control_stdin() { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::null())
             .stderr(if self.kind.is_native_scene() { Stdio::inherit() } else { Stdio::null() });
+        let gpu = config.renderer().gpu_device();
+        if gpu != "auto" {
+            command.env("SKWD_VK_DEVICE", gpu);
+        }
         if self.kind.is_steady() {
             command
                 .env("SKWD_PAPER_IDLE_SEC", config.renderer().idle_pause_seconds().to_string())
@@ -745,7 +753,8 @@ mod tests {
     fn steady_and_scene_environment_are_owned_by_spec() {
         let state = WallState::test_new(serde_json::json!({
             "paths": {"paperStillBin": "/bin/still", "paperVkBin": "/bin/vk"},
-            "weRender": {"fps": 75}
+            "weRender": {"fps": 75},
+            "performance": {"gpuDevice": "uuid:22222222222222222222222222222222"}
         }));
         let steady =
             RendererLaunchSpec::video_for("*", vec!["*".into(), "/v/a.mp4".into()]).command(&state);
@@ -770,6 +779,10 @@ mod tests {
         assert!(command_env(&steady, "SKWD_PAPER_TRANSITIONS").is_some());
         let ready_socket = wall_proto::resolve_socket().display().to_string();
         for command in [&steady, &transition, &scene] {
+            assert_eq!(
+                command_env(command, "SKWD_VK_DEVICE").as_deref(),
+                Some("uuid:22222222222222222222222222222222")
+            );
             assert_eq!(
                 command_env(command, "SKWD_PAPER_READY_SOCKET").as_deref(),
                 Some(ready_socket.as_str()),

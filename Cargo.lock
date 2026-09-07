@@ -417,6 +417,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1095,6 +1116,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libredox"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f02ab6bace2054fb888a3c16f990117b579d14a3088e472d63c6011fa185c9d3"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "libsqlite3-sys"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1367,6 +1397,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
 name = "ordered-float"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1377,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "paper-control"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "gif",
  "libc",
@@ -1388,14 +1424,14 @@ dependencies = [
 
 [[package]]
 name = "paper-geom"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "paper-log"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "tracing-appender",
  "tracing-subscriber",
@@ -1403,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "paper-runtime"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "libc",
  "paper-log",
@@ -1412,7 +1448,7 @@ dependencies = [
 
 [[package]]
 name = "paper-scene"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -1426,7 +1462,7 @@ dependencies = [
 
 [[package]]
 name = "paper-shaders"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "regex-lite",
 ]
@@ -1705,6 +1741,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags 2.13.1",
+]
+
+[[package]]
+name = "redox_users"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
+dependencies = [
+ "getrandom 0.2.17",
+ "libredox",
+ "thiserror",
 ]
 
 [[package]]
@@ -1992,15 +2039,16 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "skwd-config"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
+ "dirs",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
 name = "skwd-e2e"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "paper-control",
  "rusqlite",
@@ -2011,7 +2059,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-helm"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "paper-control",
  "serde_json",
@@ -2023,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-lens-proto"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "serde",
  "serde_json",
@@ -2031,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-log"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "libc",
  "log",
@@ -2039,14 +2087,14 @@ dependencies = [
 
 [[package]]
 name = "skwd-palette"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "skwd-steam"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "serde_json",
  "steamworks",
@@ -2055,7 +2103,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-core"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "anyhow",
  "bit-set",
@@ -2089,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-effects"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "anyhow",
  "image",
@@ -2102,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-scan"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2123,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-walld"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2569,7 +2617,7 @@ dependencies = [
 
 [[package]]
 name = "wall-proto"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "libc",
  "paper-shaders",
@@ -2580,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "wall-rules"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "proptest",
  "serde_json",

@@ -427,6 +427,7 @@ fn native_scene_policy_normal() {
     assert_eq!(
         native_scene_policy(75, false, false),
         NativeScenePolicy {
+            gpu_device: String::from("auto"),
             fill_mode: String::new(),
             assets_dir: String::new(),
             fps: 75,
@@ -443,6 +444,7 @@ fn native_scene_policy_performance() {
     assert_eq!(
         native_scene_policy(120, true, false),
         NativeScenePolicy {
+            gpu_device: String::from("auto"),
             fill_mode: String::new(),
             assets_dir: String::new(),
             fps: PERF_SCENE_FPS,
@@ -457,8 +459,11 @@ fn native_scene_policy_performance() {
 
 #[test]
 fn native_scene_signature_fields() {
-    assert_eq!(native_scene_policy(60, false, false).signature(), "v6:::60:false:0:0:0");
-    assert_eq!(native_scene_policy(120, true, false).signature(), "v6:::30:false:2048:4:8");
+    let mut selected = native_scene_policy(60, false, false);
+    selected.gpu_device = String::from("uuid:22222222222222222222222222222222");
+    assert_ne!(selected.signature(), native_scene_policy(60, false, false).signature());
+    assert_eq!(native_scene_policy(60, false, false).signature(), "v7:auto:::60:false:0:0:0");
+    assert_eq!(native_scene_policy(120, true, false).signature(), "v7:auto:::30:false:2048:4:8");
     assert_ne!(
         native_scene_policy(60, false, false).signature(),
         native_scene_policy(30, false, false).signature()

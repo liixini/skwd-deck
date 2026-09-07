@@ -12,3 +12,16 @@ fn files_matches_paper_log() {
     let ours = std::fs::read_to_string(&ours).expect("read skwd-log files.rs");
     assert_eq!(ours, theirs, "drifted from paper-log");
 }
+
+#[test]
+fn writer_matches_paper_log() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in ["writer.rs", "writer/tests.rs"] {
+        let ours = std::fs::read_to_string(root.join("src").join(relative)).unwrap();
+        let theirs = std::fs::read_to_string(
+            root.join("../../../skwd-paper/crates/paper-log/src").join(relative),
+        )
+        .unwrap();
+        assert_eq!(ours, theirs, "logging writer drifted: {relative}");
+    }
+}

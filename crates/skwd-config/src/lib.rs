@@ -15,9 +15,10 @@ pub use key_catalog::keys;
 pub use power::{
     DEFAULT_BATTERY_FPS, DEFAULT_BATTERY_VIDEO_IDLE_SECONDS, PowerSourceState, battery_fps,
     battery_percent, battery_percent_at, battery_saver_enabled, battery_video_idle_seconds,
-    battery_wallpaper_performance, configured_gpu_preference, effective_gpu_preference,
-    effective_picker_fps, effective_video_idle_seconds, effective_wallpaper_performance,
-    on_battery_power, power_source_state, power_source_state_at, set_power_source_snapshot,
+    battery_wallpaper_performance, configured_gpu_device, configured_gpu_preference,
+    effective_gpu_preference, effective_picker_fps, effective_video_idle_seconds,
+    effective_wallpaper_performance, on_battery_power, power_source_state, power_source_state_at,
+    set_power_source_snapshot,
 };
 pub use settings::{
     cache_dir_of, canonicalize_paper_engine, canonicalize_we_renderer, locale, paper_engine,
