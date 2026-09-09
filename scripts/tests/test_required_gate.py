@@ -9,6 +9,12 @@ CATALOG = ROOT / "scripts/ci-suites.json"
 
 
 class RequiredGateTests(unittest.TestCase):
+    def test_process_gate_runs_every_opt_in_integration_target(self):
+        command = (ROOT / "scripts/test-e2e.sh").read_text(encoding="utf-8")
+        for target in (ROOT / "crates/e2e/tests").glob("*.rs"):
+            if "#[ignore" in target.read_text(encoding="utf-8"):
+                self.assertIn(f"--test {target.stem}", command, target.name)
+
     def test_workflow_emits_the_exact_catalog_and_retains_reports(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         value = json.loads(CATALOG.read_text(encoding="utf-8"))

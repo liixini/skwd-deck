@@ -430,6 +430,7 @@ fn native_scene_policy_normal() {
             gpu_device: String::from("auto"),
             fill_mode: String::new(),
             assets_dir: String::new(),
+            layer: "bottom".to_string(),
             fps: 75,
             disable_particles: false,
             max_dimension: None,
@@ -447,6 +448,7 @@ fn native_scene_policy_performance() {
             gpu_device: String::from("auto"),
             fill_mode: String::new(),
             assets_dir: String::new(),
+            layer: "bottom".to_string(),
             fps: PERF_SCENE_FPS,
             disable_particles: false,
             max_dimension: Some(PERF_SCENE_MAX_DIMENSION),
@@ -462,8 +464,14 @@ fn native_scene_signature_fields() {
     let mut selected = native_scene_policy(60, false, false);
     selected.gpu_device = String::from("uuid:22222222222222222222222222222222");
     assert_ne!(selected.signature(), native_scene_policy(60, false, false).signature());
-    assert_eq!(native_scene_policy(60, false, false).signature(), "v7:auto:::60:false:0:0:0");
-    assert_eq!(native_scene_policy(120, true, false).signature(), "v7:auto:::30:false:2048:4:8");
+    assert_eq!(
+        native_scene_policy(60, false, false).signature(),
+        "v8:auto:::bottom:60:false:0:0:0"
+    );
+    assert_eq!(
+        native_scene_policy(120, true, false).signature(),
+        "v8:auto:::bottom:30:false:2048:4:8"
+    );
     assert_ne!(
         native_scene_policy(60, false, false).signature(),
         native_scene_policy(30, false, false).signature()
@@ -2014,4 +2022,20 @@ fn session_keeps_transition_running() {
         ""
     );
     st.renderers().set_session_paused(11, false);
+}
+
+#[test]
+fn maximized_display_pause_uses_independent_renderers() {
+    for (fullscreen, maximized, scope, independent) in [
+        (false, false, "display", false),
+        (false, true, "display", true),
+        (true, false, "display", true),
+        (true, true, "display", true),
+        (false, true, "all", false),
+    ] {
+        let state = WallState::test_new(serde_json::json!({"playback": {
+            "fullscreen": fullscreen, "maximized": maximized, "fullscreenScope": scope
+        }}));
+        assert_eq!(super::policy::independent_playback(&state), independent);
+    }
 }

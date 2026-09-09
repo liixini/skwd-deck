@@ -300,6 +300,7 @@ fn config_feature_facades_are_bounded_and_canonical() {
     for (owner, marker, maximum) in [
         ("value/display.rs", "pub struct DisplayConfig", 100),
         ("value/renderer.rs", "pub struct RendererConfig", 160),
+        ("value/renderer/binaries.rs", "impl RendererConfig", 100),
         ("value/theme.rs", "pub struct ThemeConfig", 240),
         ("value/transition.rs", "pub struct TransitionConfig", 90),
     ] {
@@ -334,9 +335,9 @@ fn config_feature_facades_are_bounded_and_canonical() {
     for (needle, owner) in [
         ("keys::paper::", "value/renderer.rs"),
         ("keys::we_render::", "value/renderer.rs"),
-        ("keys::paths::PAPER_BIN", "value/renderer.rs"),
-        ("keys::paths::PAPER_STILL_BIN", "value/renderer.rs"),
-        ("keys::paths::PAPER_VK_BIN", "value/renderer.rs"),
+        ("keys::paths::PAPER_BIN", "value/renderer/binaries.rs"),
+        ("keys::paths::PAPER_STILL_BIN", "value/renderer/binaries.rs"),
+        ("keys::paths::PAPER_VK_BIN", "value/renderer/binaries.rs"),
         ("paper_engine(", "value/renderer.rs"),
         ("paper.awww.", "value/renderer.rs"),
         ("wallpaper_mute(", "value/renderer.rs"),

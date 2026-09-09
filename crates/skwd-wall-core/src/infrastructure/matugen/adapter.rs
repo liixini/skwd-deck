@@ -126,9 +126,12 @@ fn invoke(
             log::info!("matugen ok for {image_path} (--source-color-index {index})");
             match serde_json::from_slice::<serde_json::Value>(&out.stdout) {
                 Ok(val) => {
-                    let published = crate::theme::matugen_source(&val).is_some_and(|seed| {
-                        crate::theme::publish_scheme(config, &seed, mode != "light")
-                    });
+                    let published = crate::theme::profiles::publish_document(
+                        config,
+                        &val,
+                        mode != "light",
+                        false,
+                    );
                     if !published {
                         crate::theme::write_picker_palette_cols(
                             config,

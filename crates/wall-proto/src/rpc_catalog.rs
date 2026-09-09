@@ -1,4 +1,6 @@
 pub mod rpc {
+    pub const PLAYBACK_PROCESSES: &str = "playback.processes";
+    pub const THEME_CURRENT: &str = "theme.current";
     pub const STATUS: &str = "status";
     pub const STATUS_DOCTOR: &str = "status.doctor";
     pub const STATUS_BUG_REPORT: &str = "status.bug_report";
@@ -158,6 +160,8 @@ pub mod rpc {
         EFFECTS_COMMIT,
         EFFECTS_DISCARD,
         EFFECTS_BACKFILL_TAGS,
+        PLAYBACK_PROCESSES,
+        THEME_CURRENT,
         THEME_BACKENDS,
         THEME_PREVIEW,
         THEME_PREVIEWS,

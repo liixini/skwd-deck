@@ -115,6 +115,9 @@ impl WallpaperApplication for CoreWallpaperApplication {
 
     fn apply_video(&self, request: ApplyVideoRequest<'_>) -> anyhow::Result<()> {
         self.stop_paper()?;
+        if crate::apply::independent_playback(&self.state) {
+            return crate::apply::apply_independent_video(&self.state, request, None);
+        }
         crate::apply::apply_video(
             &self.state,
             request.output,
@@ -148,6 +151,23 @@ impl WallpaperApplication for CoreWallpaperApplication {
 
     fn apply_video_transition(&self, request: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
         self.stop_paper()?;
+        if crate::apply::independent_playback(&self.state) {
+            return crate::apply::apply_independent_video(
+                &self.state,
+                ApplyVideoRequest {
+                    output: "*",
+                    path: request.to,
+                    fill_mode: request.fill_mode,
+                    mute: request.mute,
+                    volume: request.volume,
+                },
+                Some(crate::backend::wallpaper::OutputTransitionRequest {
+                    enabled: true,
+                    shader: request.shader,
+                    duration_ms: request.duration_ms,
+                }),
+            );
+        }
         crate::apply::apply_video_transition(
             &self.state,
             request.from,

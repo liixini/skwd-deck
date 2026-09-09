@@ -19,7 +19,6 @@ wall-geom = { package = "paper-geom", path = "../../../skwd-paper/crates/paper-g
 skwd-config = { path = "../skwd-config" }
 skwd-log = { path = "../skwd-log", features = ["alloc", "proc"] }
 skwd-palette = { path = "../skwd-palette", optional = true }
-material-colors = { version = "0.4.2", default-features = false, features = ["std", "serde"], optional = true }
 log = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 wayland-client = "0.31"
@@ -33,16 +32,16 @@ tracing = { version = "0.1", optional = true }
 texpresso = { workspace = true, optional = true }
 intel_tex_2 = { version = "0.5", optional = true }
 loom = { version = "0.7", optional = true }
+tempfile = { workspace = true }
 
 [features]
-daemon = ["dep:skwd-palette", "dep:material-colors"]
+daemon = ["dep:skwd-palette", "skwd-palette/material"]
 media = ["daemon", "dep:walkdir", "dep:image", "dep:webp", "dep:ffmpeg-the-third", "dep:rayon", "dep:texpresso", "dep:intel_tex_2"]
 obs-heap = []
 obs-trace = ["dep:tracing"]
 loom = ["dep:loom"]
 
 [dev-dependencies]
-tempfile = { workspace = true }
 proptest = "1"
 
 [package.metadata.cargo-machete]

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct OutputStatus {
     pub name: String,
     #[serde(default)]
@@ -31,6 +32,10 @@ pub struct OutputStatus {
     pub fill: String,
     #[serde(default, rename = "audioShared")]
     pub audio_shared: bool,
+    #[serde(default)]
+    pub paused: bool,
+    #[serde(default)]
+    pub manual_paused: bool,
 }
 
 impl OutputStatus {

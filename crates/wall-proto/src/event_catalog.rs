@@ -14,6 +14,7 @@ pub mod ev {
     pub const CONFIG_CHANGED: &str = "skwd.wall.config_changed";
     pub const POWER_CHANGED: &str = "skwd.wall.power_changed";
     pub const OUTPUTS_CHANGED: &str = "skwd.wall.outputs_changed";
+    pub const PLAYBACK: &str = "skwd.wall.playback";
     pub const THEME_DONE: &str = "skwd.wall.theme_done";
     pub const DOWNLOAD: &str = "skwd.wall.download";
     pub const UNSUBSCRIBED: &str = "skwd.wall.unsubscribed";

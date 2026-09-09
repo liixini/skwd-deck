@@ -7,6 +7,9 @@ use super::video_media::{StateRecording, VideoApplyRequest, apply_video_request}
 /// wallpaper/audio state.
 pub fn refresh_renderer_policy(state: &WallState) -> anyhow::Result<()> {
     let _apply = state.apply().lock();
+    if super::policy::independent_playback(state) {
+        crate::audio::expand_wildcard(&state.config().cache_dir(), &crate::outputs::names());
+    }
     let current = crate::audio::read_state(&state.config().cache_dir());
     let Some(outputs) = current.as_object().filter(|outputs| !outputs.is_empty()) else {
         return Ok(());

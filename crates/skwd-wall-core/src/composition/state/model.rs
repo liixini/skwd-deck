@@ -31,6 +31,7 @@ pub struct ScannerRuntime {
 #[derive(Default)]
 pub struct ThemeRuntime {
     theme_source: Mutex<Option<String>>,
+    applied_theme: Mutex<Option<serde_json::Value>>,
     noctalia_preview: Mutex<Option<(String, String)>>,
     bridge_preview: Mutex<Option<Vec<u8>>>,
     preview_files: Mutex<Vec<(std::path::PathBuf, Vec<u8>)>>,
@@ -161,6 +162,14 @@ impl ThemeRuntime {
         if preview.is_none() {
             *preview = Some(original);
         }
+    }
+
+    pub fn applied_theme(&self) -> Option<serde_json::Value> {
+        lock(&self.applied_theme).clone()
+    }
+
+    pub fn set_applied_theme(&self, value: serde_json::Value) {
+        *lock(&self.applied_theme) = Some(value);
     }
 
     pub fn take_bridge_preview(&self) -> Option<Vec<u8>> {

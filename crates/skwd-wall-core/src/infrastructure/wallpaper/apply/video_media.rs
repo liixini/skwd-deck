@@ -49,7 +49,8 @@ pub fn apply_video_transition(
     let plan =
         super::transition::TransitionSelection::Explicit { enabled: true, shader, duration_ms }
             .resolve(state);
-    if paper_policy_matches(state)
+    if !super::policy::independent_playback(state)
+        && paper_policy_matches(state)
         && crate::domain::wallpaper::is_video_path(from)
         && state.renderers().has_video_paper("*")
         && !state.renderers().is_scene_paper("*")
@@ -312,8 +313,9 @@ pub(super) fn reconcile_video_multi<'a>(
         transition,
         transition_primary,
     } = request;
-    if !(state.config().renderer().video_multi_process()
-        || state.config().renderer().performance_mode())
+    if super::policy::independent_playback(state)
+        || !(state.config().renderer().video_multi_process()
+            || state.config().renderer().performance_mode())
     {
         return false;
     }

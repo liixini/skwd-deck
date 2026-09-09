@@ -24,7 +24,11 @@ pub struct RendererSupervisor {
 
 #[derive(Default)]
 pub(super) struct PauseState {
+    pub automatic: bool,
+    pub automatic_outputs: HashSet<String>,
     pub manual: bool,
+    pub manual_outputs: HashMap<String, bool>,
+    pub independent_playback: bool,
     pub sessions: HashSet<u64>,
     pub applying: usize,
     pub session_rendering: HashMap<u32, u64>,
@@ -33,12 +37,23 @@ pub(super) struct PauseState {
 
 impl PauseState {
     pub fn effective(&self) -> bool {
-        self.applying == 0 && (self.manual || !self.sessions.is_empty())
+        self.applying == 0 && (self.manual || self.automatic || !self.sessions.is_empty())
     }
 
     pub fn policy(&self) -> PausePolicy {
         PausePolicy {
+            automatic: self.applying == 0 && self.automatic,
+            automatic_outputs: if self.applying == 0 {
+                self.automatic_outputs.clone()
+            } else {
+                HashSet::new()
+            },
             manual: self.applying == 0 && self.manual,
+            manual_outputs: if self.applying == 0 {
+                self.manual_outputs.clone()
+            } else {
+                HashMap::new()
+            },
             session: self.applying == 0 && !self.sessions.is_empty(),
         }
     }
@@ -48,15 +63,28 @@ impl PauseState {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PausePolicy {
+    pub manual_outputs: HashMap<String, bool>,
+    pub automatic: bool,
+    pub automatic_outputs: HashSet<String>,
     pub manual: bool,
     pub session: bool,
 }
 
 impl PausePolicy {
-    pub fn paused(self, session_exempt: bool) -> bool {
-        self.manual || (self.session && !session_exempt)
+    pub fn paused_for(&self, session_exempt: bool, output: &str) -> bool {
+        self.automatic
+            || (self.session && !session_exempt)
+            || (!output.is_empty()
+                && output.split(',').all(|name| {
+                    self.manual_outputs.get(name).copied().unwrap_or(self.manual)
+                        || self.automatic_outputs.contains(name)
+                }))
+    }
+
+    pub fn paused(&self, session_exempt: bool) -> bool {
+        self.manual || self.automatic || (self.session && !session_exempt)
     }
 }
 

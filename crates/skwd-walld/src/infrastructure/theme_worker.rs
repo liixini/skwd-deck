@@ -76,8 +76,12 @@ fn apply_theme(state: &skwd_wall_core::WallState, events: &dyn EventPublisher, p
     for sink in &skwd_wall_core::theme_sink::SINKS {
         (sink.forget)(state);
     }
+    let _serial = state.theme().lock_shell_preview();
     let requested = cfg.theme().backend();
-    let ok = skwd_wall_core::theme::apply(&cfg, path);
+    let ok = skwd_wall_core::theme::profiles::apply(state, path);
+    if ok && let Err(error) = skwd_wall_core::theme::profiles::remember_applied(state, path) {
+        log::warn!("current palette snapshot failed: {error:#}");
+    }
     let effective = skwd_wall_core::theme::effective_backend(&cfg);
     events.publish(
         ev::THEME_DONE,

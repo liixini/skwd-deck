@@ -95,3 +95,13 @@ fn document_base16_complete() {
         assert!(accents.len() >= 3, "dark={dark}: {accents:?}");
     }
 }
+
+#[test]
+fn editor_role_catalog_covers_the_generated_scheme_exactly() {
+    let doc = document(SEED, true).unwrap();
+    let expected: std::collections::BTreeSet<_> =
+        doc["colors"].as_object().unwrap().keys().map(String::as_str).collect();
+    let actual: std::collections::BTreeSet<_> = super::ROLE_KEYS.into_iter().collect();
+    assert_eq!(expected, actual);
+    assert_eq!(actual.len(), 50);
+}

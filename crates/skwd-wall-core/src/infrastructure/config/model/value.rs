@@ -7,11 +7,13 @@ use skwd_config::home;
 use super::source::read_root;
 
 mod display;
+mod playback;
 mod renderer;
 mod theme;
 mod transition;
 
 pub use display::DisplayConfig;
+pub use playback::PlaybackConfig;
 pub use renderer::RendererConfig;
 pub use theme::{Integration, ThemeConfig};
 pub use transition::TransitionConfig;
@@ -28,6 +30,10 @@ impl Config {
 
     pub fn display(&self) -> DisplayConfig<'_> {
         DisplayConfig::new(self)
+    }
+
+    pub fn playback(&self) -> PlaybackConfig<'_> {
+        PlaybackConfig::new(self)
     }
 
     pub fn renderer(&self) -> RendererConfig<'_> {

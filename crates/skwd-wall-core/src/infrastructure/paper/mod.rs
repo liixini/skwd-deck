@@ -11,7 +11,8 @@ pub use paper_control::{
     ControlCapabilities, FillMode, Layer, PROTOCOL_NAME, PROTOCOL_VERSION, RendererCapability,
     RendererDiscovery, RendererPolicy, RendererPolicyCapabilities, RuntimeDependencyStatus,
     SandPolicy, SandQuality, SandScope, ScenePolicy, Source, SourceKind, StatusResult, StopResult,
-    TransitionCapabilities, TransitionPolicy, VideoEngine, decode_ndjson, encode_ndjson,
+    SurfacePolicy, TransitionCapabilities, TransitionPolicy, VideoEngine, decode_ndjson,
+    encode_ndjson,
 };
 
 #[cfg(test)]

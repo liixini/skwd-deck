@@ -265,7 +265,7 @@ fn assignments(
                 "width": width.max(16),
                 "height": height.max(16),
                 "fps": crate::outputs::effective_fps(state.config().renderer().we_fps(), output.refresh_mhz),
-                "paused": state.renderers().paused(),
+                "paused": state.renderers().paused_for(&output.name),
             }),
         );
     }

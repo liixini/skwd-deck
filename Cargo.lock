@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "paper-control"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "gif",
  "libc",
@@ -1424,14 +1424,14 @@ dependencies = [
 
 [[package]]
 name = "paper-geom"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "paper-log"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "tracing-appender",
  "tracing-subscriber",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "paper-runtime"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "libc",
  "paper-log",
@@ -1448,7 +1448,7 @@ dependencies = [
 
 [[package]]
 name = "paper-scene"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -1462,7 +1462,7 @@ dependencies = [
 
 [[package]]
 name = "paper-shaders"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "regex-lite",
 ]
@@ -2039,7 +2039,7 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "skwd-config"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "dirs",
  "serde_json",
@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-e2e"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "paper-control",
  "rusqlite",
@@ -2059,7 +2059,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-helm"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "paper-control",
  "serde_json",
@@ -2071,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-lens-proto"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-log"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "libc",
  "log",
@@ -2087,14 +2087,15 @@ dependencies = [
 
 [[package]]
 name = "skwd-palette"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
+ "material-colors",
  "serde_json",
 ]
 
 [[package]]
 name = "skwd-steam"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "serde_json",
  "steamworks",
@@ -2103,7 +2104,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-core"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "bit-set",
@@ -2115,7 +2116,6 @@ dependencies = [
  "libc",
  "log",
  "loom",
- "material-colors",
  "paper-control",
  "paper-geom",
  "proptest",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-effects"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "image",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-scan"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-walld"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2194,6 +2194,8 @@ dependencies = [
  "walkdir",
  "wall-proto",
  "wall-rules",
+ "wayland-client",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]
@@ -2617,7 +2619,7 @@ dependencies = [
 
 [[package]]
 name = "wall-proto"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "libc",
  "paper-shaders",
@@ -2628,7 +2630,7 @@ dependencies = [
 
 [[package]]
 name = "wall-rules"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "proptest",
  "serde_json",
@@ -2716,6 +2718,31 @@ dependencies = [
  "bitflags 2.13.1",
  "rustix",
  "wayland-backend",
+ "wayland-scanner",
+]
+
+[[package]]
+name = "wayland-protocols"
+version = "0.32.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23d0c813de3daa2ed6520af85a3bd49b0e722a3078506899aa9686fea58dc4b6"
+dependencies = [
+ "bitflags 2.13.1",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-scanner",
+]
+
+[[package]]
+name = "wayland-protocols-wlr"
+version = "0.3.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb04e52f7836d7c7976c78ca0250d61e33873c34156a2a1fc9474828ec268234"
+dependencies = [
+ "bitflags 2.13.1",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
  "wayland-scanner",
 ]
 

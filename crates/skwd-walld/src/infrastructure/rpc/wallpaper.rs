@@ -147,7 +147,11 @@ pub(super) fn outputs_list(
             let we_id = getf("we_id").and_then(serde_json::Value::as_str).unwrap_or("");
             let path_owned = library_path(state, raw_path);
             let path = path_owned.as_str();
+            let kind = getf("type").and_then(Value::as_str).unwrap_or("");
+            let animated = matches!(kind, wall_proto::kind::VIDEO | wall_proto::kind::WE);
             wall_proto::OutputStatus {
+                paused: animated && state.renderers().paused_for(&mon.name),
+                manual_paused: animated && state.renderers().manual_paused_for(&mon.name),
                 target: mon.name.clone(),
                 connected: true,
                 current: current_of(path, we_id, &assigns, &mon.name),
@@ -157,7 +161,7 @@ pub(super) fn outputs_list(
                 height: mon.height,
                 logical_width,
                 logical_height,
-                kind: getf("type").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+                kind: kind.to_string(),
                 path: path.to_string(),
                 we_id: we_id.to_string(),
                 mute: getf("mute").and_then(serde_json::Value::as_bool).unwrap_or(def_mute),
@@ -208,6 +212,8 @@ pub(super) fn outputs_list(
                 volume: def_vol,
                 fill: state.config().display().fill_override_for(&name).unwrap_or_default(),
                 audio_shared: false,
+                paused: false,
+                manual_paused: false,
             });
         }
     }

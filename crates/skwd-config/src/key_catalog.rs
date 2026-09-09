@@ -1,4 +1,12 @@
 pub mod keys {
+    pub mod playback {
+        pub const PROCESS_ENABLED: &str = "playback.processEnabled";
+        pub const PROCESSES: &str = "playback.processes";
+        pub const FULLSCREEN: &str = "playback.fullscreen";
+        pub const MAXIMIZED: &str = "playback.maximized";
+        pub const FULLSCREEN_SCOPE: &str = "playback.fullscreenScope";
+        pub const RESUME_DELAY: &str = "playback.resumeDelay";
+    }
     pub mod wallpaper {
         pub const MUTE: &str = "wallpaperMute";
         pub const VOLUME: &str = "wallpaperVolume";
@@ -101,6 +109,8 @@ pub mod keys {
         pub const SCHEME_TYPE: &str = "matugen.schemeType";
     }
     pub mod niri {
+        pub const FULL_WIDTH_PAUSE: &str = "niri.fullWidthPause";
+        pub const OVERVIEW_ONLY_PLAYBACK: &str = "niri.overviewOnlyPlayback";
         pub const BACKDROP: &str = "niri.backdrop";
         pub const BACKDROP_AUTO_THEME: &str = "niri.backdropAutoTheme";
         pub const BACKDROP_DIM: &str = "niri.backdropDim";
@@ -119,6 +129,7 @@ pub mod keys {
         pub const LOCK_SCREEN_MODE: &str = "plasma.lockScreen.mode";
     }
     pub mod paper {
+        pub const WALLPAPER_LAYER: &str = "paper.wallpaperLayer";
         pub const AWWW_INVERT_Y: &str = "paper.awww.invertY";
         pub const AWWW_TRANSITION_ANGLE: &str = "paper.awww.transitionAngle";
         pub const AWWW_TRANSITION_BEZIER: &str = "paper.awww.transitionBezier";
@@ -391,6 +402,7 @@ pub mod keys {
         pub const NOCTALIA_PURE_BLACK: &str = "theme.noctaliaPureBlack";
         pub const NOCTALIA_SCHEME: &str = "theme.noctaliaScheme";
         pub const PYWAL_SATURATE: &str = "theme.pywalSaturate";
+        pub const WALLPAPER_PROFILES: &str = "theme.wallpaperProfiles";
         pub const SAVED_THEMES: &str = "theme.savedThemes";
         pub const STATIC_THEME: &str = "theme.staticTheme";
         pub const WALLUST_COLORSPACE: &str = "theme.wallustColorspace";

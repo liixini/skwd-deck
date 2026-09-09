@@ -390,7 +390,7 @@ impl RendererSupervisor {
 
     pub fn set_video_paper(&self, output: &str, child: Child, mut stdin: Option<ChildStdin>) {
         let pause = lock(&self.pause);
-        if pause.effective() {
+        if pause.policy().paused_for(false, output) {
             if let Some(stdin) = stdin.as_mut() {
                 Self::write_pause(stdin, true);
             } else {

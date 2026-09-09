@@ -162,10 +162,20 @@ pub fn render_doc(template: &str, doc: &serde_json::Value) -> String {
     })
 }
 
+fn render_palette(template: &str, palette: &Value, dark: bool) -> String {
+    let Some(mut doc) = palette.get("_scheme").cloned() else {
+        return render(template, &material_map(palette, dark));
+    };
+    crate::material::select_mode(&mut doc, dark);
+    let rendered = render_doc(template, &doc);
+    let mut ansi = material_map(palette, dark);
+    ansi.retain(|key, _| key.starts_with("ansi_"));
+    render(&rendered, &ansi)
+}
+
 pub fn render_bridge(config: &Config, palette: &Value, dark: bool) -> Option<String> {
     let bridge = PathBuf::from(config.cache_dir()).join("colors.json");
     let template_dir = config.theme().templates_dir();
-    let map = material_map(palette, dark);
     for integ in config.theme().integrations() {
         if integ.template.is_empty() || integ.output.is_empty() {
             continue;
@@ -184,7 +194,7 @@ pub fn render_bridge(config: &Config, palette: &Value, dark: bool) -> Option<Str
             template_dir.join(&integ.template)
         };
         let text = std::fs::read_to_string(&input).ok()?;
-        return Some(render(&text, &map));
+        return Some(render_palette(&text, palette, dark));
     }
     None
 }
@@ -207,7 +217,6 @@ pub fn render_integrations_where(
     dark: bool,
     keep: impl Fn(&crate::config::Integration) -> bool,
 ) -> usize {
-    let map = material_map(palette, dark);
     let template_dir = config.theme().templates_dir();
     let mut written = 0usize;
     for integ in config.theme().integrations() {
@@ -227,7 +236,7 @@ pub fn render_integrations_where(
         if let Some(parent) = output.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        match std::fs::write(&output, render(&text, &map)) {
+        match std::fs::write(&output, render_palette(&text, palette, dark)) {
             Ok(()) => written += 1,
             Err(err) => log::warn!("static templates: write {} failed: {err}", output.display()),
         }

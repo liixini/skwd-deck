@@ -12,6 +12,7 @@ pub(crate) mod media_paths;
 pub(crate) mod overview_backdrop;
 pub(crate) mod persistence;
 pub(crate) mod platform;
+pub(crate) mod playback;
 pub(crate) mod power;
 pub(crate) mod proc;
 pub(crate) mod processes;

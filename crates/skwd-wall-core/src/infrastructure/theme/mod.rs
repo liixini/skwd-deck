@@ -2,6 +2,7 @@ mod application;
 mod audition;
 mod availability;
 pub mod material;
+pub mod profiles;
 pub mod style;
 
 pub use application::*;

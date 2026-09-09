@@ -2,11 +2,7 @@ use serde_json::Value;
 
 use super::Config;
 
-fn colocated(name: &str) -> Option<String> {
-    let executable = std::env::current_exe().ok()?;
-    let candidate = executable.parent()?.join(name);
-    if candidate.exists() { Some(candidate.display().to_string()) } else { None }
-}
+mod binaries;
 
 #[derive(Clone, Copy)]
 pub struct RendererConfig<'a> {
@@ -24,6 +20,16 @@ impl<'a> RendererConfig<'a> {
 
     pub fn gpu_device(&self) -> String {
         skwd_config::configured_gpu_device(self.root())
+    }
+
+    pub fn wallpaper_layer(&self) -> String {
+        match self.config.str_at(skwd_config::keys::paper::WALLPAPER_LAYER, "bottom").as_str() {
+            "background" => "background",
+            "top" => "top",
+            "overlay" => "overlay",
+            _ => "bottom",
+        }
+        .to_string()
     }
 
     pub fn video_engine(&self) -> String {
@@ -57,37 +63,6 @@ impl<'a> RendererConfig<'a> {
         if text.is_empty() { None } else { Some(text) }
     }
 
-    fn resolved_bin(self, environment_key: &str, config_path: &str, name: &str) -> String {
-        if let Some(path) = skwd_config::env(environment_key) {
-            return path;
-        }
-        let value = self.config.str_at(config_path, "");
-        if !value.is_empty() {
-            return self.config.resolve(&value);
-        }
-        colocated(name).unwrap_or_else(|| name.to_string())
-    }
-
-    pub fn still_bin(&self) -> String {
-        self.resolved_bin(
-            "SKWD_WALL_PAPER_STILL",
-            skwd_config::keys::paths::PAPER_STILL_BIN,
-            "skwd-wall-still",
-        )
-    }
-
-    pub fn paper_bin(&self) -> String {
-        if let Some(path) = skwd_config::env("SKWD_PAPER_BIN") {
-            return path;
-        }
-        let configured = self.config.str_at(skwd_config::keys::paths::PAPER_BIN, "");
-        if configured.is_empty() {
-            crate::paths::paper_bin().display().to_string()
-        } else {
-            self.config.resolve(&configured)
-        }
-    }
-
     pub fn idle_pause_seconds(&self) -> u32 {
         let configured =
             skwd_config::u64_at(self.root(), skwd_config::keys::paper::IDLE_PAUSE_SECONDS)
@@ -117,14 +92,6 @@ impl<'a> RendererConfig<'a> {
             self.root(),
             skwd_config::on_battery_power(),
             configured,
-        )
-    }
-
-    pub fn vk_bin(&self) -> String {
-        self.resolved_bin(
-            "SKWD_WALL_PAPER_VK",
-            skwd_config::keys::paths::PAPER_VK_BIN,
-            "skwd-wall-vk",
         )
     }
 

@@ -23,7 +23,7 @@ impl RendererSupervisor {
         }
     }
 
-    fn broadcast_pause_change(&self, before: PausePolicy, after: PausePolicy) {
+    fn broadcast_pause_change(&self, before: &PausePolicy, after: &PausePolicy) {
         let exempt = {
             let pause = lock(&self.pause);
             pause.session_rendering.keys().copied().collect::<std::collections::HashSet<_>>()
@@ -44,10 +44,10 @@ impl RendererSupervisor {
                 }
             }
         }
-        for (child, stdin) in lock(&self.video_papers).values_mut() {
+        for (output, (child, stdin)) in lock(&self.video_papers).iter_mut() {
             let is_exempt = exempt.contains(&child.id());
-            let was_paused = before.paused(is_exempt);
-            let paused = after.paused(is_exempt);
+            let was_paused = before.paused_for(is_exempt, output);
+            let paused = after.paused_for(is_exempt, output);
             if was_paused == paused {
                 continue;
             }
@@ -224,7 +224,7 @@ impl RendererSupervisor {
         else {
             return;
         };
-        let paused = pause.policy().paused(pause.session_exempt(child.id()));
+        let paused = pause.policy().paused_for(pause.session_exempt(child.id()), &handle.key);
         let line = PaperCommand::pause(paused).line();
         let _ = stdin.write_all(line.as_bytes());
         let _ = stdin.flush();
@@ -320,16 +320,57 @@ impl RendererSupervisor {
         }
     }
 
+    pub fn set_automatic_paused(&self, all: bool, outputs: std::collections::HashSet<String>) {
+        let mut pause = lock(&self.pause);
+        let before = pause.policy();
+        pause.automatic = all;
+        pause.automatic_outputs = outputs;
+        let after = pause.policy();
+        drop(pause);
+        if before != after {
+            self.broadcast_pause_change(&before, &after);
+        }
+    }
+
     pub fn set_paused(&self, paused: bool) {
         let mut pause = lock(&self.pause);
         let before = pause.policy();
         pause.manual = paused;
+        pause.manual_outputs.clear();
         let after = pause.policy();
         drop(pause);
         if before == after {
             return;
         }
-        self.broadcast_pause_change(before, after);
+        self.broadcast_pause_change(&before, &after);
+    }
+
+    pub fn set_output_paused(&self, output: &str, paused: bool) {
+        let mut state = lock(&self.pause);
+        let before = state.policy();
+        state.manual_outputs.insert(output.to_string(), paused);
+        let after = state.policy();
+        drop(state);
+        if before != after {
+            self.broadcast_pause_change(&before, &after);
+        }
+    }
+
+    pub fn independent_playback(&self) -> bool {
+        lock(&self.pause).independent_playback
+    }
+
+    pub fn set_independent_playback(&self, independent: bool) {
+        lock(&self.pause).independent_playback = independent;
+    }
+
+    pub fn paused_for(&self, output: &str) -> bool {
+        lock(&self.pause).policy().paused_for(false, output)
+    }
+
+    pub fn manual_paused_for(&self, output: &str) -> bool {
+        let pause = lock(&self.pause);
+        pause.manual_outputs.get(output).copied().unwrap_or(pause.manual)
     }
 
     pub fn paused(&self) -> bool {
@@ -349,7 +390,7 @@ impl RendererSupervisor {
         if before == after {
             return;
         }
-        self.broadcast_pause_change(before, after);
+        self.broadcast_pause_change(&before, &after);
     }
 
     pub fn begin_apply(&self) {
@@ -359,7 +400,7 @@ impl RendererSupervisor {
         let after = pause.policy();
         drop(pause);
         if before != after {
-            self.broadcast_pause_change(before, after);
+            self.broadcast_pause_change(&before, &after);
         }
     }
 
@@ -370,7 +411,7 @@ impl RendererSupervisor {
         let after = pause.policy();
         drop(pause);
         if before != after {
-            self.broadcast_pause_change(before, after);
+            self.broadcast_pause_change(&before, &after);
         }
     }
 

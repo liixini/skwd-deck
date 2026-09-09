@@ -287,3 +287,77 @@ fn output_lock_blocks_apply() {
     }
     checks.finish();
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn saved_scheme_reaches_current_theme_and_templates() {
+    use skwd_wall_core::material;
+    use std::fmt::Write;
+
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("full-scheme");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+    let image = sandbox.library().join("theme.png");
+    assert!(ffmpeg_still(&image, "color=c=red:s=320x180"));
+    let mut scheme = material::document("#84d1ce", true).unwrap();
+    for (index, key) in material::ROLE_KEYS.iter().enumerate() {
+        for (mode, base) in [("dark", 0x0012_3400), ("light", 0x00ab_cd00)] {
+            scheme["colors"][key][mode]["color"] = json!(format!("#{:06x}", base + index));
+        }
+    }
+    material::select_mode(&mut scheme, true);
+    let mut palette = material::ui_palette(&scheme).unwrap();
+    palette["name"] = json!("Edited");
+    palette["_scheme"] = scheme.clone();
+    palette["_schemeVersion"] = json!(1);
+    let template = sandbox.root.join("roles.txt");
+    let output = sandbox.root.join("roles.out");
+    let mut text = String::new();
+    for key in material::ROLE_KEYS {
+        writeln!(text, "{{{{colors.{key}.default.hex}}}}").unwrap();
+    }
+    std::fs::write(&template, text).unwrap();
+    let mut config = json!({
+        "paths": {"wallpaper": sandbox.library()},
+        "pickOnlyMode": false, "restoreOnStartup": false,
+        "general": {"randomInterval": 0}, "transition": {"enabled": false},
+        "theme": {"policy": "fixed", "mode": "dark", "staticTheme": "Edited", "savedThemes": [palette.clone()]},
+        "integrations": [{"template": template, "output": output}]
+    });
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let applied = client.call("wall.apply", json!({"type": "static", "path": image}), 1).unwrap();
+    assert!(applied.get("error").is_none(), "{applied}");
+    for (iteration, mode) in ["dark", "light"].into_iter().enumerate() {
+        let mut expected = String::new();
+        for key in material::ROLE_KEYS {
+            writeln!(expected, "{}", material::role(&scheme, key, mode).unwrap()).unwrap();
+        }
+        assert!(
+            wait_until(
+                || std::fs::read_to_string(&output).is_ok_and(|text| text == expected),
+                Duration::from_secs(10)
+            ),
+            "{mode} template output"
+        );
+        let response = client.call("theme.current", json!({}), 2 + iteration as u64).unwrap();
+        let current = &response["result"];
+        for key in material::ROLE_KEYS {
+            assert_eq!(
+                current["scheme"]["colors"][key]["default"], scheme["colors"][key][mode],
+                "{key} {mode}"
+            );
+        }
+        if iteration == 0 {
+            config["theme"]["policy"] = json!("wallpaper");
+            config["theme"]["mode"] = json!("light");
+            config["theme"]["wallpaperProfiles"] =
+                json!([{"key": current["key"], "enabled": true, "light": palette}]);
+            sandbox.write_config(&config);
+            let response = client.call("wall.retheme", json!({}), 4).unwrap();
+            assert!(response.get("error").is_none(), "{response}");
+        }
+    }
+    drop(walld);
+}

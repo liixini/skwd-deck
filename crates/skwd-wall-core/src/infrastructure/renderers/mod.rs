@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod automatic_tests;
 mod boundary;
 mod commands;
 mod lifecycle;

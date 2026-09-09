@@ -63,7 +63,17 @@ impl CommitReadyWe<'_> {
                 if audio_changed {
                     for (we_id, outputs) in &self.groups {
                         let (mute, volume) = self.audio.get(we_id).copied().unwrap_or((true, 100));
-                        state.renderers().send_audio(Some(outputs), Some(mute), Some(volume));
+                        if super::policy::independent_playback(state) {
+                            for (index, output) in outputs.iter().enumerate() {
+                                state.renderers().send_audio(
+                                    Some(std::slice::from_ref(output)),
+                                    Some(mute || index > 0),
+                                    Some(volume),
+                                );
+                            }
+                        } else {
+                            state.renderers().send_audio(Some(outputs), Some(mute), Some(volume));
+                        }
                     }
                     state.renderers().set_we_render(self.groups, self.audio);
                 }
@@ -98,14 +108,19 @@ pub(super) fn prepare_we(
     for outputs in groups.values_mut() {
         outputs.sort();
     }
-    let native_alive = groups
+    let independent = super::policy::independent_playback(state);
+    let render_groups: Vec<_> = groups
         .values()
+        .flat_map(|outputs| outputs.chunks(if independent { 1 } else { outputs.len().max(1) }))
+        .collect();
+    let native_alive = render_groups
+        .iter()
         .filter(|outputs| {
             let key = crate::we::scene_renderer_key(outputs);
             state.renderers().is_scene_paper(&key) && state.renderers().has_video_paper(&key)
         })
         .count();
-    let coverage = native_alive >= groups.len();
+    let coverage = native_alive >= render_groups.len();
     let policy_matches =
         coverage && (native_alive == 0 || super::policy::native_scene_policy_matches(state));
     if policy_matches && state.renderers().we_render_groups_match(&groups) {
@@ -116,7 +131,18 @@ pub(super) fn prepare_we(
     for (we_id, outputs) in &groups {
         let (mute, volume) = audio.get(we_id).copied().unwrap_or((true, 100));
         // Warm swap mutates a live renderer and cannot be rolled back as a batch.
-        native.push(crate::we::spawn_scene_for(state, outputs, we_id, mute, volume, false)?);
+        for (index, chunk) in
+            outputs.chunks(if independent { 1 } else { outputs.len().max(1) }).enumerate()
+        {
+            native.push(crate::we::spawn_scene_for(
+                state,
+                chunk,
+                we_id,
+                mute || index > 0,
+                volume,
+                false,
+            )?);
+        }
     }
     Ok(PreparedWe { groups, audio, mode: PreparedWeMode::Replace(native) })
 }

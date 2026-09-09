@@ -817,3 +817,24 @@ fn theme_targets_valid_unique() {
     assert_eq!(cfg.theme().targets(), ["caelestia", "dms", "end4"]);
     assert!(Config::from_root(serde_json::json!({})).theme().targets().is_empty());
 }
+
+#[test]
+fn maximized_pause_is_opt_in_and_independent_of_fullscreen() {
+    let config = Config::from_root(json!({}));
+    assert!(!config.playback().maximized_pause());
+    assert!(!config.playback().window_pause_enabled());
+    let config = Config::from_root(json!({"playback": {"maximized": true}}));
+    assert!(config.playback().maximized_pause());
+    assert!(!config.playback().fullscreen_pause());
+    assert!(config.playback().window_pause_enabled());
+}
+
+#[test]
+fn niri_column_pause_is_opt_in_and_enables_display_policy() {
+    assert!(!Config::from_root(json!({})).playback().full_width_pause());
+    let config = Config::from_root(json!({"niri":{"fullWidthPause":true}}));
+    assert!(config.playback().full_width_pause());
+    assert!(config.playback().window_pause_enabled());
+    assert!(!config.playback().fullscreen_pause());
+    assert!(!config.playback().maximized_pause());
+}

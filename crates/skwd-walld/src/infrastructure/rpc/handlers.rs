@@ -42,6 +42,7 @@ pub(super) fn runtime_status(ctx: &Ctx) -> Value {
     let mut status = status_payload(result);
     status["steam_helper_available"] =
         json!(crate::infrastructure::steam_download::require_steam_helper().is_ok());
+    status["playback"] = crate::infrastructure::playback::status();
     status["library_watch"] = json!(crate::infrastructure::watcher::current_status());
     status
 }
@@ -51,16 +52,35 @@ pub(super) fn wall_set_paused(
     renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
     request: &Request,
 ) -> Response {
+    let paused = request.params.get("paused").and_then(Value::as_bool).unwrap_or(false);
+    let output = request.str_param("output", "*");
+    if output != "*" {
+        let known = skwd_wall_core::outputs::names().iter().any(|name| name == output)
+            || skwd_wall_core::audio::read_state(&state.config().cache_dir()).get(output).is_some();
+        if output.is_empty() || !known {
+            return Response::err(request.id, 1, "unknown wallpaper output");
+        }
+        if !state.renderers().independent_playback() {
+            state.renderers().set_independent_playback(true);
+            if let Err(error) = skwd_wall_core::apply::refresh_renderer_policy(state) {
+                state.renderers().set_independent_playback(false);
+                return Response::err(request.id, 1, error.to_string());
+            }
+        }
+    }
     let _apply = state.apply().lock();
-    let paused = request.params.get("paused").and_then(serde_json::Value::as_bool).unwrap_or(false);
-    renderers.set_paused(paused);
+    if output == "*" {
+        renderers.set_paused(paused);
+    } else {
+        state.renderers().set_output_paused(output, paused);
+    }
     if skwd_wall_core::plasma::available()
         && let Err(error) = skwd_wall_core::plasma::apply_current(state)
     {
         log::warn!("set_paused: Plasma update failed: {error:#}");
     }
     log::info!("set_paused: {paused}");
-    Response::ok(request.id, json!({"ok": true, "paused": paused}))
+    Response::ok(request.id, json!({"ok": true, "paused": paused, "output": output}))
 }
 
 pub(super) fn playlist_list(state: &Arc<WallState>, request: &Request) -> Response {

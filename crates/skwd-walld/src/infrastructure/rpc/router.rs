@@ -70,11 +70,23 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         return Response::ok(req.id, json!({"ok": true}));
     }
     match req.method.as_str() {
+        rpc::PLAYBACK_PROCESSES => Response::ok(
+            req.id,
+            json!({"processes": crate::infrastructure::playback::processes::running()}),
+        ),
+        rpc::THEME_CURRENT => match skwd_wall_core::theme::profiles::current(state) {
+            Ok(current) => Response::ok(req.id, current),
+            Err(error) => Response::err(req.id, 1, error.to_string()),
+        },
         rpc::STATUS => Response::ok(req.id, runtime_status(ctx)),
         rpc::PICKER_SESSION_BEGIN => Response::ok(req.id, json!({"ok": true, "visible": true})),
         rpc::PICKER_SESSION_END => Response::ok(req.id, json!({"ok": true, "visible": false})),
         rpc::WALL_PREHEAT => preheat(req),
-        rpc::WALL_SET_PAUSED => wall_set_paused(state, ctx.renderers.as_ref(), req),
+        rpc::WALL_SET_PAUSED => {
+            let response = wall_set_paused(state, ctx.renderers.as_ref(), req);
+            ctx.events.publish(ev::OUTPUTS_CHANGED, json!({}));
+            response
+        }
         rpc::WALL_PLAYLIST_NEXT | rpc::WALL_PLAYLIST_PREV => {
             let output = req.str_param("output", "*");
             let forward = req.method.ends_with("next");
@@ -200,8 +212,10 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         rpc::WALL_REFRESH_OVERVIEW_BACKDROP => {
             state.reload_config();
             let cfg = state.config().clone();
-            overview_backdrop::refresh_from_disk(&cfg);
-            Response::ok(req.id, json!({"ok": true}))
+            match overview_backdrop::refresh_from_disk(&cfg) {
+                Ok(()) => Response::ok(req.id, json!({"ok": true})),
+                Err(error) => fail(stats, req.id, error),
+            }
         }
         rpc::WALL_REMOVE => crate::infrastructure::removal::handle_wall_remove(ctx, req),
         rpc::TASK_LIST => Response::ok(req.id, json!({"tasks": ctx.tasks.list()})),

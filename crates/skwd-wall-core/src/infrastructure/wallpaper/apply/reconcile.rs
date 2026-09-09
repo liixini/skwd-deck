@@ -58,6 +58,43 @@ fn prepare_batch<'a>(
     Ok(PreparedBatch { handoffs, we, overlays })
 }
 
+pub fn apply_independent_video(
+    state: &WallState,
+    request: crate::backend::wallpaper::ApplyVideoRequest<'_>,
+    transition: Option<crate::backend::wallpaper::OutputTransitionRequest<'_>>,
+) -> anyhow::Result<()> {
+    let path = super::resolver::resolve_current_video(request.path);
+    super::lifecycle::validate_source(&path)?;
+    let outputs = crate::outputs::names();
+    anyhow::ensure!(!outputs.is_empty(), "no displays available for independent playback");
+    let cache = state.config().cache_dir();
+    let previous = crate::audio::read_state(&cache);
+    super::lifecycle::record_and_dedup(
+        state,
+        &outputs,
+        wall_proto::kind::VIDEO,
+        &path,
+        "",
+        request.mute,
+        request.volume,
+    );
+    crate::audio::expand_wildcard(&cache, &outputs);
+    let intent =
+        transition.map_or(ReconcileIntent::PolicyRefresh, |request| ReconcileIntent::Apply {
+            transition: super::transition::TransitionSelection::Explicit {
+                enabled: request.enabled,
+                shader: request.shader,
+                duration_ms: request.duration_ms,
+            }
+            .resolve(state),
+        });
+    let result = reconcile_outputs(state, &outputs, &intent);
+    if result.is_err() {
+        crate::audio::write_state(&cache, &previous);
+    }
+    result
+}
+
 pub(super) fn reconcile_outputs(
     state: &WallState,
     monitors: &[String],
@@ -272,7 +309,11 @@ fn reconcile_outputs_inner(
     }
 
     for outputs in we_groups.values() {
-        keep_video.push(crate::we::scene_renderer_key(outputs));
+        if super::policy::independent_playback(state) {
+            keep_video.extend(outputs.iter().cloned());
+        } else {
+            keep_video.push(crate::we::scene_renderer_key(outputs));
+        }
     }
     keep_video.sort();
     keep_video.dedup();

@@ -616,6 +616,7 @@ fn absorb_and_hold(
     import_theme_event(&event, state, publisher);
     event.paths.retain(|path| skwd_wall_core::theme_provider::provider_for_path(path).is_none());
     if absorb_watch_event(event, cfg_path, pending, removed) {
+        let backdrop_before = super::overview_backdrop::settings(&state.config());
         let (lock_screen_before, semantic_before) = {
             let config = state.config();
             (
@@ -628,6 +629,14 @@ fn absorb_and_hold(
             )
         };
         state.reload_config();
+        let backdrop_config = state.config().clone();
+        if backdrop_before != super::overview_backdrop::settings(&backdrop_config) {
+            tokio::task::spawn_blocking(move || {
+                if let Err(error) = super::overview_backdrop::refresh_from_disk(&backdrop_config) {
+                    log::warn!("overview-backdrop: {error}");
+                }
+            });
+        }
         let (lock_screen_after, semantic_after) = {
             let config = state.config();
             (
@@ -647,6 +656,7 @@ fn absorb_and_hold(
         }
         publisher.publish(ev::CONFIG_CHANGED, json!({}));
         crate::infrastructure::power::request_refresh();
+        crate::infrastructure::playback::refresh();
         crate::composition::runtime::rotation::wake();
         crate::infrastructure::vitals::wake();
     }

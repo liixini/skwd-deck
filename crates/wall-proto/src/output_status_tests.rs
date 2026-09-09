@@ -7,13 +7,15 @@ fn wire_names_defaults() {
         "target": "DP-1", "connected": true,
         "logical_width": 1440, "logical_height": 2560, "current": "/w/a.jpg",
         "type": "video", "path": "/w/v.mp4", "we_id": "", "mute": false, "volume": 40,
-        "fill": "fit", "audioShared": true
+        "fill": "fit", "audioShared": true, "paused": true, "manual_paused": true
     });
     let output: OutputStatus = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(output.kind, "video");
     assert_eq!(output.volume, 40);
     assert_eq!(output.fill, "fit");
     assert!(output.audio_shared);
+    assert!(output.paused);
+    assert!(output.manual_paused);
     assert!(output.is_connected());
     assert_eq!(output.target(), "DP-1");
     assert_eq!(output.logical_size(), (1440, 2560));
@@ -22,6 +24,8 @@ fn wire_names_defaults() {
     let sparse: OutputStatus = serde_json::from_value(serde_json::json!({"name": "X"})).unwrap();
     assert_eq!(sparse.volume, 100);
     assert!(!sparse.mute);
+    assert!(!sparse.paused);
+    assert!(!sparse.manual_paused);
     assert!(sparse.fill.is_empty());
     assert!(!sparse.audio_shared);
     assert!(sparse.is_connected());

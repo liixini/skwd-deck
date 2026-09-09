@@ -20,6 +20,7 @@ pub(super) struct NativeScenePolicy {
     pub gpu_device: String,
     pub fill_mode: String,
     pub assets_dir: String,
+    pub layer: String,
     pub fps: u32,
     pub disable_particles: bool,
     pub max_dimension: Option<u32>,
@@ -30,10 +31,11 @@ pub(super) struct NativeScenePolicy {
 impl NativeScenePolicy {
     pub(super) fn signature(&self) -> String {
         format!(
-            "v7:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v8:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             self.gpu_device,
             self.fill_mode,
             self.assets_dir,
+            self.layer,
             self.fps,
             self.disable_particles,
             self.max_dimension.unwrap_or(0),
@@ -52,6 +54,7 @@ pub(super) fn native_scene_policy(
         gpu_device: String::from("auto"),
         fill_mode: String::new(),
         assets_dir: String::new(),
+        layer: "bottom".to_string(),
         fps: if performance_mode { configured_fps.min(PERF_SCENE_FPS) } else { configured_fps },
         disable_particles,
         max_dimension: performance_mode.then_some(PERF_SCENE_MAX_DIMENSION),
@@ -69,6 +72,7 @@ pub(super) fn current_native_scene_policy(state: &WallState) -> NativeScenePolic
     policy.gpu_device = state.config().renderer().gpu_device();
     policy.fill_mode = state.config().renderer().we_scene_fill_mode();
     policy.assets_dir = state.config().we_assets_dir();
+    policy.layer = state.config().renderer().wallpaper_layer();
     policy
 }
 
@@ -289,6 +293,15 @@ impl RendererLaunchSpec {
         let gpu = config.renderer().gpu_device();
         if gpu != "auto" {
             command.env("SKWD_VK_DEVICE", gpu);
+        }
+        if matches!(
+            self.kind,
+            RendererLaunchKind::SharedVideo
+                | RendererLaunchKind::PerOutputVideo { .. }
+                | RendererLaunchKind::MultiOutputVideo
+                | RendererLaunchKind::NativeScene { .. }
+        ) {
+            command.env("SKWD_VK_LAYER", config.renderer().wallpaper_layer());
         }
         if self.kind.is_steady() {
             command

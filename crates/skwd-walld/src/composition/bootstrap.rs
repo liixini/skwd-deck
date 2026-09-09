@@ -46,6 +46,7 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
     crate::infrastructure::theme_worker::start_theme_worker(ctx.clone());
     // Must publish the power snapshot before restore reads renderer policy.
     crate::infrastructure::power::start(ctx.clone());
+    crate::infrastructure::playback::start(ctx.clone());
     crate::infrastructure::lock_screen::request_sync(state);
     spawn_restore(ctx);
     crate::infrastructure::watcher::start_watcher(ctx.clone());
@@ -83,8 +84,11 @@ fn spawn_restore(ctx: &Ctx) {
                 ApplySource::Restore,
             );
         }
-        if restore_backdrop {
-            crate::infrastructure::overview_backdrop::refresh_from_disk(&restore_state.config());
+        if restore_backdrop
+            && let Err(error) =
+                crate::infrastructure::overview_backdrop::refresh_from_disk(&restore_state.config())
+        {
+            log::warn!("overview-backdrop: {error}");
         }
     });
 }

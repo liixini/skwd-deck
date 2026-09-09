@@ -269,8 +269,11 @@ pub fn publish_scheme(config: &Config, seed: &str, dark: bool) -> bool {
         log::warn!("scheme: document is missing core roles, picker palette not updated");
         return false;
     };
-    let styled = write_picker_palette_value(config, &palette);
-    crate::static_templates::render_integrations(config, &styled, dark);
+    let mut styled = write_picker_palette_value(config, &palette);
+    styled["_scheme"] = doc;
+    if let Some(scheme) = crate::material::from_palette(&styled, dark, &config.theme().scheme()) {
+        return super::profiles::publish_document(config, &scheme, dark, true);
+    }
     true
 }
 
@@ -355,10 +358,6 @@ fn matugen_preview_args(config: &Config, image: &str, dark: bool) -> Vec<String>
         "--source-color-index".to_string(),
         config.theme().matugen_color_index().to_string(),
     ]
-}
-
-pub(crate) fn matugen_source(val: &serde_json::Value) -> Option<String> {
-    val["colors"]["source_color"]["default"]["color"].as_str().map(str::to_string)
 }
 
 pub(crate) fn matugen_pick(val: &serde_json::Value) -> Vec<String> {
@@ -528,6 +527,15 @@ pub fn static_palette_value(config: &Config, dark: bool) -> Option<serde_json::V
         })
     {
         let mut val = saved;
+        if val.get("_schemeVersion").and_then(serde_json::Value::as_u64) == Some(1)
+            && let Some(doc) = crate::material::from_palette(&val, dark, &config.theme().scheme())
+            && let Some(palette) = crate::material::ui_palette(&doc)
+        {
+            for key in crate::material::UI_KEYS {
+                val[key] = palette[key].clone();
+            }
+            val["_scheme"] = doc;
+        }
         if let Some(map) = val.as_object_mut() {
             map.remove("name");
             let alias =
@@ -592,6 +600,8 @@ pub fn styled_palette(config: &Config, seed: &str, dark: bool) -> Option<serde_j
 pub fn preview_palette(config: &Config, image: &str) -> Option<serde_json::Value> {
     let dark = resolve_dark(config, image);
     match resolve_backend(config).as_str() {
+        "static" => return static_palette_value(config, dark),
+        "off" => return None,
         "noctalia" => return crate::noctalia::preview_palette(config, image, dark),
         "dms" => return crate::dms::preview_palette(config, image, dark),
         _ => {}
@@ -679,21 +689,7 @@ pub fn apply(config: &Config, image_path: &str) -> bool {
                 log::warn!("static theme selected but no palette is configured; nothing applied");
                 return false;
             };
-            let json = val.to_string();
-            let native = config.theme().native_colors_path();
-            if let Err(err) = crate::paths::atomic_write(&native, json.as_bytes()) {
-                log::warn!("static theme: write {} failed: {err}", native.display());
-            }
-            let bridge = std::path::PathBuf::from(config.cache_dir()).join("colors.json");
-            if let Err(err) = crate::paths::atomic_write(&bridge, json.as_bytes()) {
-                log::warn!("static theme: write {} failed: {err}", bridge.display());
-            }
-            if let Some(seed) = val.get("primary").and_then(serde_json::Value::as_str) {
-                write_scheme(config, seed, dark);
-            }
-            crate::static_templates::render_integrations(config, &val, dark);
-            run_reloads(config);
-            true
+            super::profiles::publish(config, &val, dark)
         }
         "matugen" => crate::matugen::run(config, image_path),
         "noctalia" => {

@@ -77,6 +77,9 @@ pub fn arm(state: &WallState) {
 }
 
 pub fn cached_palette(state: &WallState, image: &str) -> Option<serde_json::Value> {
+    if let Some(palette) = crate::theme::profiles::palette(state, image) {
+        return Some(palette);
+    }
     let config = state.config().clone();
     let key = cache_key(&config, image);
     if let Some(bytes) = state.theme().shell_palette_cached(&key) {

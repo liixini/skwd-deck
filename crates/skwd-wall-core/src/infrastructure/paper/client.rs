@@ -56,6 +56,13 @@ impl PaperClient {
         self.exchange(RequestParams::Stop(request))
     }
 
+    pub fn set_paused(&self, paused: bool) -> Result<()> {
+        self.exchange::<paper_control::PauseResult>(RequestParams::Pause(
+            paper_control::PauseRequest { paused },
+        ))?;
+        Ok(())
+    }
+
     pub fn status(&self) -> Result<StatusResult> {
         self.exchange(RequestParams::Status(StatusRequest {}))
     }
@@ -125,6 +132,7 @@ impl PaperClient {
         let mut command = Command::new(&self.binary);
         command
             .arg("serve")
+            .env("SKWD_PAPER_V2_SOCKET", &self.socket)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

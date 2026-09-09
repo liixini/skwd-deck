@@ -3,6 +3,8 @@
 mod color;
 pub mod gowall;
 mod gowall_json;
+#[cfg(feature = "material")]
+pub mod material;
 mod presets;
 mod quantize;
 pub mod seed;

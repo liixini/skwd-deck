@@ -22,9 +22,10 @@ use super::transition::TransitionSelection;
 
 pub use super::engine::{VideoEngine, video_engine_is_vk};
 pub use super::policy::{
-    active_renderer_policy_matches, native_scene_properties_match, paper_policy_matches,
-    renderer_policy_matches, scene_properties_signature,
+    active_renderer_policy_matches, independent_playback, native_scene_properties_match,
+    paper_policy_matches, renderer_policy_matches, scene_properties_signature,
 };
+pub use super::reconcile::apply_independent_video;
 pub use super::refresh::refresh_renderer_policy;
 pub use super::resolver::{resolve_current_image, resolve_current_video, resolve_we_from_state};
 pub use super::static_media::{apply_static_smart, apply_static_transition};

@@ -397,14 +397,25 @@ pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>
         let Some(video) = safe_item_join(&item_dir, &file) else {
             anyhow::bail!("WE item has unsafe video file path: {file}");
         };
-        apply::apply_video(
-            state,
-            "*",
-            &video.display().to_string(),
-            &state.config().display().fill_mode(),
+        let request = crate::backend::wallpaper::ApplyVideoRequest {
+            output: "*",
+            path: &video.display().to_string(),
+            fill_mode: &state.config().display().fill_mode(),
             mute,
             volume,
-        )?;
+        };
+        if apply::independent_playback(state) {
+            apply::apply_independent_video(state, request, None)?;
+        } else {
+            apply::apply_video(
+                state,
+                request.output,
+                request.path,
+                request.fill_mode,
+                mute,
+                volume,
+            )?;
+        }
     } else {
         let outs = outputs::names();
         let cache = state.config().cache_dir();
@@ -428,11 +439,23 @@ pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>
             }
             return Ok(preview);
         }
-        let renderer_key = scene_renderer_key(&outs);
         let (scene_mute, scene_volume) = we_audio.get(we_id).copied().unwrap_or((true, 100));
-        let candidate = spawn_scene_for(state, &outs, we_id, scene_mute, scene_volume, true)?;
-        commit_scene_set(state, vec![candidate])?;
-        for renderer in state.renderers().take_video_papers_except(&[renderer_key]) {
+        let size = if apply::independent_playback(state) { 1 } else { keys.len().max(1) };
+        let mut candidates = Vec::new();
+        let mut renderer_keys = Vec::new();
+        for (index, chunk) in keys.chunks(size).enumerate() {
+            renderer_keys.push(scene_renderer_key(chunk));
+            candidates.push(spawn_scene_for(
+                state,
+                chunk,
+                we_id,
+                scene_mute || index > 0,
+                scene_volume,
+                true,
+            )?);
+        }
+        commit_scene_set(state, candidates)?;
+        for renderer in state.renderers().take_video_papers_except(&renderer_keys) {
             kill_held_renderer(renderer);
         }
         log::info!("we scene {we_id}: native renderer");

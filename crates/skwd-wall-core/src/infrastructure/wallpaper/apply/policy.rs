@@ -16,7 +16,9 @@ pub(super) struct PaperPolicy {
     pub(super) renderer_bin: String,
     pub(super) renderer_identity: String,
     pub(super) video_engine: String,
+    pub(super) layer: String,
     pub(super) multi_process: bool,
+    pub(super) independent_playback: bool,
     pub(super) fill_mode: String,
     pub(super) fill_modes: String,
     pub(super) sand_quality: String,
@@ -38,7 +40,9 @@ impl PaperPolicy {
             self.renderer_bin,
             self.renderer_identity,
             self.video_engine,
+            self.layer,
             self.multi_process,
+            self.independent_playback,
             self.fill_mode,
             self.fill_modes,
             self.sand_quality,
@@ -88,7 +92,9 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         renderer_bin: renderer.bin,
         renderer_identity,
         video_engine: config.renderer().video_engine(),
+        layer: config.renderer().wallpaper_layer(),
         multi_process: config.renderer().video_multi_process(),
+        independent_playback: independent_playback(state),
         fill_mode: config.display().fill_mode(),
         fill_modes: config.display().fill_modes_signature(),
         sand_quality: config.transition().sand_quality(),
@@ -99,6 +105,13 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         output_refresh: crate::outputs::refresh_signature(&crate::outputs::enumerate()),
         transitions_active: config.transition().active(),
     }
+}
+
+pub fn independent_playback(state: &WallState) -> bool {
+    let config = state.config();
+    state.renderers().independent_playback()
+        || (config.playback().window_pause_enabled()
+            && config.playback().fullscreen_scope() == "display")
 }
 
 pub fn paper_policy_matches(state: &WallState) -> bool {
