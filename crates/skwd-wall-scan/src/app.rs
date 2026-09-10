@@ -115,6 +115,20 @@ async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
             let worker = reporter.clone();
             tokio::task::spawn_blocking(move || scan_jobs::recolor(&state, &worker)).await?;
         }
+        Command::SceneThumbnailStream => {
+            sandbox::restrict_decode(&storage_policy(&state.config()).cpu_seconds(30 * 60))?;
+            let worker = reporter.clone();
+            tokio::task::spawn_blocking(move || scan_jobs::scene_thumbnail_stream(&state, &worker))
+                .await??;
+        }
+        Command::SceneThumbnail { id, image } => {
+            sandbox::restrict_decode(&storage_policy(&state.config()).read(&image))?;
+            let worker = reporter.clone();
+            tokio::task::spawn_blocking(move || {
+                scan_jobs::scene_thumbnail(&state, &id, &image, &worker)
+            })
+            .await??;
+        }
         Command::Preview { key, video } => {
             sandbox::restrict_decode(&storage_policy(&state.config()).read(&video))?;
             let worker = reporter.clone();
@@ -224,7 +238,8 @@ fn theme_policy(config: &Config, image: &str) -> sandbox::Policy {
 
 fn command_deadline(command: &Command) -> std::time::Duration {
     let seconds = match command {
-        Command::Preview { .. }
+        Command::SceneThumbnail { .. }
+        | Command::Preview { .. }
         | Command::Stream { .. }
         | Command::StreamPersist
         | Command::Theme { .. }
@@ -234,7 +249,8 @@ fn command_deadline(command: &Command) -> std::time::Duration {
         | Command::ThemePreview { .. }
         | Command::SceneProbe { .. } => 2 * 60,
         Command::RemoteThumb { .. } => 10 * 60,
-        Command::Recolor
+        Command::SceneThumbnailStream
+        | Command::Recolor
         | Command::Paths { .. }
         | Command::SceneAudit { .. }
         | Command::FullScan { .. } => 30 * 60,

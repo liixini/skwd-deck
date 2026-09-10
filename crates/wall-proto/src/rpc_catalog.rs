@@ -21,6 +21,8 @@ pub mod rpc {
     pub const WALL_RETHEME: &str = "wall.retheme";
     pub const WALL_RELOAD_WE: &str = "wall.reload_we";
     pub const WALL_WE_PROPERTIES: &str = "wall.we_properties";
+    pub const WALL_CAPTURE_THUMBNAILS: &str = "wall.capture_thumbnails";
+    pub const WALL_RESET_THUMBNAIL: &str = "wall.reset_thumbnail";
     pub const WALL_SET_WE_PROPERTY: &str = "wall.set_we_property";
     pub const WALL_CLEAR_DATA: &str = "wall.clear_data";
     pub const WALL_SET_PAUSED: &str = "wall.set_paused";
@@ -59,6 +61,7 @@ pub mod rpc {
     pub const WORKSPACE_RELOAD: &str = "workspace.reload";
     pub const WORKSPACE_LIST: &str = "workspace.list";
 
+    pub const THUMBNAIL_UPDATED: &str = "thumbnail.updated";
     pub const SCAN_ITEM: &str = "scan.item";
     pub const SCAN_DONE: &str = "scan.done";
     pub const SCAN_REMOVED: &str = "scan.removed";
@@ -114,6 +117,8 @@ pub mod rpc {
         WALL_RELOAD_WE,
         WALL_WE_PROPERTIES,
         WALL_SET_WE_PROPERTY,
+        WALL_RESET_THUMBNAIL,
+        WALL_CAPTURE_THUMBNAILS,
         WALL_CLEAR_DATA,
         WALL_SET_PAUSED,
         WALL_SET_AUDIO,
@@ -148,6 +153,7 @@ pub mod rpc {
         SCHEDULE_RELOAD,
         WORKSPACE_RELOAD,
         WORKSPACE_LIST,
+        THUMBNAIL_UPDATED,
         SCAN_ITEM,
         SCAN_DONE,
         SCAN_REMOVED,

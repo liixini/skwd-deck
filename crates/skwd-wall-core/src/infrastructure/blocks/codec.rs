@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
 use image::{DynamicImage, imageops::FilterType};
@@ -19,16 +19,7 @@ pub fn far_size(w: u32, h: u32) -> usize {
     (w / 4) as usize * (h / 4) as usize * 8
 }
 
-pub fn dests_for(thumb: &str) -> (PathBuf, PathBuf) {
-    let mut base = thumb
-        .replace("/thumbs/", "/blocks/")
-        .replace("/video-thumbs/", "/blocks/vid--")
-        .replace("/we-thumbs/", "/blocks/we--");
-    if let Some(stem) = base.strip_suffix(".webp") {
-        base = stem.to_string();
-    }
-    (PathBuf::from(format!("{base}.{NEAR_EXT}")), PathBuf::from(format!("{base}.{FAR_EXT}")))
-}
+pub use crate::paths::thumbnail_blocks as dests_for;
 
 pub const SKB_MAGIC: &[u8; 4] = b"SKB1";
 pub const FMT_BC7: u8 = 0;

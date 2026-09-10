@@ -11,9 +11,9 @@ pub fn list_wallpapers(
     favourite_only: bool,
 ) -> rusqlite::Result<Vec<serde_json::Value>> {
     let sql = if favourite_only {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied FROM meta WHERE favourite = 1 ORDER BY name"
+        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta WHERE favourite = 1 ORDER BY name"
     } else {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied FROM meta ORDER BY name"
+        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta ORDER BY name"
     };
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
@@ -48,6 +48,7 @@ pub fn list_wallpapers(
             "richness": row.get::<_, Option<i64>>(20)?,
             "apply_count": row.get::<_, Option<i64>>(21)?,
             "last_applied": row.get::<_, Option<i64>>(22)?,
+            "thumbnail_generated": row.get::<_, bool>(23)?,
         }))
     })?;
     let mut out: Vec<serde_json::Value> = rows.filter_map(std::result::Result::ok).collect();
@@ -71,9 +72,9 @@ pub fn list_wallpapers_json(
     favourite_only: bool,
 ) -> rusqlite::Result<(String, usize)> {
     let sql = if favourite_only {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied FROM meta WHERE favourite = 1 ORDER BY name"
+        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta WHERE favourite = 1 ORDER BY name"
     } else {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied FROM meta ORDER BY name"
+        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta ORDER BY name"
     };
     let effects = all_effect_tags(conn);
     let mut stmt = conn.prepare(sql)?;
@@ -121,6 +122,7 @@ pub fn list_wallpapers_json(
             richness: row.get(20)?,
             apply_count: row.get(21)?,
             last_applied: row.get(22)?,
+            thumbnail_generated: row.get(23)?,
         };
         if count > 0 {
             out.push(',');
@@ -167,6 +169,40 @@ pub fn upsert_cache_entry(
         params![key, wp_type, name, thumb, thumb_sm, video_file, we_id, mtime, hue, sat, richness, filesize, width, height],
     )?;
     Ok(())
+}
+
+pub fn update_thumbnail_paths(
+    conn: &Connection,
+    key: &str,
+    thumb: &str,
+    small: &str,
+    cache: Option<&serde_json::Value>,
+    generated: bool,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE meta SET thumb = ?1, thumb_sm = ?2, thumbnail_cache = ?3,
+         thumbnail_generated = ?4 WHERE key = ?5",
+        params![thumb, small, cache.map(serde_json::Value::to_string), generated, key],
+    )
+}
+
+pub fn thumbnail_cache(
+    conn: &Connection,
+    key: &str,
+) -> rusqlite::Result<Option<serde_json::Value>> {
+    let stored = conn
+        .query_row("SELECT thumbnail_cache FROM meta WHERE key = ?1", [key], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .optional()?
+        .flatten();
+    Ok(stored.and_then(|value| serde_json::from_str(&value).ok()))
+}
+
+pub fn invalidate_thumbnail_cache(conn: &Connection, key: &str) -> rusqlite::Result<bool> {
+    Ok(conn
+        .execute("UPDATE meta SET thumbnail_cache = NULL WHERE key = ?1 AND type = 'we'", [key])?
+        > 0)
 }
 
 pub fn set_favourite(conn: &Connection, key: &str, favourite: bool) -> rusqlite::Result<bool> {

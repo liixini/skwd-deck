@@ -16,6 +16,7 @@ pub mod sources;
 mod status;
 mod task_status;
 mod theme;
+mod thumbnail;
 pub mod transitions;
 mod wallpaper_item;
 mod we_property;
@@ -37,6 +38,7 @@ pub use status::{
 };
 pub use task_status::{TaskCapabilities, TaskControl, TaskState, TaskStatus};
 pub use theme::THEME_BACKENDS;
+pub use thumbnail::{ThumbnailEncodeRequest, ThumbnailEncodeResponse};
 pub use wallpaper_item::WallpaperItem;
 pub use we_property::{WeProperty, WePropertyOption, we_property_kind};
 pub use workspace::WorkspaceRow;

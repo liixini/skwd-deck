@@ -9,6 +9,8 @@ pub struct WallpaperItem {
     pub preview: Option<String>,
     pub thumb: Option<String>,
     pub thumb_sm: Option<String>,
+    #[serde(default)]
+    pub thumbnail_generated: bool,
     pub favourite: Option<i64>,
     pub hue: Option<i64>,
     pub sat: Option<i64>,

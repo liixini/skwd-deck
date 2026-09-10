@@ -37,6 +37,7 @@ fn migrate_idempotent() {
     let cols = meta_columns(&conn);
     for missing in [
         "tags_raw",
+        "thumbnail_cache",
         "richness",
         "analyzed_by",
         "analysis_error",

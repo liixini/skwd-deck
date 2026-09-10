@@ -102,6 +102,12 @@ pub(crate) fn write_config(extra: serde_json::Value) {
 struct TestWorkers;
 
 impl MediaWorkerSupervisor for TestWorkers {
+    fn capture_scene_thumbnails(&self) -> bool {
+        true
+    }
+    fn stop_scene_thumbnails(&self) -> bool {
+        true
+    }
     fn scan(&self, _extra: &[&str], _request_id: Option<&str>) {
         SCAN_CALLS.fetch_add(1, Ordering::AcqRel);
     }

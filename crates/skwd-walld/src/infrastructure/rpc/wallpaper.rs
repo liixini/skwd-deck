@@ -648,6 +648,15 @@ pub(super) fn wall_we_properties(ctx: &Ctx, req: &Request) -> Response {
     Response::ok(req.id, json!({"we_id": we_id, "properties": rows}))
 }
 
+pub(super) fn wall_reset_thumbnail(ctx: &Ctx, req: &Request) -> Response {
+    let we_id = req.str_param("we_id", "");
+    let _apply = ctx.state.apply().lock();
+    match skwd_wall_core::we::reset_thumbnail(&ctx.state, we_id) {
+        Ok(scheduled) => Response::ok(req.id, json!({"ok": true, "scheduled": scheduled})),
+        Err(error) => fail(&ctx.stats, req.id, error),
+    }
+}
+
 pub(super) fn wall_set_we_property(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, stats, .. } = ctx;
     let we_id = req.str_param("we_id", "").to_string();

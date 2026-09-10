@@ -290,3 +290,105 @@ fn color_rows_update() {
     assert_eq!(list[0]["sat"], 80);
     assert_eq!(list[0]["richness"], 300);
 }
+
+#[test]
+fn captured_thumbnail_updates_legacy_paths_without_changing_user_metadata() {
+    let conn = open_in_memory().unwrap();
+    upsert_cache_entry(
+        &conn,
+        "we:42",
+        "we",
+        "scene",
+        "/old/we-thumbs/42.webp",
+        "/old/thumbs-sm/we--42.webp",
+        "",
+        "42",
+        123,
+        5,
+        60,
+        200,
+        0,
+        160,
+        160,
+    )
+    .unwrap();
+    set_favourite(&conn, "we:42", true).unwrap();
+    update_user_tags(&conn, "we:42", "user tag").unwrap();
+    bump_apply_count(&conn, "we:42").unwrap();
+    assert_eq!(
+        update_thumbnail_paths(
+            &conn,
+            "we:42",
+            "/new/we-thumbs/42.webp",
+            "/new/thumbs-sm/we--42.webp",
+            Some(&serde_json::json!({"input": "scene", "artifacts": []})),
+            true,
+        )
+        .unwrap(),
+        1
+    );
+    let row = conn.query_row("SELECT thumb, thumb_sm, favourite, tags, apply_count, mtime FROM meta WHERE key = 'we:42'", [], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, i64>(2)?,row.get::<_, String>(3)?,row.get::<_, i64>(4)?,row.get::<_, i64>(5)?))).unwrap();
+    assert_eq!(
+        row,
+        (
+            "/new/we-thumbs/42.webp".into(),
+            "/new/thumbs-sm/we--42.webp".into(),
+            1,
+            "user tag".into(),
+            1,
+            123
+        )
+    );
+    assert_eq!(
+        update_thumbnail_paths(&conn, "we:missing", "/new/missing", "/new/small", None, true)
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn thumbnail_record_survives_reopen_and_is_removed_with_the_wallpaper() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("wall.sqlite");
+    let record = serde_json::json!({"input": {"version": 1}, "artifacts": []});
+    {
+        let conn = super::super::connection::open_at(&path).unwrap();
+        seed(&conn, "we:42", "scene", "we");
+        assert!(thumbnail_cache(&conn, "we:42").unwrap().is_none());
+        update_thumbnail_paths(&conn, "we:42", "/full.webp", "/small.webp", Some(&record), true)
+            .unwrap();
+    }
+    let conn = super::super::connection::open_at(&path).unwrap();
+    assert_eq!(thumbnail_cache(&conn, "we:42").unwrap(), Some(record));
+    assert_eq!(list_wallpapers(&conn, false).unwrap()[0]["thumbnail_generated"], true);
+    clear_cache(&conn).unwrap();
+    assert!(thumbnail_cache(&conn, "we:42").unwrap().is_none());
+}
+
+#[test]
+fn thumbnail_reset_invalidates_only_the_capture_record() {
+    let conn = open_in_memory().unwrap();
+    seed(&conn, "we:42", "scene", "we");
+    assert!(invalidate_thumbnail_cache(&conn, "we:42").unwrap());
+    seed(&conn, "static:still.png", "still.png", "static");
+    assert!(!invalidate_thumbnail_cache(&conn, "static:still.png").unwrap());
+    let record = serde_json::json!({"input": "scene", "artifacts": []});
+    update_thumbnail_paths(&conn, "we:42", "/generated.webp", "/small.webp", Some(&record), true)
+        .unwrap();
+    let before = list_wallpapers(&conn, false).unwrap();
+    assert!(invalidate_thumbnail_cache(&conn, "we:42").unwrap());
+    assert!(thumbnail_cache(&conn, "we:42").unwrap().is_none());
+    assert_eq!(list_wallpapers(&conn, false).unwrap(), before);
+    assert!(!invalidate_thumbnail_cache(&conn, "we:missing").unwrap());
+    update_thumbnail_paths(&conn, "we:42", "/fresh.webp", "/small.webp", Some(&record), true)
+        .unwrap();
+    assert_eq!(thumbnail_cache(&conn, "we:42").unwrap(), Some(record));
+}
+
+#[test]
+fn invalid_thumbnail_record_is_a_cache_miss() {
+    let conn = open_in_memory().unwrap();
+    seed(&conn, "we:42", "scene", "we");
+    conn.execute("UPDATE meta SET thumbnail_cache = 'incomplete' WHERE key = 'we:42'", []).unwrap();
+    assert!(thumbnail_cache(&conn, "we:42").unwrap().is_none());
+}

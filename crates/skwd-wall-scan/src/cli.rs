@@ -15,10 +15,15 @@ pub(crate) enum Command {
     Paths { changed: Vec<PathBuf>, request_id: Option<String> },
     SceneAudit { dir: Option<String> },
     SceneProbe { dir: String },
+    SceneThumbnail { id: String, image: String },
+    SceneThumbnailStream,
     FullScan { request_id: Option<String> },
 }
 
 pub(crate) fn parse(arguments: &[String]) -> Command {
+    if has(arguments, "--scene-thumbnail-stream") {
+        return Command::SceneThumbnailStream;
+    }
     let dark = !has(arguments, "--light");
     let auto = has(arguments, "--auto");
 
@@ -84,6 +89,12 @@ pub(crate) fn parse(arguments: &[String]) -> Command {
     if let Some(position) = position(arguments, "--scene-audit") {
         return Command::SceneAudit {
             dir: arguments.get(position + 1).filter(|arg| !arg.starts_with('-')).cloned(),
+        };
+    }
+    if let Some(position) = position(arguments, "--scene-thumbnail") {
+        return Command::SceneThumbnail {
+            id: arguments.get(position + 1).cloned().unwrap_or_default(),
+            image: arguments.get(position + 2).cloned().unwrap_or_default(),
         };
     }
     if let Some(position) = position(arguments, "--scene-probe") {

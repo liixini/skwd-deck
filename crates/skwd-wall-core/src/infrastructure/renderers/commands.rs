@@ -214,6 +214,16 @@ impl RendererSupervisor {
             .then(|| SceneFreezeHandle { key, pid: child.id() })
     }
 
+    pub(crate) fn capture_scene(&self, key: &str, pid: u32, source: &str, path: &str) -> bool {
+        let mut renderers = lock(&self.video_papers);
+        let Some((_, Some(stdin))) = renderers.get_mut(key).filter(|(child, _)| child.id() == pid)
+        else {
+            return false;
+        };
+        let line = PaperCommand::capture_scene(source, path).line();
+        stdin.write_all(line.as_bytes()).and_then(|()| stdin.flush()).is_ok()
+    }
+
     pub(crate) fn finish_scene_freeze(&self, handle: &SceneFreezeHandle) {
         // Renderer installation already takes pause before video_papers. Keep
         // the same global order while restoring the post-capture policy.

@@ -211,3 +211,13 @@ fn image_optimize_complete_round_trips() {
     assert_eq!(event.optimized_paths, ["/walls/a.avif"]);
     assert_eq!(serde_json::to_value(&event).unwrap(), wire);
 }
+
+#[test]
+fn thumbnail_update_carries_the_published_path_and_accepts_old_events() {
+    let wire = serde_json::json!({"key": "we:42", "thumb": "/cache/we-thumbs/42.webp"});
+    let event: ThumbnailUpdated = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(event).unwrap(), wire);
+    let old: ThumbnailUpdated =
+        serde_json::from_value(serde_json::json!({"key": "we:42"})).unwrap();
+    assert!(old.thumb.is_none());
+}

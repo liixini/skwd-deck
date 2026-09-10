@@ -159,3 +159,73 @@ fn prune(state: &WallState, reporter: &Reporter) -> usize {
     }
     gone.len()
 }
+
+pub(crate) fn scene_thumbnail(
+    state: &WallState,
+    id: &str,
+    image: &str,
+    reporter: &Reporter,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(skwd_wall_core::we::valid_we_id(id), "invalid scene thumbnail id");
+    let thumb = skwd_wall_core::paths::we_thumb(id);
+    let small = skwd_wall_core::paths::we_thumb_sm(id);
+    std::fs::create_dir_all(skwd_wall_core::paths::cache_dir())?;
+    let temporary = tempfile::tempdir_in(skwd_wall_core::paths::cache_dir())?;
+    let staged_thumb = temporary.path().join("thumb.webp");
+    let staged_small = temporary.path().join("small.webp");
+    skwd_wall_core::media::generate_image_thumbs(Path::new(image), &staged_thumb, &staged_small)?;
+    let (staged_near, staged_far) =
+        skwd_wall_core::blocks::dests_for(&staged_thumb.to_string_lossy());
+    let (near, far) = skwd_wall_core::blocks::dests_for(&thumb.to_string_lossy());
+    let artifacts = [
+        (staged_near, near),
+        (staged_far, far),
+        (staged_small, small.clone()),
+        (staged_thumb, thumb.clone()),
+    ]
+    .into_iter()
+    .map(|(source, target)| Ok((std::fs::read(source)?, target)))
+    .collect::<std::io::Result<Vec<_>>>()?;
+    for (bytes, path) in artifacts {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        skwd_wall_core::paths::atomic_write(&path, &bytes)?;
+    }
+    let key = format!("we:{id}");
+    let thumb = thumb.to_string_lossy().into_owned();
+    let updated = state.with_db(|conn| {
+        skwd_wall_core::db::update_thumbnail_paths(
+            conn,
+            &key,
+            &thumb,
+            &small.to_string_lossy(),
+            None,
+            true,
+        )
+    })?;
+    anyhow::ensure!(updated == 1, "thumbnail update no longer applies to this library item");
+    let event = wall_proto::ev::ThumbnailUpdated { key, thumb: Some(thumb), generated: Some(true) };
+    reporter.send(wall_proto::rpc::THUMBNAIL_UPDATED, &serde_json::to_value(event)?);
+    log::info!("we thumbnail {id}: captured rendered scene");
+    Ok(())
+}
+pub(crate) fn scene_thumbnail_stream(state: &WallState, reporter: &Reporter) -> anyhow::Result<()> {
+    use std::io::{BufRead, Read, Write};
+    let mut input = std::io::stdin().lock();
+    let mut output = std::io::stdout().lock();
+    loop {
+        let mut line = Vec::new();
+        if (&mut input).take(1024 * 1024 + 1).read_until(b'\n', &mut line)? == 0 {
+            return Ok(());
+        }
+        anyhow::ensure!(line.len() <= 1024 * 1024, "thumbnail job is too large");
+        let request: wall_proto::ThumbnailEncodeRequest = serde_json::from_slice(&line)?;
+        let error = scene_thumbnail(state, &request.we_id, &request.image, reporter)
+            .err()
+            .map(|error| format!("{error:#}"));
+        serde_json::to_writer(&mut output, &wall_proto::ThumbnailEncodeResponse { error })?;
+        output.write_all(b"\n")?;
+        output.flush()?;
+    }
+}

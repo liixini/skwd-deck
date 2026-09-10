@@ -56,6 +56,12 @@ pub(crate) fn finalize_scene_set(state: &WallState, native: Vec<PreparedNativeSc
         if let Some(renderer) = candidate.renderer {
             renderer.finalize();
         }
+        super::thumbnail::schedule(
+            state,
+            &candidate.key,
+            &candidate.properties.0,
+            &candidate.properties.1,
+        );
     }
     state.renderers().replace_holders(Vec::new());
     state.renderers().retain_scene_papers(&native_keys);

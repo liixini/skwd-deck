@@ -254,3 +254,14 @@ pub fn key_for_path(path: &Path, wallpaper_dir: &str, video_dir: &str) -> Option
 
 #[path = "tests.rs"]
 mod tests;
+
+pub fn thumbnail_blocks(thumb: &str) -> (PathBuf, PathBuf) {
+    let mut base = thumb
+        .replace("/thumbs/", "/blocks/")
+        .replace("/video-thumbs/", "/blocks/vid--")
+        .replace("/we-thumbs/", "/blocks/we--");
+    if let Some(stem) = base.strip_suffix(".webp") {
+        base = stem.to_string();
+    }
+    (PathBuf::from(format!("{base}.bc7")), PathBuf::from(format!("{base}.bc1")))
+}

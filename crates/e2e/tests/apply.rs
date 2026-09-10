@@ -341,14 +341,22 @@ fn saved_scheme_reaches_current_theme_and_templates() {
             ),
             "{mode} template output"
         );
-        let response = client.call("theme.current", json!({}), 2 + iteration as u64).unwrap();
-        let current = &response["result"];
-        for key in material::ROLE_KEYS {
-            assert_eq!(
-                current["scheme"]["colors"][key]["default"], scheme["colors"][key][mode],
-                "{key} {mode}"
-            );
-        }
+        let mut current = Value::Null;
+        assert!(
+            wait_until(
+                || {
+                    current = client
+                        .call("theme.current", json!({}), 2 + iteration as u64)
+                        .and_then(|response| response.get("result").cloned())
+                        .unwrap_or(Value::Null);
+                    material::ROLE_KEYS.iter().all(|key| {
+                        current["scheme"]["colors"][key]["default"] == scheme["colors"][key][mode]
+                    })
+                },
+                Duration::from_secs(10)
+            ),
+            "{mode} applied scheme: {current}"
+        );
         if iteration == 0 {
             config["theme"]["policy"] = json!("wallpaper");
             config["theme"]["mode"] = json!("light");

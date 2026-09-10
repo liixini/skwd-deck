@@ -32,30 +32,6 @@ fn relay(publisher: &dyn EventPublisher, req: &Request, event: &str) -> Response
     Response::ok(req.id, json!({"ok": true}))
 }
 
-fn task_control(ctx: &Ctx, req: &Request) -> Response {
-    let id = req.str_param("id", "");
-    let action = req.str_param("action", "");
-    let semantic = || {
-        let control = match action {
-            "pause" => wall_proto::TaskControl::Pause,
-            "resume" => wall_proto::TaskControl::Resume,
-            "stop" => wall_proto::TaskControl::Stop,
-            _ => return false,
-        };
-        crate::infrastructure::semantic_index::control(control)
-    };
-    match (id, action) {
-        (id, "stop") if id.starts_with("tinier:") && ctx.workers.stop_tinier(id) => {
-            Response::ok(req.id, json!({"ok": true}))
-        }
-        ("semantic-index", "pause" | "resume" | "stop") if semantic() => {
-            Response::ok(req.id, json!({"ok": true}))
-        }
-        ("", _) | (_, "") => Response::err(req.id, -32602, "missing task id or action"),
-        _ => Response::err(req.id, -32601, "this task does not support that control"),
-    }
-}
-
 pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, events, workers, stats, .. } = ctx;
     stats.rpc(&req.method);
@@ -161,6 +137,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             )
         }
         rpc::SUBSCRIBE => Response::ok(req.id, json!({"subscribed": true})),
+        rpc::THUMBNAIL_UPDATED => relay(events.as_ref(), req, ev::THUMBNAIL_UPDATED),
         rpc::SCAN_ITEM => {
             stats.thumb();
             events.publish(ev::CACHED, req.params.clone());
@@ -237,6 +214,11 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         rpc::WALL_APPLY => wall_apply(ctx, req),
         rpc::WALL_WE_PROPERTIES => wall_we_properties(ctx, req),
         rpc::WALL_SET_WE_PROPERTY => wall_set_we_property(ctx, req),
+        rpc::WALL_CAPTURE_THUMBNAILS => Response::ok(
+            req.id,
+            json!({"started": workers.capture_scene_thumbnails(), "task_id": "we-thumbnails"}),
+        ),
+        rpc::WALL_RESET_THUMBNAIL => wall_reset_thumbnail(ctx, req),
         rpc::WALL_HISTORY_BACK | rpc::WALL_HISTORY_FORWARD => {
             let output = req.str_param("output", "*").to_string();
             let forward = req.method == rpc::WALL_HISTORY_FORWARD;

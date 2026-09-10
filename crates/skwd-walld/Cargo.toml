@@ -7,6 +7,8 @@ description = "Skwd Deck resident wallpaper service"
 
 [dependencies]
 wall-proto = { path = "../wall-proto" }
+paper-control = { path = "../../../skwd-paper/crates/paper-control" }
+tempfile = { workspace = true }
 skwd-lens-proto = { path = "../../../skwd-lens/crates/skwd-lens-proto" }
 wall-rules = { path = "../wall-rules" }
 skwd-config = { path = "../skwd-config" }
@@ -33,8 +35,6 @@ dhat = { workspace = true, optional = true }
 obs-heap = ["skwd-wall-core/obs-heap"]
 obs-dhat = ["dep:dhat"]
 
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["dhat", "regex-syntax"]

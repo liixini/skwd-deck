@@ -14,6 +14,7 @@ use super::scanner;
 use super::video_optimizer::VideoOptimizer;
 
 pub(crate) struct ProcessSupervisor {
+    thumbnail_capture: Arc<super::thumbnails::ThumbnailBatch>,
     state: Arc<WallState>,
     debug: bool,
     image_optimizer: Arc<ImageOptimizer>,
@@ -41,6 +42,10 @@ impl ProcessSupervisor {
             debug,
         ));
         Self {
+            thumbnail_capture: Arc::new(super::thumbnails::ThumbnailBatch::new(
+                Arc::clone(&state),
+                Arc::clone(&tasks),
+            )),
             image_optimizer,
             video_optimizer: Arc::new(VideoOptimizer::new(
                 config,
@@ -57,6 +62,12 @@ impl ProcessSupervisor {
 }
 
 impl MediaWorkerSupervisor for ProcessSupervisor {
+    fn capture_scene_thumbnails(&self) -> bool {
+        self.thumbnail_capture.start()
+    }
+    fn stop_scene_thumbnails(&self) -> bool {
+        self.thumbnail_capture.stop()
+    }
     fn scan(&self, extra: &[&str], request_id: Option<&str>) {
         scanner::spawn_scan(
             &self.state,

@@ -267,3 +267,30 @@ pub(super) fn forget_monitor(state: &Arc<WallState>, request: &Request) -> Respo
     let forgotten = crate::infrastructure::restore_policy::forget_monitor(&cache, id);
     Response::ok(request.id, json!({ "forgotten": forgotten }))
 }
+
+pub(super) fn task_control(ctx: &Ctx, req: &Request) -> Response {
+    let id = req.str_param("id", "");
+    let action = req.str_param("action", "");
+    let semantic = || {
+        let control = match action {
+            "pause" => wall_proto::TaskControl::Pause,
+            "resume" => wall_proto::TaskControl::Resume,
+            "stop" => wall_proto::TaskControl::Stop,
+            _ => return false,
+        };
+        crate::infrastructure::semantic_index::control(control)
+    };
+    match (id, action) {
+        ("we-thumbnails", "stop") if ctx.workers.stop_scene_thumbnails() => {
+            Response::ok(req.id, json!({"ok": true}))
+        }
+        (id, "stop") if id.starts_with("tinier:") && ctx.workers.stop_tinier(id) => {
+            Response::ok(req.id, json!({"ok": true}))
+        }
+        ("semantic-index", "pause" | "resume" | "stop") if semantic() => {
+            Response::ok(req.id, json!({"ok": true}))
+        }
+        ("", _) | (_, "") => Response::err(req.id, -32602, "missing task id or action"),
+        _ => Response::err(req.id, -32601, "this task does not support that control"),
+    }
+}

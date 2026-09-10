@@ -3,6 +3,7 @@ pub mod ev {
 
     pub const APPLIED: &str = "skwd.wall.applied";
     pub const APPLY_RESULT: &str = "skwd.wall.apply_result";
+    pub const THUMBNAIL_UPDATED: &str = "skwd.wall.thumbnail_updated";
     pub const CACHED: &str = "skwd.wall.cached";
     pub const CLEARED: &str = "skwd.wall.cleared";
     pub const REMOVED: &str = "skwd.wall.removed";
@@ -31,6 +32,15 @@ pub mod ev {
 
     fn default_true() -> bool {
         true
+    }
+
+    #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+    pub struct ThumbnailUpdated {
+        pub key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub thumb: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub generated: Option<bool>,
     }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
