@@ -1,6 +1,7 @@
 mod fullscreen;
 mod niri_columns;
 mod overview;
+mod plasma;
 pub(crate) mod processes;
 
 use std::collections::HashSet;
@@ -145,13 +146,15 @@ async fn run(
             held.iter().filter(|output| output.as_str() != "*").cloned().collect();
         let state = ctx.state.clone();
         let paused_outputs = outputs.clone();
+        let observed_outputs = observation.observed_outputs.clone();
         let _ = tokio::task::spawn_blocking(move || {
             state.renderers().set_automatic_paused(all, paused_outputs);
+            plasma::refresh_policy(&state, &observed_outputs);
         })
         .await;
         let mut names: Vec<_> = outputs.into_iter().collect();
         names.sort();
-        let value = json!({"full_width_supported": column_observation.supported, "full_width_paused": full_width_paused, "fullscreen_supported": observation.supported, "maximized_supported": observation.supported, "maximized_paused": maximized_paused, "processes": matched,
+        let value = json!({"full_width_supported": column_observation.supported, "full_width_paused": full_width_paused, "fullscreen_supported": observation.supported, "maximized_supported": observation.maximized_supported, "window_state_backend": observation.backend, "maximized_paused": maximized_paused, "processes": matched,
             "outputs": names, "all_displays": all, "automatic_paused": !held.is_empty() || overview_paused, "resume_pending": release_at.is_some(), "overview_open": overview_open, "overview_paused": overview_paused});
         let changed = {
             let mut previous = skwd_wall_core::lock(STATUS.get_or_init(|| Mutex::new(Value::Null)));

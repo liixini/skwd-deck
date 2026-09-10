@@ -23,6 +23,9 @@ libc = "0.2"
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "net", "process", "sync", "time", "io-util", "macros", "test-util"] }
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+wayland-scanner = "0.31"
+wayland-backend = "0.3"
 regex-syntax = "0.8"
 notify = { version = "6", default-features = false }
 ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }

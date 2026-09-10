@@ -284,18 +284,6 @@ fn write_payload(
     Ok(true)
 }
 
-fn activate_noctalia(config: &Config) {
-    let mut command = Command::new(crate::noctalia::bin(config));
-    command
-        .args(["msg", "color-scheme-set", "custom", "skwd-wall"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if !crate::proc::spawn_reaped(&mut command, "noctalia target activate") {
-        log::warn!("theme provider noctalia: palette written but activation failed");
-    }
-}
-
 pub fn publish(config: &Config, doc: &Value) {
     if config.theme().authority() != "skwd" {
         return;
@@ -322,14 +310,15 @@ pub fn publish(config: &Config, doc: &Value) {
         match write_payload(config, &provider, &path, &bytes) {
             Ok(true) => {
                 log::info!("theme provider {provider}: wrote {}", path.display());
-                if provider == "noctalia" {
-                    activate_noctalia(config);
-                }
             }
             Ok(false) => log::debug!("theme provider {provider}: palette unchanged"),
             Err(err) => {
                 log::warn!("theme provider {provider}: write {} failed: {err}", path.display());
+                continue;
             }
+        }
+        if provider == "noctalia" && !crate::noctalia::activate(config, doc["mode"] != "light") {
+            log::warn!("theme provider noctalia: palette written but activation failed");
         }
     }
 }

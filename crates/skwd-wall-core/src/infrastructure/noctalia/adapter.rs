@@ -181,13 +181,35 @@ pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
         log::warn!("noctalia palette bridge: write {} failed: {err}", palette_path.display());
         return false;
     }
-    msg_fire(
+    log::info!("noctalia palette bridge: wrote {} and {}", path.display(), palette_path.display());
+    activate(config, dark)
+}
+
+pub fn activate(config: &Config, dark: bool) -> bool {
+    if !msg_wait(
         config,
         &restore_args(("custom".to_string(), APPLIED_SCHEME.to_string())),
         "applied scheme set",
-    );
-    log::info!("noctalia palette bridge: wrote {} and {}", path.display(), palette_path.display());
-    true
+    ) {
+        return false;
+    }
+    let mode = config.theme().noctalia_theme_mode();
+    let mode = match mode.as_str() {
+        "follow" => {
+            if dark {
+                "dark"
+            } else {
+                "light"
+            }
+        }
+        "dark" | "light" | "auto" => mode.as_str(),
+        _ => return true,
+    };
+    msg_wait(
+        config,
+        &["msg".to_string(), "theme-mode-set".to_string(), mode.to_string()],
+        "applied theme mode set",
+    )
 }
 
 #[allow(clippy::match_same_arms)]

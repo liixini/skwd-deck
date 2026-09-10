@@ -255,6 +255,7 @@ fn niri_columns_follow_visible_workspace_and_preserve_manual_pause() {
                     .read_line(&mut command)
                     .unwrap();
                 match command.trim() {
+                    "" => {}
                     "\"EventStream\"" => events = Some(stream),
                     "\"Outputs\"" => {
                         writeln!(stream, "{}", json!({"Ok":{"Outputs":{"DP-1":{"logical":{"width":1920,"height":1080}},"DP-2":{"logical":{"width":1920,"height":1080}}}}})).unwrap();

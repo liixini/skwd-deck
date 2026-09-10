@@ -1,53 +1,119 @@
+mod cosmic;
+mod outputs;
+mod protocols;
+mod wlr;
+
 use std::collections::{HashMap, HashSet};
 use std::os::fd::AsFd;
+use std::time::Duration;
 
 use tokio::io::unix::AsyncFd;
 use tokio::sync::watch;
 use wayland_client::protocol::{wl_output, wl_registry};
-use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, event_created_child};
-use wayland_protocols_wlr::foreign_toplevel::v1::client::{
-    zwlr_foreign_toplevel_handle_v1 as handle, zwlr_foreign_toplevel_manager_v1 as manager,
-};
+use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
+use wayland_protocols::xdg::xdg_output::zv1::client::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Snapshot {
     pub supported: bool,
+    pub maximized_supported: bool,
+    pub backend: &'static str,
     pub outputs: HashSet<String>,
     pub maximized_outputs: HashSet<String>,
+    pub observed_outputs: HashSet<String>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+enum Backend {
+    #[default]
+    Wlr,
+    Cosmic,
+}
+
+#[derive(Clone, Default)]
+#[allow(clippy::struct_excessive_bools, reason = "Independent compositor state flags can coexist")]
 struct Window {
+    backend: Backend,
     fullscreen: bool,
     maximized: bool,
     minimized: bool,
+    sticky: bool,
     outputs: HashSet<u32>,
+    workspaces: HashSet<u32>,
 }
 
 #[derive(Default)]
 struct Monitor {
-    supported: bool,
+    registry_ready: bool,
+    pending_wlr: Option<(u32, u32)>,
+    backends: HashMap<Backend, u32>,
     outputs: HashMap<u32, String>,
+    output_globals: HashMap<u32, wl_output::WlOutput>,
+    output_manager: Option<ZxdgOutputManagerV1>,
     windows: HashMap<u32, Window>,
+    pending: HashMap<u32, Window>,
+    active_workspaces: HashSet<u32>,
+    cosmic: cosmic::State,
 }
 
 impl Monitor {
+    fn backend(&self) -> Option<Backend> {
+        [Backend::Cosmic, Backend::Wlr]
+            .into_iter()
+            .find(|backend| self.backends.contains_key(backend))
+    }
+
+    fn visible(&self, window: &Window) -> bool {
+        !window.minimized
+            && Some(window.backend) == self.backend()
+            && match window.backend {
+                Backend::Cosmic => {
+                    window.sticky
+                        || window.workspaces.is_empty()
+                        || window.workspaces.iter().any(|id| self.active_workspaces.contains(id))
+                }
+                Backend::Wlr => true,
+            }
+    }
+
     fn matching_outputs(&self, matches: impl Fn(&Window) -> bool) -> HashSet<String> {
         self.windows
             .values()
-            .filter(|window| !window.minimized && matches(window))
-            .flat_map(|window| window.outputs.iter())
-            .filter_map(|id| self.outputs.get(id))
-            .cloned()
+            .filter(|window| self.visible(window) && matches(window))
+            .flat_map(|window| {
+                self.outputs.iter().filter_map(move |(id, name)| {
+                    let visible = window.outputs.contains(id);
+                    visible.then(|| name.clone())
+                })
+            })
             .collect()
     }
 
     fn snapshot(&self) -> Snapshot {
+        let supported = self.backend().is_some() && !self.outputs.is_empty();
         Snapshot {
-            supported: self.supported,
+            supported,
+            maximized_supported: supported,
+            backend: match self.backend() {
+                Some(Backend::Wlr) => "wlr",
+                Some(Backend::Cosmic) => "cosmic",
+                None => "unavailable",
+            },
             outputs: self.matching_outputs(|window| window.fullscreen),
             maximized_outputs: self.matching_outputs(|window| window.maximized),
+            observed_outputs: self.outputs.values().cloned().collect(),
         }
+    }
+
+    fn commit(&mut self, id: u32) {
+        if let Some(window) = self.pending.get(&id) {
+            self.windows.insert(id, window.clone());
+        }
+    }
+
+    fn remove(&mut self, id: u32) {
+        self.pending.remove(&id);
+        self.windows.remove(&id);
     }
 }
 
@@ -60,100 +126,80 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Monitor {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global { name, interface, version } = event {
-            if interface == "zwlr_foreign_toplevel_manager_v1" && version >= 2 {
-                registry.bind::<manager::ZwlrForeignToplevelManagerV1, _, _>(
-                    name,
-                    version.min(3),
-                    qh,
-                    (),
-                );
-                state.supported = true;
-            } else if interface == "wl_output" && version >= 4 {
-                registry.bind::<wl_output::WlOutput, _, _>(name, 4, qh, ());
-            }
-        }
-    }
-}
-
-impl Dispatch<wl_output::WlOutput, ()> for Monitor {
-    fn event(
-        state: &mut Self,
-        output: &wl_output::WlOutput,
-        event: wl_output::Event,
-        (): &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let wl_output::Event::Name { name } = event {
-            state.outputs.insert(output.id().protocol_id(), name);
-        }
-    }
-}
-
-impl Dispatch<manager::ZwlrForeignToplevelManagerV1, ()> for Monitor {
-    fn event(
-        state: &mut Self,
-        _: &manager::ZwlrForeignToplevelManagerV1,
-        event: manager::Event,
-        (): &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let manager::Event::Finished = event {
-            state.supported = false;
-            state.windows.clear();
-        }
-    }
-    event_created_child!(Monitor, manager::ZwlrForeignToplevelManagerV1, [0 => (handle::ZwlrForeignToplevelHandleV1, ())]);
-}
-
-impl Dispatch<handle::ZwlrForeignToplevelHandleV1, ()> for Monitor {
-    fn event(
-        state: &mut Self,
-        object: &handle::ZwlrForeignToplevelHandleV1,
-        event: handle::Event,
-        (): &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        let id = object.id().protocol_id();
-        if matches!(event, handle::Event::Closed) {
-            state.windows.remove(&id);
-            object.destroy();
-            return;
-        }
-        let window = state.windows.entry(id).or_default();
         match event {
-            handle::Event::State { state } => {
-                let values: Vec<_> = state
-                    .chunks_exact(4)
-                    .map(|bytes| u32::from_ne_bytes(bytes.try_into().unwrap()))
-                    .collect();
-                window.fullscreen = values.contains(&(handle::State::Fullscreen as u32));
-                window.maximized = values.contains(&(handle::State::Maximized as u32));
-                window.minimized = values.contains(&(handle::State::Minimized as u32));
+            wl_registry::Event::Global { name, interface, version } => {
+                outputs::bind(state, registry, name, &interface, version, qh);
+                wlr::bind(state, registry, name, &interface, version, qh);
+                cosmic::bind(state, registry, name, &interface, version, qh);
             }
-            handle::Event::OutputEnter { output } => {
-                window.outputs.insert(output.id().protocol_id());
-            }
-            handle::Event::OutputLeave { output } => {
-                window.outputs.remove(&output.id().protocol_id());
+            wl_registry::Event::GlobalRemove { name } => {
+                if state.pending_wlr.is_some_and(|(global, _)| global == name) {
+                    state.pending_wlr = None;
+                }
+                state.backends.retain(|_, global| *global != name);
+                if let Some(output) = state.output_globals.remove(&name) {
+                    let id = output.id().protocol_id();
+                    state.outputs.remove(&id);
+                }
             }
             _ => {}
         }
     }
 }
 
+fn selected_snapshot(enabled: bool, wayland: &Snapshot, plasma: &Snapshot) -> Snapshot {
+    let mut observation = if !enabled {
+        Snapshot { backend: "unavailable", ..Snapshot::default() }
+    } else if plasma.supported {
+        plasma.clone()
+    } else {
+        wayland.clone()
+    };
+    observation.observed_outputs.extend(plasma.observed_outputs.iter().cloned());
+    observation
+}
+
 pub(crate) async fn run(mut enabled: watch::Receiver<bool>, sender: watch::Sender<Snapshot>) {
+    let (wayland_sender, mut wayland_state) = watch::channel(Snapshot::default());
+    let (plasma_sender, mut plasma_state) = watch::channel(Snapshot::default());
+    let mut tasks = tokio::task::JoinSet::new();
+    tasks.spawn(wayland(enabled.clone(), wayland_sender));
+    tasks.spawn(super::plasma::run(plasma_sender));
     loop {
-        let active = *enabled.borrow();
-        if active && let Err(error) = connected(&mut enabled, &sender).await {
-            log::debug!("window state detection unavailable: {error:#}");
-            sender.send_replace(Snapshot::default());
+        let observation =
+            selected_snapshot(*enabled.borrow(), &wayland_state.borrow(), &plasma_state.borrow());
+        sender.send_if_modified(|previous| {
+            if *previous == observation {
+                false
+            } else {
+                *previous = observation;
+                true
+            }
+        });
+        tokio::select! {
+            changed = enabled.changed() => { if changed.is_err() { break; } }
+            changed = wayland_state.changed() => { if changed.is_err() { break; } }
+            changed = plasma_state.changed(), if plasma_state.has_changed().is_ok() => { let _ = changed; }
+            () = sender.closed() => break,
         }
-        if enabled.changed().await.is_err() {
-            break;
+    }
+}
+
+async fn wayland(mut enabled: watch::Receiver<bool>, sender: watch::Sender<Snapshot>) {
+    loop {
+        if !*enabled.borrow() {
+            if enabled.changed().await.is_err() {
+                break;
+            }
+            continue;
+        }
+        if let Err(error) = connected(&mut enabled, &sender).await {
+            log::debug!("window state detection unavailable: {error:#}");
+        }
+        sender.send_replace(Snapshot::default());
+        tokio::select! {
+            changed = enabled.changed() => { if changed.is_err() { break; } }
+            () = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
     }
 }
@@ -165,7 +211,8 @@ async fn connected(
     let connection = Connection::connect_to_env()?;
     let mut queue = connection.new_event_queue::<Monitor>();
     let qh = queue.handle();
-    connection.display().get_registry(&qh, ());
+    let registry = connection.display().get_registry(&qh, ());
+    connection.display().sync(&qh, registry);
     let fd = AsyncFd::new(connection.backend().poll_fd().as_fd().try_clone_to_owned()?)?;
     let mut monitor = Monitor::default();
     while *enabled.borrow() {
@@ -196,7 +243,6 @@ async fn connected(
             }
         }
     }
-    sender.send_replace(Snapshot::default());
     Ok(())
 }
 

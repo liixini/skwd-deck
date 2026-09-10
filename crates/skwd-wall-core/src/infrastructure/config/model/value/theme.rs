@@ -33,6 +33,7 @@ impl<'a> ThemeConfig<'a> {
         matugen_mode: str(skwd_config::keys::matugen::MODE, "dark");
         matugen_scheme: str(skwd_config::keys::matugen::SCHEME_TYPE, "scheme-fidelity");
         noctalia_hover_preview: bool(skwd_config::keys::noctalia::HOVER_PREVIEW, true);
+        noctalia_theme_mode: str(skwd_config::keys::noctalia::THEME_MODE, "follow");
         noctalia_pure_black: bool(skwd_config::keys::theme::NOCTALIA_PURE_BLACK, false);
         static_theme: str(skwd_config::keys::theme::STATIC_THEME, "nord");
     }

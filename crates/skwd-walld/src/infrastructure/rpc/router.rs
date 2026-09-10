@@ -7,7 +7,7 @@ use crate::composition::context::Ctx;
 use crate::composition::history::history_nav;
 use crate::composition::runtime::{playlist, schedule};
 use crate::infrastructure::effects_preview::{effect_ids, effects_list, safe_remove_preview};
-use crate::infrastructure::{doctor, overview_backdrop, workspaces};
+use crate::infrastructure::{bug_report, overview_backdrop, workspaces};
 
 #[allow(clippy::wildcard_imports)]
 use super::handlers::*;
@@ -121,8 +121,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         }
         rpc::WORKSPACE_LIST => workspace_list(state, req),
         rpc::DIAG => diag(ctx, req),
-        rpc::STATUS_DOCTOR => Response::ok(req.id, doctor::checks_json()),
-        rpc::STATUS_BUG_REPORT => match doctor::bug_report_to_file() {
+        rpc::STATUS_BUG_REPORT => match bug_report::bug_report_to_file() {
             Ok(path) => Response::ok(req.id, json!({"path": path.display().to_string()})),
             Err(err) => fail(&ctx.stats, req.id, err),
         },

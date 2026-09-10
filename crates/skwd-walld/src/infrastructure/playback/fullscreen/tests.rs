@@ -1,8 +1,76 @@
 use super::*;
 
 #[test]
+fn unavailable_or_disabled_detection_retains_native_policy_delivery() {
+    let native =
+        Snapshot { observed_outputs: HashSet::from(["DP-1".into()]), ..Snapshot::default() };
+    for enabled in [false, true] {
+        let selected = selected_snapshot(enabled, &Snapshot::default(), &native);
+        assert!(!selected.supported);
+        assert!(selected.outputs.is_empty());
+        assert_eq!(selected.observed_outputs, native.observed_outputs);
+    }
+}
+
+#[test]
+fn protocol_without_output_names_is_not_usable_detection() {
+    let monitor = Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
+    assert!(!monitor.snapshot().supported);
+    assert!(!monitor.snapshot().maximized_supported);
+}
+
+#[test]
+fn incomplete_state_batches_never_change_pause_outputs() {
+    let mut monitor =
+        Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
+    monitor.outputs.insert(1, "DP-1".into());
+    monitor
+        .pending
+        .insert(8, Window { fullscreen: true, outputs: HashSet::from([1]), ..Window::default() });
+    assert!(monitor.snapshot().outputs.is_empty());
+    monitor.commit(8);
+    assert!(monitor.snapshot().outputs.contains("DP-1"));
+    monitor.pending.get_mut(&8).unwrap().fullscreen = false;
+    assert!(monitor.snapshot().outputs.contains("DP-1"));
+    monitor.commit(8);
+    assert!(monitor.snapshot().outputs.is_empty());
+}
+
+#[test]
+fn cosmic_windows_follow_active_workspaces_and_override_duplicate_wlr_events() {
+    let mut monitor = Monitor {
+        backends: HashMap::from([(Backend::Wlr, 42), (Backend::Cosmic, 43)]),
+        ..Monitor::default()
+    };
+    monitor.outputs.insert(1, "DP-1".into());
+    monitor.active_workspaces.insert(20);
+    monitor
+        .windows
+        .insert(8, Window { fullscreen: true, outputs: HashSet::from([1]), ..Window::default() });
+    monitor.windows.insert(
+        9,
+        Window {
+            backend: Backend::Cosmic,
+            maximized: true,
+            outputs: HashSet::from([1]),
+            workspaces: HashSet::from([21]),
+            ..Window::default()
+        },
+    );
+    assert!(monitor.snapshot().outputs.is_empty());
+    assert!(monitor.snapshot().maximized_outputs.is_empty());
+    monitor.active_workspaces.insert(21);
+    assert!(monitor.snapshot().maximized_outputs.contains("DP-1"));
+    monitor.windows.get_mut(&9).unwrap().minimized = true;
+    assert!(monitor.snapshot().maximized_outputs.is_empty());
+    monitor.remove(9);
+    assert!(monitor.snapshot().outputs.is_empty());
+}
+
+#[test]
 fn only_visible_fullscreen_outputs_block_playback() {
-    let mut monitor = Monitor { supported: true, ..Monitor::default() };
+    let mut monitor =
+        Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
     monitor.outputs.insert(1, "DP-1".into());
     monitor.outputs.insert(2, "DP-2".into());
     monitor
@@ -39,7 +107,8 @@ async fn live_fullscreen_protocol() {
 
 #[test]
 fn maximized_windows_are_tracked_separately_and_clear_when_hidden_or_closed() {
-    let mut monitor = Monitor { supported: true, ..Monitor::default() };
+    let mut monitor =
+        Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
     monitor.outputs.insert(1, "DP-1".into());
     monitor.outputs.insert(2, "DP-2".into());
     monitor

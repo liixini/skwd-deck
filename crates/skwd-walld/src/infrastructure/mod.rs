@@ -1,5 +1,5 @@
+pub(crate) mod bug_report;
 pub(crate) mod dlqueue;
-pub(crate) mod doctor;
 pub(crate) mod effects_preview;
 pub(crate) mod events;
 pub(crate) mod history;

@@ -42,6 +42,26 @@ fn qdbus_prefers_arch_name_and_accepts_fedora_name() {
 }
 
 #[test]
+fn native_assignment_keeps_manual_pause_distinct_from_automatic_pause() {
+    let state = crate::state::WallState::test_new(serde_json::json!({}));
+    state.renderers().set_automatic_paused(true, std::collections::HashSet::new());
+    let outputs = vec![crate::outputs::OutputInfo { name: "DP-1".into(), ..Default::default() }];
+    let map = serde_json::json!({"DP-1": {"type": "video", "path": "/video.mp4"}});
+    for manual in [false, true] {
+        state.renderers().set_paused(manual);
+        let payload = assignments(
+            &state,
+            &outputs,
+            map.as_object().unwrap(),
+            &std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(payload["DP-1"]["paused"], true);
+        assert_eq!(payload["DP-1"]["manualPaused"], manual);
+    }
+}
+
+#[test]
 fn assignments_are_connector_keyed_and_complete() {
     let state = crate::state::WallState::test_new(serde_json::json!({
         "display": {"fillModes": {"DP-2": "fit"}}

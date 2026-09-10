@@ -80,6 +80,7 @@ pub(super) fn wall_set_paused(
         log::warn!("set_paused: Plasma update failed: {error:#}");
     }
     log::info!("set_paused: {paused}");
+    crate::infrastructure::playback::refresh();
     Response::ok(request.id, json!({"ok": true, "paused": paused, "output": output}))
 }
 

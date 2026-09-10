@@ -164,3 +164,23 @@ fn remove_stale_socket(path: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 #[path = "platform/tests.rs"]
 mod tests;
+
+pub(crate) fn validate_arguments() -> anyhow::Result<()> {
+    if let Some(argument) = std::env::args().skip(1).find(|argument| {
+        !matches!(
+            argument.as_str(),
+            "--version"
+                | "-V"
+                | "--diag"
+                | "diag"
+                | "--bug-report"
+                | "bug-report"
+                | "--image-optimize-worker"
+                | "--wait-for-session"
+                | "--debug"
+        )
+    }) {
+        anyhow::bail!("unknown argument: {argument}");
+    }
+    Ok(())
+}

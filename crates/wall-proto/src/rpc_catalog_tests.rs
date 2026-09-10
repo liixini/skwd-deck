@@ -17,7 +17,7 @@ fn declared() -> Vec<(String, String)> {
 #[test]
 fn all_lists_declared_methods() {
     let declared = declared();
-    assert_eq!(declared.len(), 87, "declared method count changed");
+    assert_eq!(declared.len(), 86, "declared method count changed");
     assert_eq!(rpc::ALL.len(), declared.len());
     for (name, value) in &declared {
         assert!(rpc::ALL.contains(&value.as_str()), "{name} ({value})");

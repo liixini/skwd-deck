@@ -349,9 +349,12 @@ fn saved_scheme_reaches_current_theme_and_templates() {
                         .call("theme.current", json!({}), 2 + iteration as u64)
                         .and_then(|response| response.get("result").cloned())
                         .unwrap_or(Value::Null);
-                    material::ROLE_KEYS.iter().all(|key| {
-                        current["scheme"]["colors"][key]["default"] == scheme["colors"][key][mode]
-                    })
+                    current["scheme"]["mode"] == mode
+                        && current["dark"] == (mode == "dark")
+                        && material::ROLE_KEYS.iter().all(|key| {
+                            current["scheme"]["colors"][key]["default"]
+                                == scheme["colors"][key][mode]
+                        })
                 },
                 Duration::from_secs(10)
             ),

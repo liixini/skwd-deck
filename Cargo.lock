@@ -40,12 +40,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "allocator-api2"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,15 +345,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "core_maths"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
-dependencies = [
- "libm",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -657,13 +642,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "fontdue"
-version = "0.9.4"
+name = "font-types"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7894823fa221401399e2598f8b63f81ac77ff5c63248b7656779bff1632d7d3d"
+checksum = "0a7299a780854a6d391be2ae1c8521c9368471b559dbfd6a8dbd9f407eaff100"
 dependencies = [
- "hashbrown 0.15.5",
- "ttf-parser",
+ "bytemuck",
 ]
 
 [[package]]
@@ -836,8 +820,6 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
- "allocator-api2",
- "equivalent",
  "foldhash 0.1.5",
 ]
 
@@ -1486,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "paper-control"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "gif",
  "libc",
@@ -1497,14 +1479,14 @@ dependencies = [
 
 [[package]]
 name = "paper-geom"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "paper-log"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "tracing-appender",
  "tracing-subscriber",
@@ -1512,7 +1494,7 @@ dependencies = [
 
 [[package]]
 name = "paper-runtime"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "libc",
  "paper-log",
@@ -1521,23 +1503,24 @@ dependencies = [
 
 [[package]]
 name = "paper-scene"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
- "fontdue",
  "hassle-rs",
  "image",
  "libc",
  "lz4_flex",
+ "read-fonts",
  "serde_json",
  "shaderc",
+ "swash",
  "texpresso",
 ]
 
 [[package]]
 name = "paper-shaders"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "regex-lite",
 ]
@@ -1807,6 +1790,17 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
+dependencies = [
+ "bytemuck",
+ "font-types",
+ "once_cell",
 ]
 
 [[package]]
@@ -2113,8 +2107,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "skrifa"
+version = "0.44.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
+dependencies = [
+ "bytemuck",
+ "read-fonts",
+]
+
+[[package]]
 name = "skwd-config"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "dirs",
  "serde_json",
@@ -2123,7 +2127,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-e2e"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "paper-control",
  "rusqlite",
@@ -2134,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-helm"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "paper-control",
  "serde_json",
@@ -2146,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-lens-proto"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -2154,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-log"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "libc",
  "log",
@@ -2162,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-palette"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "material-colors",
  "serde_json",
@@ -2170,7 +2174,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-steam"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "serde_json",
  "steamworks",
@@ -2179,7 +2183,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-core"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "anyhow",
  "bit-set",
@@ -2212,7 +2216,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-effects"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "anyhow",
  "image",
@@ -2225,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-scan"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2247,7 +2251,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-walld"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2271,8 +2275,11 @@ dependencies = [
  "walkdir",
  "wall-proto",
  "wall-rules",
+ "wayland-backend",
  "wayland-client",
+ "wayland-protocols",
  "wayland-protocols-wlr",
+ "wayland-scanner",
 ]
 
 [[package]]
@@ -2341,6 +2348,17 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "swash"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c2499c2d826531388872b2268718aed907a39bd785ab0dcfe57fab26283f92e"
+dependencies = [
+ "skrifa",
+ "yazi",
+ "zeno",
+]
 
 [[package]]
 name = "symlink"
@@ -2625,15 +2643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ttf-parser"
-version = "0.25.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
-dependencies = [
- "core_maths",
-]
-
-[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2736,7 +2745,7 @@ dependencies = [
 
 [[package]]
 name = "wall-proto"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "libc",
  "paper-shaders",
@@ -2747,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "wall-rules"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 dependencies = [
  "proptest",
  "serde_json",
@@ -3314,6 +3323,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
+name = "yazi"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
+
+[[package]]
 name = "yoke"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3335,6 +3350,12 @@ dependencies = [
  "syn 2.0.119",
  "synstructure",
 ]
+
+[[package]]
+name = "zeno"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 
 [[package]]
 name = "zerocopy"

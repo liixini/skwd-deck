@@ -19,6 +19,56 @@ fn subscriber_count(socket: &std::path::Path) -> i64 {
 }
 
 #[test]
+#[ignore = "requires release daemon"]
+fn bug_reports_collect_logs_without_starting_paper() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut sandbox = Sandbox::new("bug-report");
+    sandbox.write_config(&json!({
+        "pickOnlyMode": true,
+        "restoreOnStartup": false,
+        "niri": {"overviewBackdrop": false},
+        "wallhaven": {"apiKey": "REPORT_SECRET"}
+    }));
+    let marker = sandbox.root.join("paper-started");
+    let paper = sandbox.root.join("paper");
+    std::fs::write(&paper, format!("#!/bin/sh\nprintf x >> '{}'\nexit 1\n", marker.display()))
+        .unwrap();
+    std::fs::set_permissions(&paper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    sandbox.set_env("SKWD_PAPER_BIN", paper.to_str().unwrap());
+    let cache = sandbox.root.join("cache/skwd-wall-v2");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("fixture.log"), "report fixture REPORT_SECRET\n").unwrap();
+
+    let output = sandbox.walld_command().arg("--bug-report").output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let path = cache.join("skwd-wall-report.txt");
+    let report = std::fs::read_to_string(&path).unwrap();
+    assert!(report.contains("== system =="));
+    assert!(report.contains("== env:"));
+    assert!(report.contains("report fixture [REDACTED]"));
+    assert!(!report.contains("REPORT_SECRET"));
+    assert!(!report.contains("== doctor =="));
+    assert!(!marker.exists());
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+
+    for argument in ["doctor", "--doctor"] {
+        let output = sandbox.walld_command().arg(argument).output().unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown argument"));
+    }
+    let walld = Walld::start(&sandbox);
+    let starts_before_report = std::fs::read(&marker).unwrap_or_default();
+    let mut client = walld.client();
+    let response = client.call("status.doctor", json!({}), 1);
+    assert_eq!(err_code(response.as_ref()), Some(-32601));
+    let response = client.call("status.bug_report", json!({}), 2).unwrap();
+    assert_eq!(response["result"]["path"], path.to_str().unwrap());
+    assert!(std::fs::read_to_string(path).unwrap().contains("report fixture [REDACTED]"));
+    assert_eq!(std::fs::read(&marker).unwrap_or_default(), starts_before_report);
+}
+
+#[test]
 #[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
 fn rpc_protocol() {
     let mut sandbox = Sandbox::new("rpc");

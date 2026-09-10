@@ -2,7 +2,6 @@ pub mod rpc {
     pub const PLAYBACK_PROCESSES: &str = "playback.processes";
     pub const THEME_CURRENT: &str = "theme.current";
     pub const STATUS: &str = "status";
-    pub const STATUS_DOCTOR: &str = "status.doctor";
     pub const STATUS_BUG_REPORT: &str = "status.bug_report";
     pub const SUBSCRIBE: &str = "subscribe";
     pub const DIAG: &str = "diag";
@@ -99,7 +98,6 @@ pub mod rpc {
 
     pub const ALL: &[&str] = &[
         STATUS,
-        STATUS_DOCTOR,
         STATUS_BUG_REPORT,
         SUBSCRIBE,
         DIAG,

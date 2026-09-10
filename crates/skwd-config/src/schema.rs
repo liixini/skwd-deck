@@ -531,6 +531,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::display::FILL_MODE, "fill"),
     SettingSpec::text(crate::keys::matugen::SCHEME_TYPE, "scheme-fidelity"),
     SettingSpec::text(crate::keys::matugen::MODE, "dark"),
+    SettingSpec::text(crate::keys::noctalia::THEME_MODE, "follow"),
     SettingSpec::text(crate::keys::steam::BACKEND, "steam"),
     SettingSpec::text(crate::keys::we_render::SCALING, "default"),
     SettingSpec::text(crate::keys::paper::AWWW_TRANSITION_TYPE, "wipe"),

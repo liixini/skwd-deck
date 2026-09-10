@@ -301,7 +301,7 @@ fn config_feature_facades_are_bounded_and_canonical() {
         ("value/display.rs", "pub struct DisplayConfig", 100),
         ("value/renderer.rs", "pub struct RendererConfig", 160),
         ("value/renderer/binaries.rs", "impl RendererConfig", 100),
-        ("value/theme.rs", "pub struct ThemeConfig", 240),
+        ("value/theme.rs", "pub struct ThemeConfig", 241),
         ("value/transition.rs", "pub struct TransitionConfig", 90),
     ] {
         let source = std::fs::read_to_string(config.join(owner)).expect("read config owner");

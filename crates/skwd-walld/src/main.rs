@@ -13,7 +13,7 @@ use crate::infrastructure::events::EventHub;
 use crate::infrastructure::history::FileHistoryRepository;
 use crate::infrastructure::processes::ProcessSupervisor;
 use crate::infrastructure::stats::Stats;
-use crate::infrastructure::{doctor, logging, platform};
+use crate::infrastructure::{bug_report, logging, platform};
 
 #[cfg(feature = "obs-heap")]
 #[global_allocator]
@@ -27,6 +27,7 @@ mod infrastructure;
 
 fn main() -> anyhow::Result<()> {
     platform::tune_allocator();
+    platform::validate_arguments()?;
 
     if std::env::args().any(|argument| argument == "--version" || argument == "-V") {
         println!("skwd-walld {}", skwd_wall_core::version());
@@ -35,12 +36,8 @@ fn main() -> anyhow::Result<()> {
     if std::env::args().any(|argument| argument == "--diag" || argument == "diag") {
         return platform::run_diag_client();
     }
-    if std::env::args().any(|argument| argument == "--doctor" || argument == "doctor") {
-        let json = std::env::args().any(|argument| argument == "--json");
-        std::process::exit(doctor::run(json));
-    }
     if std::env::args().any(|argument| argument == "--bug-report" || argument == "bug-report") {
-        std::process::exit(doctor::bug_report());
+        std::process::exit(bug_report::bug_report());
     }
     if std::env::args().any(|argument| argument == "--image-optimize-worker") {
         let debug = platform::debug_enabled();

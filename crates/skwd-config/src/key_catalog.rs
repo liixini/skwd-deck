@@ -122,6 +122,7 @@ pub mod keys {
     }
     pub mod noctalia {
         pub const HOVER_PREVIEW: &str = "noctalia.hoverPreview";
+        pub const THEME_MODE: &str = "noctalia.themeMode";
     }
     pub mod plasma {
         pub const LOCK_SCREEN_DYNAMIC: &str = "plasma.lockScreen.dynamic";
