@@ -1,4 +1,4 @@
-%{!?skwd_version:%global skwd_version 1.0.0~beta.12}
+%{!?skwd_version:%global skwd_version 1.0.0~beta.13}
 
 Name:           skwd-deck-steamworks
 Version:        %{skwd_version}
@@ -32,6 +32,8 @@ ln -s ../libexec/skwd-deck/skwd-steam %{buildroot}%{_bindir}/skwd-steam
 %{_libexecdir}/skwd-deck/libsteam_api.so
 
 %changelog
+* Fri Sep 11 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.13-1
+- Prepare coordinated release 1.0.0-beta.13.
 * Thu Sep 10 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.12-1
 - Prepare coordinated release 1.0.0-beta.12.
 * Wed Sep 09 2026 Skwd maintainers <noreply@local> - 1.0.0~beta.11-1

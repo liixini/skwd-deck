@@ -40,7 +40,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-paper
-          ref: bba52e80a102cb2ab0df74b4d0679aae162da273
+          ref: bb79e59cb0218cbcd00d30366e2e9211cebeb6e1
           path: skwd-paper
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -49,7 +49,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-lens
-          ref: b57b0fc52983a599a7a3b694d7b6824000e6cb4e
+          ref: b4d993418a348cf0d455b3c41b3cbfe6e31060e1
           path: skwd-lens
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -58,7 +58,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-verify
-          ref: bf9f7f4b86c2e5ac8fcef7f2abcdc3a6e5b2cc15
+          ref: 3c7ce77170ee148fda7a2b6661099aa8b699bcb9
           path: skwd-verify
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
