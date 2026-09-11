@@ -35,6 +35,7 @@ pub mod keys {
         pub const LAST_COLOR: &str = "filterBar.last.color";
         pub const LAST_FAVOURITES_ONLY: &str = "filterBar.last.favouritesOnly";
         pub const LAST_FOLDER: &str = "filterBar.last.folder";
+        pub const LAST_SHOW_HIDDEN_FOLDERS: &str = "filterBar.last.showHiddenFolders";
         pub const LAST_KIND: &str = "filterBar.last.kind";
         pub const LAST_ORIENT: &str = "filterBar.last.orient";
         pub const LAST_RESOLUTION: &str = "filterBar.last.resolution";
@@ -372,6 +373,11 @@ pub mod keys {
         pub const MODELS: &str = "semantic.models";
     }
     pub mod sources {
+        pub const WALLHAVEN_SHOW_APPLY_BUTTON: &str = "sources.wallhaven.showApplyButton";
+        pub const STEAM_SHOW_APPLY_BUTTON: &str = "sources.steam.showApplyButton";
+        pub const UNSPLASH_SHOW_APPLY_BUTTON: &str = "sources.unsplash.showApplyButton";
+        pub const PEXELS_SHOW_APPLY_BUTTON: &str = "sources.pexels.showApplyButton";
+        pub const YOUTUBE_SHOW_APPLY_BUTTON: &str = "sources.youtube.showApplyButton";
         pub const YOUTUBE_MAX_HEIGHT: &str = "sources.youtube.maxHeight";
         pub const BING_ENABLED: &str = "sources.bing.enabled";
         pub const BING_MARKET: &str = "sources.bing.market";
@@ -383,6 +389,13 @@ pub mod keys {
         pub const YOUTUBE_MAX_MINUTES: &str = "sources.youtube.maxMinutes";
     }
     pub mod steam {
+        pub const DEFAULT_SORT: &str = "steam.defaults.sort";
+        pub const DEFAULT_TREND_DAYS: &str = "steam.defaults.trendDays";
+        pub const DEFAULT_TYPE: &str = "steam.defaults.type";
+        pub const DEFAULT_CATEGORY: &str = "steam.defaults.category";
+        pub const DEFAULT_RESOLUTION: &str = "steam.defaults.resolution";
+        pub const DEFAULT_NSFW: &str = "steam.defaults.nsfw";
+
         pub const API_KEY: &str = "steam.apiKey";
         pub const BACKEND: &str = "steam.backend";
         pub const USERNAME: &str = "steam.username";
@@ -441,6 +454,18 @@ pub mod keys {
         pub const INTERVAL_MINS: &str = "vitals.intervalMins";
     }
     pub mod wallhaven {
+        pub const DEFAULT_SORT: &str = "wallhaven.defaults.sort";
+        pub const DEFAULT_TOP_RANGE: &str = "wallhaven.defaults.topRange";
+        pub const DEFAULT_ATLEAST: &str = "wallhaven.defaults.atleast";
+        pub const DEFAULT_ATMOST: &str = "wallhaven.defaults.atmost";
+        pub const DEFAULT_RATIOS: &str = "wallhaven.defaults.ratios";
+        pub const DEFAULT_GENERAL: &str = "wallhaven.defaults.general";
+        pub const DEFAULT_ANIME: &str = "wallhaven.defaults.anime";
+        pub const DEFAULT_PEOPLE: &str = "wallhaven.defaults.people";
+        pub const DEFAULT_SFW: &str = "wallhaven.defaults.sfw";
+        pub const DEFAULT_SKETCHY: &str = "wallhaven.defaults.sketchy";
+        pub const DEFAULT_NSFW: &str = "wallhaven.defaults.nsfw";
+
         pub const COLLECTIONS: &str = "wallhaven.collections";
         pub const API_KEY: &str = "wallhaven.apiKey";
         pub const USERNAME: &str = "wallhaven.username";
@@ -469,6 +494,10 @@ pub mod keys {
         pub const EFFECTS: &str = "keys.effects";
         pub const FAVOURITE: &str = "keys.favourite";
         pub const FILTER_BAR: &str = "keys.filterBar";
+        pub const FOLDER_PREV: &str = "keys.folderPrev";
+        pub const FOLDER_NEXT: &str = "keys.folderNext";
+        pub const FOLDER_TOGGLE: &str = "keys.folderToggle";
+        pub const HIDDEN_FOLDERS: &str = "keys.hiddenFolders";
         pub const FLIP: &str = "keys.flip";
         pub const HELP: &str = "keys.help";
         pub const SCENE_PROPERTIES: &str = "keys.sceneProperties";

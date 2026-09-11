@@ -200,6 +200,8 @@ pub mod setting {
         pub const OFFSET_Y: Setting<f64> = Setting::number(keys::filter_bar::OFFSET_Y, 0.0);
         pub const ORIENTATION: Setting<String> =
             Setting::text(keys::filter_bar::ORIENTATION, "horizontal");
+        pub const LAST_SHOW_HIDDEN_FOLDERS: Setting<bool> =
+            Setting::boolean(keys::filter_bar::LAST_SHOW_HIDDEN_FOLDERS, true);
         pub const STICKY: Setting<bool> = Setting::boolean(keys::filter_bar::STICKY, false);
         pub const VISUAL_STYLE: Setting<String> =
             Setting::text(keys::filter_bar::VISUAL_STYLE, "match");
@@ -386,6 +388,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::filter_bar::OFFSET_Y.spec(),
     setting::filter_bar::ORIENTATION.spec(),
     setting::filter_bar::STICKY.spec(),
+    setting::filter_bar::LAST_SHOW_HIDDEN_FOLDERS.spec(),
     setting::filter_bar::VISUAL_STYLE.spec(),
     setting::general::CLOSE_ON_SELECTION.spec(),
     setting::general::FILTER_BAR_ALWAYS_VISIBLE.spec(),
@@ -564,11 +567,33 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::theme::SCHEME, "tonal-spot"),
     SettingSpec::text(crate::keys::theme::STYLE, "natural"),
     SettingSpec::text(crate::keys::transition::FAMILY, "random"),
+    SettingSpec::boolean(crate::keys::sources::WALLHAVEN_SHOW_APPLY_BUTTON, false),
+    SettingSpec::boolean(crate::keys::sources::STEAM_SHOW_APPLY_BUTTON, false),
+    SettingSpec::boolean(crate::keys::sources::UNSPLASH_SHOW_APPLY_BUTTON, false),
+    SettingSpec::boolean(crate::keys::sources::PEXELS_SHOW_APPLY_BUTTON, false),
+    SettingSpec::boolean(crate::keys::sources::YOUTUBE_SHOW_APPLY_BUTTON, false),
     SettingSpec::text(crate::keys::sources::BING_MARKET, "en-US"),
     SettingSpec::text(crate::keys::sources::PEXELS_API_KEY, ""),
     SettingSpec::text(crate::keys::sources::UNSPLASH_ACCESS_KEY, ""),
+    SettingSpec::text(crate::keys::steam::DEFAULT_SORT, "3"),
+    SettingSpec::text(crate::keys::steam::DEFAULT_TREND_DAYS, "7"),
+    SettingSpec::text(crate::keys::steam::DEFAULT_TYPE, ""),
+    SettingSpec::text(crate::keys::steam::DEFAULT_CATEGORY, ""),
+    SettingSpec::text(crate::keys::steam::DEFAULT_RESOLUTION, ""),
+    SettingSpec::boolean(crate::keys::steam::DEFAULT_NSFW, false),
     SettingSpec::text(crate::keys::steam::API_KEY, ""),
     SettingSpec::text(crate::keys::steam::USERNAME, ""),
+    SettingSpec::text(crate::keys::wallhaven::DEFAULT_SORT, "toplist"),
+    SettingSpec::text(crate::keys::wallhaven::DEFAULT_TOP_RANGE, "1M"),
+    SettingSpec::text(crate::keys::wallhaven::DEFAULT_ATLEAST, ""),
+    SettingSpec::text(crate::keys::wallhaven::DEFAULT_ATMOST, ""),
+    SettingSpec::text(crate::keys::wallhaven::DEFAULT_RATIOS, ""),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_GENERAL, true),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_ANIME, true),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_PEOPLE, true),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_SFW, true),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_SKETCHY, false),
+    SettingSpec::boolean(crate::keys::wallhaven::DEFAULT_NSFW, false),
     SettingSpec::text(crate::keys::wallhaven::API_KEY, ""),
     SettingSpec::text(crate::keys::wallhaven::USERNAME, ""),
     SettingSpec::text(crate::keys::schedule::LATITUDE, ""),
@@ -602,6 +627,10 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::keybind::EFFECTS, ""),
     SettingSpec::text(crate::keys::keybind::FAVOURITE, ""),
     SettingSpec::text(crate::keys::keybind::FILTER_BAR, ""),
+    SettingSpec::text(crate::keys::keybind::FOLDER_PREV, ""),
+    SettingSpec::text(crate::keys::keybind::FOLDER_NEXT, ""),
+    SettingSpec::text(crate::keys::keybind::FOLDER_TOGGLE, ""),
+    SettingSpec::text(crate::keys::keybind::HIDDEN_FOLDERS, ""),
     SettingSpec::text(crate::keys::keybind::FLIP, ""),
     SettingSpec::text(crate::keys::keybind::HELP, ""),
     SettingSpec::text(crate::keys::keybind::NAV_DOWN, ""),

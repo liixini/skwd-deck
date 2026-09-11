@@ -98,3 +98,46 @@ fn interface_language_is_independent_of_weather_location() {
     assert_eq!(crate::str_at(&data, language, "auto"), "es-ES");
     assert_eq!(crate::locale(&data), "Stockholm");
 }
+
+#[test]
+fn browser_defaults_have_typed_values_and_keep_existing_search_defaults() {
+    use crate::keys::{steam, wallhaven};
+    assert_eq!(read_text(&json!({}), wallhaven::DEFAULT_SORT).as_deref(), Some("toplist"));
+    assert_eq!(read_text(&json!({}), steam::DEFAULT_SORT).as_deref(), Some("3"));
+    assert_eq!(read_boolean(&json!({}), wallhaven::DEFAULT_GENERAL), Some(true));
+    assert_eq!(read_boolean(&json!({}), wallhaven::DEFAULT_NSFW), Some(false));
+    assert_eq!(normalize_value(wallhaven::DEFAULT_ANIME, &json!(false)), Some(json!(false)));
+    assert_eq!(normalize_value(wallhaven::DEFAULT_ANIME, &json!("false")), None);
+    assert_eq!(normalize_value(steam::DEFAULT_TYPE, &json!("Scene")), Some(json!("Scene")));
+}
+
+#[test]
+fn source_apply_button_is_optional_and_requires_a_boolean() {
+    for path in [
+        crate::keys::sources::WALLHAVEN_SHOW_APPLY_BUTTON,
+        crate::keys::sources::STEAM_SHOW_APPLY_BUTTON,
+        crate::keys::sources::UNSPLASH_SHOW_APPLY_BUTTON,
+        crate::keys::sources::PEXELS_SHOW_APPLY_BUTTON,
+        crate::keys::sources::YOUTUBE_SHOW_APPLY_BUTTON,
+    ] {
+        assert_eq!(read_boolean(&json!({}), path), Some(false));
+        assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
+        assert_eq!(normalize_value(path, &json!("true")), None);
+    }
+    assert!(read_boolean(&json!({}), "sources.showApplyButton").is_none());
+}
+
+#[test]
+fn folder_keybindings_and_hidden_visibility_are_typed() {
+    use crate::keys::{filter_bar, keybind};
+    assert_eq!(boolean_default(filter_bar::LAST_SHOW_HIDDEN_FOLDERS), Some(true));
+    for key in [
+        keybind::FOLDER_PREV,
+        keybind::FOLDER_NEXT,
+        keybind::FOLDER_TOGGLE,
+        keybind::HIDDEN_FOLDERS,
+    ] {
+        assert_eq!(value_kind(key), Some(ValueKind::Text));
+        assert_eq!(text_default(key), Some(""));
+    }
+}
