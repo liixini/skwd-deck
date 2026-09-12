@@ -1,3 +1,4 @@
+mod apply_queue;
 mod common;
 mod connection;
 mod handlers;
@@ -10,6 +11,7 @@ mod source_youtube;
 mod tags;
 mod wallpaper;
 
+pub(crate) use apply_queue::ApplyQueue;
 pub(crate) use connection::handle_conn;
 pub(crate) use response::fail_msg;
 
