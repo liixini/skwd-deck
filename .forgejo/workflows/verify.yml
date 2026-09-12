@@ -40,7 +40,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-paper
-          ref: bb79e59cb0218cbcd00d30366e2e9211cebeb6e1
+          ref: 4c21e23b80e7e530142085e8112dd8a16cb4e48a
           path: skwd-paper
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
