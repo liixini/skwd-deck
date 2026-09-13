@@ -128,7 +128,7 @@ fn source_apply_button_is_optional_and_requires_a_boolean() {
 }
 
 #[test]
-fn folder_keybindings_and_hidden_visibility_are_typed() {
+fn picker_keybindings_and_hidden_visibility_are_typed() {
     use crate::keys::{filter_bar, keybind};
     assert_eq!(boolean_default(filter_bar::LAST_SHOW_HIDDEN_FOLDERS), Some(true));
     for key in [
@@ -136,6 +136,7 @@ fn folder_keybindings_and_hidden_visibility_are_typed() {
         keybind::FOLDER_NEXT,
         keybind::FOLDER_TOGGLE,
         keybind::HIDDEN_FOLDERS,
+        keybind::THEME_PANEL,
     ] {
         assert_eq!(value_kind(key), Some(ValueKind::Text));
         assert_eq!(text_default(key), Some(""));

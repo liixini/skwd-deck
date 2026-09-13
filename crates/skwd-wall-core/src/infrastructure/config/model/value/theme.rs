@@ -5,13 +5,8 @@ use serde_json::Value;
 use super::Config;
 use crate::infrastructure::config::config_path;
 
-pub struct Integration {
-    pub name: String,
-    pub template: String,
-    pub output: String,
-    pub reload: String,
-    pub live_preview: bool,
-}
+mod integrations;
+pub use integrations::Integration;
 
 #[derive(Clone, Copy)]
 pub struct ThemeConfig<'a> {
@@ -198,14 +193,6 @@ impl<'a> ThemeConfig<'a> {
         )
     }
 
-    pub fn integrations(&self) -> Vec<Integration> {
-        self.config
-            .get("integrations")
-            .and_then(Value::as_array)
-            .map(|integrations| integrations.iter().map(Self::integration).collect())
-            .unwrap_or_default()
-    }
-
     pub fn default_matugen_config(&self) -> Option<String> {
         let value = self.config.str_at("defaultMatugenConfig", "");
         if value.is_empty() { None } else { Some(self.config.resolve(&value)) }
@@ -222,20 +209,5 @@ impl<'a> ThemeConfig<'a> {
 
     fn resolved_optional_path(self, key: &str) -> String {
         self.optional_string(key).map_or_else(String::new, |value| self.config.resolve(&value))
-    }
-
-    fn integration(entry: &Value) -> Integration {
-        let name = entry.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-        let live_preview = entry
-            .get("livePreview")
-            .and_then(Value::as_bool)
-            .unwrap_or_else(|| !matches!(name.to_ascii_lowercase().as_str(), "kde" | "plasma"));
-        Integration {
-            name,
-            template: entry.get("template").and_then(Value::as_str).unwrap_or("").to_string(),
-            output: entry.get("output").and_then(Value::as_str).unwrap_or("").to_string(),
-            reload: entry.get("reload").and_then(Value::as_str).unwrap_or("").to_string(),
-            live_preview,
-        }
     }
 }

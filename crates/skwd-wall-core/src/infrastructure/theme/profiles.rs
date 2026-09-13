@@ -95,6 +95,11 @@ pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
     }
     result["dark"] = json!(super::resolve_dark(&config, source));
     result["source"] = json!(source);
+    let mut app_palette = result["palette"].clone();
+    if let Some(scheme) = result.get("scheme") {
+        app_palette["_scheme"] = scheme.clone();
+    }
+    super::apps::apply(&config, &app_palette, result["dark"].as_bool().unwrap_or(true));
     state.theme().set_applied_theme(result);
     Ok(())
 }

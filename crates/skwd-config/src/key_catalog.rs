@@ -226,6 +226,34 @@ pub mod keys {
         pub const GRID_STAGGER: &str = "components.wallpaperSelector.gridStagger";
         pub const GRID_THUMB_HEIGHT: &str = "components.wallpaperSelector.gridThumbHeight";
         pub const GRID_THUMB_WIDTH: &str = "components.wallpaperSelector.gridThumbWidth";
+        pub const HAND_ARCH: &str = "components.wallpaperSelector.handArch";
+        pub const HAND_BACKDROP: &str = "components.wallpaperSelector.handBackdrop";
+        pub const HAND_BACKDROP_BLUR: &str = "components.wallpaperSelector.handBackdropBlur";
+        pub const HAND_CORNER_RADIUS: &str = "components.wallpaperSelector.handCornerRadius";
+        pub const HAND_FAN_ANGLE: &str = "components.wallpaperSelector.handFanAngle";
+        pub const HAND_FAN_ROLL: &str = "components.wallpaperSelector.handFanRoll";
+        pub const HAND_SKEW: &str = "components.wallpaperSelector.handSkew";
+        pub const HAND_BOB: &str = "components.wallpaperSelector.handBob";
+        pub const HAND_CARD_HEIGHT: &str = "components.wallpaperSelector.handCardHeight";
+        pub const HAND_CARD_WIDTH: &str = "components.wallpaperSelector.handCardWidth";
+        pub const HAND_COUNT: &str = "components.wallpaperSelector.handCount";
+        pub const HAND_CUT: &str = "components.wallpaperSelector.handCut";
+        pub const HAND_CUT_VARIANCE: &str = "components.wallpaperSelector.handCutVariance";
+        pub const HAND_GHOSTS: &str = "components.wallpaperSelector.handGhosts";
+        pub const HAND_MOVE: &str = "components.wallpaperSelector.handMove";
+        pub const HAND_MOVE_CASCADE: &str = "components.wallpaperSelector.handMoveCascade";
+        pub const HAND_MOVE_CORKSCREW: &str = "components.wallpaperSelector.handMoveCorkscrew";
+        pub const HAND_MOVE_RIBBON: &str = "components.wallpaperSelector.handMoveRibbon";
+        pub const HAND_MOVE_SHUFFLE: &str = "components.wallpaperSelector.handMoveShuffle";
+        pub const HAND_MOVE_SPIRAL: &str = "components.wallpaperSelector.handMoveSpiral";
+        pub const HAND_PERSPECTIVE: &str = "components.wallpaperSelector.handPerspective";
+        pub const HAND_RIBBON_AXIS: &str = "components.wallpaperSelector.handRibbonAxis";
+        pub const HAND_RIBBONS: &str = "components.wallpaperSelector.handRibbons";
+        pub const HAND_SPEED: &str = "components.wallpaperSelector.handSpeed";
+        pub const HAND_SPREAD: &str = "components.wallpaperSelector.handSpread";
+        pub const HAND_STAGE_X: &str = "components.wallpaperSelector.handStageX";
+        pub const HAND_STAGE_Y: &str = "components.wallpaperSelector.handStageY";
+        pub const HAND_TILT: &str = "components.wallpaperSelector.handTilt";
         pub const HEX_ARC_INTENSITY_X10: &str = "components.wallpaperSelector.hexArcIntensityX10";
         pub const HEX_ASPECT: &str = "components.wallpaperSelector.hexAspect";
         pub const HEX_COLS: &str = "components.wallpaperSelector.hexCols";
@@ -511,6 +539,7 @@ pub mod keys {
         pub const SETTINGS: &str = "keys.settings";
         pub const TAG_CLOUD: &str = "keys.tagCloud";
         pub const TAG_MODE: &str = "keys.tagMode";
+        pub const THEME_PANEL: &str = "keys.themePanel";
     }
     pub mod performance {
         pub const AUTO_DELETE_IMAGE_TRASH: &str = "performance.autoDeleteImageTrash";

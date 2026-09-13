@@ -204,6 +204,37 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::HEX_STAGE_X, "components.wallpaperSelector.hexStageX");
     assert_eq!(keys::selector::HEX_STAGE_Y, "components.wallpaperSelector.hexStageY");
     assert_eq!(keys::selector::HEX_STAGGER, "components.wallpaperSelector.hexStagger");
+    assert_eq!(keys::selector::HAND_ARCH, "components.wallpaperSelector.handArch");
+    assert_eq!(keys::selector::HAND_BACKDROP_BLUR, "components.wallpaperSelector.handBackdropBlur");
+    assert_eq!(keys::selector::HAND_CORNER_RADIUS, "components.wallpaperSelector.handCornerRadius");
+    assert_eq!(keys::selector::HAND_FAN_ANGLE, "components.wallpaperSelector.handFanAngle");
+    assert_eq!(keys::selector::HAND_FAN_ROLL, "components.wallpaperSelector.handFanRoll");
+    assert_eq!(keys::selector::HAND_SKEW, "components.wallpaperSelector.handSkew");
+    assert_eq!(keys::selector::HAND_BACKDROP, "components.wallpaperSelector.handBackdrop");
+    assert_eq!(keys::selector::HAND_BOB, "components.wallpaperSelector.handBob");
+    assert_eq!(keys::selector::HAND_CARD_HEIGHT, "components.wallpaperSelector.handCardHeight");
+    assert_eq!(keys::selector::HAND_CARD_WIDTH, "components.wallpaperSelector.handCardWidth");
+    assert_eq!(keys::selector::HAND_COUNT, "components.wallpaperSelector.handCount");
+    assert_eq!(keys::selector::HAND_CUT, "components.wallpaperSelector.handCut");
+    assert_eq!(keys::selector::HAND_CUT_VARIANCE, "components.wallpaperSelector.handCutVariance");
+    assert_eq!(keys::selector::HAND_GHOSTS, "components.wallpaperSelector.handGhosts");
+    assert_eq!(keys::selector::HAND_MOVE, "components.wallpaperSelector.handMove");
+    assert_eq!(keys::selector::HAND_MOVE_CASCADE, "components.wallpaperSelector.handMoveCascade");
+    assert_eq!(
+        keys::selector::HAND_MOVE_CORKSCREW,
+        "components.wallpaperSelector.handMoveCorkscrew"
+    );
+    assert_eq!(keys::selector::HAND_MOVE_RIBBON, "components.wallpaperSelector.handMoveRibbon");
+    assert_eq!(keys::selector::HAND_MOVE_SHUFFLE, "components.wallpaperSelector.handMoveShuffle");
+    assert_eq!(keys::selector::HAND_MOVE_SPIRAL, "components.wallpaperSelector.handMoveSpiral");
+    assert_eq!(keys::selector::HAND_PERSPECTIVE, "components.wallpaperSelector.handPerspective");
+    assert_eq!(keys::selector::HAND_RIBBON_AXIS, "components.wallpaperSelector.handRibbonAxis");
+    assert_eq!(keys::selector::HAND_RIBBONS, "components.wallpaperSelector.handRibbons");
+    assert_eq!(keys::selector::HAND_SPEED, "components.wallpaperSelector.handSpeed");
+    assert_eq!(keys::selector::HAND_SPREAD, "components.wallpaperSelector.handSpread");
+    assert_eq!(keys::selector::HAND_STAGE_X, "components.wallpaperSelector.handStageX");
+    assert_eq!(keys::selector::HAND_STAGE_Y, "components.wallpaperSelector.handStageY");
+    assert_eq!(keys::selector::HAND_TILT, "components.wallpaperSelector.handTilt");
     assert_eq!(keys::selector::SANDY_ARC, "components.wallpaperSelector.sandyArc");
     assert_eq!(keys::selector::SANDY_BLEND, "components.wallpaperSelector.sandyBlend");
     assert_eq!(keys::selector::SANDY_CENTER, "components.wallpaperSelector.sandyCenter");
@@ -465,6 +496,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::keybind::SETTINGS, "keys.settings");
     assert_eq!(keys::keybind::TAG_CLOUD, "keys.tagCloud");
     assert_eq!(keys::keybind::TAG_MODE, "keys.tagMode");
+    assert_eq!(keys::keybind::THEME_PANEL, "keys.themePanel");
     assert_eq!(keys::performance::AUTO_DELETE_IMAGE_TRASH, "performance.autoDeleteImageTrash");
     assert_eq!(keys::performance::AUTO_OPTIMIZE_IMAGES, "performance.autoOptimizeImages");
     assert_eq!(keys::performance::BATTERY_FPS, "performance.batteryFps");

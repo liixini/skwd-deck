@@ -324,6 +324,10 @@ pub mod setting {
         pub const HEX_SEARCH_PANEL_OFFSET_Y: Setting<f64> =
             Setting::number(keys::selector::HEX_SEARCH_PANEL_OFFSET_Y, 0.0);
         pub const HEX_SHAPE: Setting<String> = Setting::text(keys::selector::HEX_SHAPE, "hexagon");
+        pub const HAND_STAGE_X: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_STAGE_X, 0.0, -100.0, 100.0);
+        pub const HAND_STAGE_Y: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_STAGE_Y, 0.0, -100.0, 100.0);
         pub const HEX_STAGE_DEPTH_ANGLE: Setting<f64> =
             Setting::bounded_number(keys::selector::HEX_STAGE_DEPTH_ANGLE, 0.0, -180.0, 180.0);
         pub const HEX_STAGE_PERSPECTIVE: Setting<f64> =
@@ -428,6 +432,8 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::selector::GRID_STAGE_X.spec(),
     setting::selector::GRID_STAGE_Y.spec(),
     setting::selector::GRID_STAGGER.spec(),
+    setting::selector::HAND_STAGE_X.spec(),
+    setting::selector::HAND_STAGE_Y.spec(),
     setting::selector::HEX_ASPECT.spec(),
     setting::selector::HEX_CURVE.spec(),
     setting::selector::HEX_CURVE_FREQUENCY.spec(),
@@ -481,6 +487,14 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_TAGGING, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_THEME, true),
     SettingSpec::boolean(crate::keys::selector::SANDY_LOD_AUTO, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_BACKDROP, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_BOB, false),
+    SettingSpec::boolean(crate::keys::selector::HAND_GHOSTS, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_MOVE_CASCADE, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_MOVE_CORKSCREW, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_MOVE_RIBBON, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_MOVE_SHUFFLE, true),
+    SettingSpec::boolean(crate::keys::selector::HAND_MOVE_SPIRAL, true),
     SettingSpec::boolean(crate::keys::selector::FLIP_SHADER, true),
     SettingSpec::boolean(crate::keys::selector::FLIP_BACK_REVEAL, true),
     SettingSpec::boolean(crate::keys::noctalia::HOVER_PREVIEW, true),
@@ -613,6 +627,10 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::plasma::LOCK_SCREEN_IMAGE, ""),
     SettingSpec::text(crate::keys::plasma::LOCK_SCREEN_MODE, "off"),
     SettingSpec::text(crate::keys::selector::SANDY_SWAP_STYLE, "vortex"),
+    SettingSpec::text(crate::keys::selector::HAND_CUT, "straight"),
+    SettingSpec::text(crate::keys::selector::HAND_CUT_VARIANCE, "none"),
+    SettingSpec::text(crate::keys::selector::HAND_MOVE, "cycle"),
+    SettingSpec::text(crate::keys::selector::HAND_RIBBON_AXIS, "rows"),
     SettingSpec::text(crate::keys::paper::AWWW_TRANSITION_BEZIER, ""),
     SettingSpec::text(crate::keys::theme::CUSTOM_COLORS, ""),
     SettingSpec::text(crate::keys::theme::STATIC_THEME, "nord"),
@@ -644,6 +662,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::keybind::SETTINGS, ""),
     SettingSpec::text(crate::keys::keybind::TAG_CLOUD, ""),
     SettingSpec::text(crate::keys::keybind::TAG_MODE, ""),
+    SettingSpec::text(crate::keys::keybind::THEME_PANEL, ""),
     SettingSpec::number(crate::keys::paper::AWWW_TRANSITION_DURATION_MS, 1000.0),
     SettingSpec::number(crate::keys::paper::AWWW_TRANSITION_FPS, 60.0),
     SettingSpec::number(crate::keys::paper::AWWW_TRANSITION_STEP, 90.0),
@@ -702,6 +721,20 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::number(crate::keys::selector::HEX_SCROLL_STEP, 1.0),
     SettingSpec::number(crate::keys::selector::HEX_ARC_INTENSITY_X10, 12.0),
     SettingSpec::number(crate::keys::selector::HEX_ARC_INTENSITY, 1.2),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_COUNT, 5.0, 2.0, 16.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_FAN_ANGLE, 12.0, -60.0, 60.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_FAN_ROLL, 8.5, -45.0, 45.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_ARCH, 20.0, -200.0, 200.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_CORNER_RADIUS, 0.0, 0.0, 200.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_SKEW, 0.0, -200.0, 200.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_BACKDROP_BLUR, 100.0, 0.0, 400.0),
+    SettingSpec::number(crate::keys::selector::HAND_CARD_WIDTH, 168.0),
+    SettingSpec::number(crate::keys::selector::HAND_CARD_HEIGHT, 432.0),
+    SettingSpec::number(crate::keys::selector::HAND_SPREAD, 126.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_RIBBONS, 6.0, 2.0, 14.0),
+    SettingSpec::number(crate::keys::selector::HAND_SPEED, 100.0),
+    SettingSpec::number(crate::keys::selector::HAND_TILT, 100.0),
+    SettingSpec::bounded_number(crate::keys::selector::HAND_PERSPECTIVE, 1700.0, 400.0, 6000.0),
     SettingSpec::responsive_number(crate::keys::selector::SANDY_CENTER, 440.0, 330.0),
     SettingSpec::responsive_number(crate::keys::selector::SANDY_SLICE_WIDTH, 96.0, 68.0),
     SettingSpec::responsive_number(crate::keys::selector::SANDY_SLICE_HEIGHT, 180.0, 130.0),
@@ -762,6 +795,7 @@ pub fn value_kind(path: &str) -> Option<ValueKind> {
         || path.starts_with("filterBar.show.")
         || path.ends_with("hexArc")
         || path.ends_with(".livePreview")
+        || path.starts_with("integrations.") && path.ends_with(".enabled")
     {
         return Some(ValueKind::Boolean);
     }
@@ -785,7 +819,7 @@ pub fn value_kind(path: &str) -> Option<ValueKind> {
         };
     }
     if path.starts_with("postProcessing.") || path.starts_with("integrations.") {
-        return if path.ends_with(".livePreview") {
+        return if path.ends_with(".livePreview") || path.ends_with(".enabled") {
             Some(ValueKind::Boolean)
         } else {
             Some(ValueKind::Text)
@@ -801,6 +835,7 @@ pub fn boolean_default(path: &str) -> Option<bool> {
     if path.starts_with("filterBar.show.")
         || path.ends_with("hexArc")
         || path.ends_with(".livePreview")
+        || path.starts_with("integrations.") && path.ends_with(".enabled")
     {
         return Some(true);
     }

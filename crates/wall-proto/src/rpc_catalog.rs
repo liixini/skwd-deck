@@ -1,4 +1,6 @@
 pub mod rpc {
+    pub const THEME_APPS: &str = "theme.apps";
+    pub const THEME_APP_SET: &str = "theme.app.set";
     pub const PLAYBACK_PROCESSES: &str = "playback.processes";
     pub const THEME_CURRENT: &str = "theme.current";
     pub const STATUS: &str = "status";
@@ -166,6 +168,8 @@ pub mod rpc {
         EFFECTS_BACKFILL_TAGS,
         PLAYBACK_PROCESSES,
         THEME_CURRENT,
+        THEME_APPS,
+        THEME_APP_SET,
         THEME_BACKENDS,
         THEME_PREVIEW,
         THEME_PREVIEWS,

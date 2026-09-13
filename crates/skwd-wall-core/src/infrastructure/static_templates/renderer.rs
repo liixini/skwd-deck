@@ -162,7 +162,7 @@ pub fn render_doc(template: &str, doc: &serde_json::Value) -> String {
     })
 }
 
-fn render_palette(template: &str, palette: &Value, dark: bool) -> String {
+pub(crate) fn render_palette(template: &str, palette: &Value, dark: bool) -> String {
     let Some(mut doc) = palette.get("_scheme").cloned() else {
         return render(template, &material_map(palette, dark));
     };

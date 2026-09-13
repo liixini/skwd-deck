@@ -28,7 +28,7 @@ python3 scripts/tests/test_package_stage.py
 python3 scripts/tests/test_fedora_steamworks.py
 
 if [ "$e2e" -eq 1 ]; then
-    for suite in rpc schedule lifecycle apply apply_model restore we concurrent hotplug library playback; do
+    for suite in app_themes rpc schedule lifecycle apply apply_model restore we concurrent hotplug library playback; do
         cargo test --release -p skwd-e2e --test "$suite" -- --ignored --nocapture
     done
 fi

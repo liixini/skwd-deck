@@ -1,0 +1,58 @@
+pub(super) struct Recipe {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub config: &'static str,
+    pub output: &'static str,
+    pub directive: &'static str,
+    pub template: &'static str,
+    pub signal: Option<i32>,
+}
+
+pub(super) const RECIPES: [Recipe; 4] = [
+    Recipe {
+        id: "kitty",
+        name: "Kitty",
+        config: "kitty/kitty.conf",
+        output: "skwd-colors.conf",
+        directive: "include skwd-colors.conf",
+        template: include_str!("../../../../../../data/matugen/templates/kitty.conf"),
+        signal: Some(libc::SIGUSR1),
+    },
+    Recipe {
+        id: "btop",
+        name: "btop",
+        config: "btop/btop.conf",
+        output: "themes/skwd-managed.theme",
+        directive: "color_theme = \"skwd-managed\"",
+        template: include_str!("../../../../../../data/matugen/templates/btop.theme"),
+        signal: Some(libc::SIGUSR2),
+    },
+    Recipe {
+        id: "ghostty",
+        name: "Ghostty",
+        config: "ghostty/config",
+        output: "skwd-colors.conf",
+        directive: "config-file = skwd-colors.conf",
+        template: include_str!("../../../../../../data/matugen/templates/ghostty.conf"),
+        signal: Some(libc::SIGUSR2),
+    },
+    Recipe {
+        id: "niri",
+        name: "Niri",
+        config: "niri/config.kdl",
+        output: "skwd-colors.kdl",
+        directive: "include \"skwd-colors.kdl\"",
+        template: "layout {\n    focus-ring {\n        active-color \"{{colors.primary.default.hex}}\"\n        inactive-color \"{{colors.outline.default.hex}}\"\n    }\n    border {\n        active-color \"{{colors.primary.default.hex}}\"\n        inactive-color \"{{colors.outline.default.hex}}\"\n    }\n}\n",
+        signal: None,
+    },
+];
+
+pub(super) const KDE_RECIPE: Recipe = Recipe {
+    id: "kde",
+    name: "KDE Plasma",
+    config: "kdeglobals",
+    output: "SkwdManaged.colors",
+    directive: "",
+    template: include_str!("../../../../../../data/matugen/templates/kde-colors.colors"),
+    signal: None,
+};
