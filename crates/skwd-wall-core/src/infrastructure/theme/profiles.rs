@@ -93,7 +93,14 @@ pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
     {
         result["scheme"] = scheme;
     }
-    result["dark"] = json!(super::resolve_dark(&config, source));
+    result["dark"] = if config.theme().authority() == "dms" {
+        result
+            .pointer("/scheme/is_dark_mode")
+            .cloned()
+            .unwrap_or_else(|| json!(super::resolve_dark(&config, source)))
+    } else {
+        json!(super::resolve_dark(&config, source))
+    };
     result["source"] = json!(source);
     let mut app_palette = result["palette"].clone();
     if let Some(scheme) = result.get("scheme") {

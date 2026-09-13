@@ -49,7 +49,8 @@ fn cli_probe(binary: &str, flag: &str) -> bool {
 pub fn backend_available(config: &Config, backend: &str) -> bool {
     match backend {
         "off" | "native" | "static" | "skwd-iris" | "skwd-pywal" | "skwd-wallust" => true,
-        "matugen" | "dms" => cli_available("matugen"),
+        "matugen" => cli_available("matugen"),
+        "dms" => cli_available("matugen") && cli_probe("dms", "version"),
         "wallust" => cli_available("wallust"),
         "iris" => cli_available("iris"),
         "pywal" => cli_probe("wal", "-v"),

@@ -423,6 +423,27 @@ pub fn import(config: &Config, provider: &str, dark: bool) -> bool {
         log::debug!("theme provider {provider}: ignored our own echoed palette");
         return false;
     }
+    if provider == "dms" {
+        let Some(document) = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|palette| crate::dms::shell_document(&palette, dark))
+        else {
+            log::warn!("DMS palette import is incomplete");
+            return false;
+        };
+        let previous = std::fs::read(crate::theme::scheme_path(config))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        if previous.as_ref() == Some(&document) {
+            return false;
+        }
+        return crate::theme::profiles::publish_document(
+            config,
+            &document,
+            document["is_dark_mode"].as_bool().unwrap_or(dark),
+            false,
+        );
+    }
     let Some(palette) = serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|value| normalize(provider, &value, dark))

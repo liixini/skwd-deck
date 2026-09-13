@@ -202,7 +202,7 @@ fn scheme_tokens() -> serde_json::Value {
 fn scheme_preserves_all_noctalia_roles_in_both_modes() {
     let tokens = scheme_tokens();
     for dark in [true, false] {
-        let doc = cli_tokens_to_scheme(&tokens, dark).unwrap();
+        let doc = crate::material::document_from_modes(&tokens, dark).unwrap();
         let mode = if dark { "dark" } else { "light" };
         for (name, hex) in tokens["dark"].as_object().unwrap() {
             assert_eq!(doc["colors"][name]["dark"]["color"], *hex);
@@ -221,12 +221,12 @@ fn scheme_rejects_incomplete_or_invalid_noctalia_tokens() {
     for mode in ["dark", "light"] {
         let mut missing = original.clone();
         missing[mode].as_object_mut().unwrap().remove("surface");
-        assert!(cli_tokens_to_scheme(&missing, true).is_none());
+        assert!(crate::material::document_from_modes(&missing, true).is_none());
         let mut invalid = original.clone();
         invalid[mode]["surface"] = serde_json::json!("#nothex");
-        assert!(cli_tokens_to_scheme(&invalid, true).is_none());
+        assert!(crate::material::document_from_modes(&invalid, true).is_none());
         let mut missing_mode = original.clone();
         missing_mode.as_object_mut().unwrap().remove(mode);
-        assert!(cli_tokens_to_scheme(&missing_mode, true).is_none());
+        assert!(crate::material::document_from_modes(&missing_mode, true).is_none());
     }
 }

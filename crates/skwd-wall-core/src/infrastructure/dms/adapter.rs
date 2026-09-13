@@ -111,16 +111,6 @@ pub fn imported_shell_colors(shell_palette: &Value, dark: bool) -> Option<Value>
         .filter(|colors| colors.as_object().is_some_and(|roles| !roles.is_empty()))
 }
 
-fn write_our_colors(config: &Config, colors: &Value) -> bool {
-    let ours = PathBuf::from(config.cache_dir()).join("colors.json");
-    if let Err(err) = crate::paths::atomic_write(&ours, colors.to_string().as_bytes()) {
-        log::warn!("dms palette bridge: write {} failed: {err}", ours.display());
-        return false;
-    }
-    log::info!("dms palette bridge: wrote {}", ours.display());
-    true
-}
-
 fn write_shell_colors(payload: &[u8]) -> std::io::Result<()> {
     let path = colors_path();
     if let Some(dir) = path.parent() {
@@ -130,27 +120,37 @@ fn write_shell_colors(payload: &[u8]) -> std::io::Result<()> {
 }
 
 pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
-    let scheme = config.theme().matugen_scheme_override().unwrap_or_else(dms_scheme);
-    let Some(tokens) = generate(image, &scheme, config.theme().matugen_color_index()) else {
-        log::warn!("dms palette bridge: matugen generation failed for {image}");
-        return false;
-    };
-    let Some(flat) = flat_mode_colors(&tokens, dark) else {
-        log::warn!("dms palette bridge: matugen output missing colors for {image}");
-        return false;
-    };
-    if !write_our_colors(config, &flat) {
+    if let Err(error) = super::generation::apply(config, image, dark) {
+        log::warn!("dms theme generation failed: {error:#}");
         return false;
     }
-    match dank_colors_json(&tokens) {
-        Some(dank) => {
-            if let Err(err) = write_shell_colors(dank.to_string().as_bytes()) {
-                log::warn!("dms palette bridge: shell colors write failed: {err}");
-            }
-        }
-        None => log::warn!("dms palette bridge: could not shape shell colors for {image}"),
+    let Some(document) = std::fs::read(colors_path())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|palette| shell_document(&palette, dark))
+    else {
+        log::warn!("dms theme generation did not produce a complete palette");
+        return false;
+    };
+    crate::theme::profiles::publish_document(
+        config,
+        &document,
+        document["is_dark_mode"].as_bool().unwrap_or(dark),
+        true,
+    )
+}
+
+pub fn shell_document(palette: &Value, dark: bool) -> Option<Value> {
+    let dark = match palette.get("mode").and_then(Value::as_str) {
+        Some("dark") => true,
+        Some("light") => false,
+        _ => dark,
+    };
+    let mut document = crate::material::document_from_modes(palette.get("colors")?, dark)?;
+    if let Some(dank16) = palette.get("dank16") {
+        document["dank16"] = dank16.clone();
     }
-    true
+    Some(document)
 }
 
 fn preview_orig_path(config: &Config) -> PathBuf {
