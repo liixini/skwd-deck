@@ -387,6 +387,8 @@ pub mod setting {
 }
 
 const STATIC_SPECS: &[SettingSpec] = &[
+    SettingSpec::text(crate::keys::selector::START_POSITION, "beginning"),
+    SettingSpec::text(crate::keys::selector::LAST_APPLIED_KEY, ""),
     setting::filter_bar::DEFAULT_FOLDER.spec(),
     setting::filter_bar::OFFSET_X.spec(),
     setting::filter_bar::OFFSET_Y.spec(),

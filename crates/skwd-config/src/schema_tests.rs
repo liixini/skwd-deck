@@ -6,6 +6,8 @@ use super::*;
 
 #[test]
 fn typed_settings_defaults() {
+    assert_eq!(text_default(crate::keys::selector::START_POSITION), Some("beginning"));
+    assert_eq!(text_default(crate::keys::selector::LAST_APPLIED_KEY), Some(""));
     assert_eq!(read_text(&json!({}), crate::keys::noctalia::THEME_MODE).as_deref(), Some("follow"));
     assert_eq!(setting::general::MAX_FPS.read(&json!({})), 120.0);
     assert_eq!(setting::general::MAX_FPS.read(&json!({"general": {"maxFps": 90}})), 90.0);

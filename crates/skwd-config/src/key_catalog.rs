@@ -190,6 +190,9 @@ pub mod keys {
         pub const TRIGGER: &str = "schedule.trigger";
     }
     pub mod selector {
+        pub const START_POSITION: &str = "components.wallpaperSelector.startPosition";
+        pub const LAST_APPLIED_KEY: &str = "components.wallpaperSelector.lastAppliedKey";
+        pub const LAST_BROWSE_POSITION: &str = "components.wallpaperSelector.lastBrowsePosition";
         pub const EXPANDED_WIDTH: &str = "components.wallpaperSelector.expandedWidth";
         pub const GRID_COLUMNS: &str = "components.wallpaperSelector.gridColumns";
         pub const GRID_BORDER_WIDTH: &str = "components.wallpaperSelector.gridBorderWidth";
