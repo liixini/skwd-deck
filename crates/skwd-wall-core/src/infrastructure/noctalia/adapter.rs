@@ -156,16 +156,10 @@ pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
         log::warn!("noctalia palette bridge: generated palette is not valid JSON for {image}");
         return false;
     };
-    let mode = if dark { "dark" } else { "light" };
-    let Some(colors) = tokens.get(mode) else {
-        log::warn!("noctalia palette bridge: generated palette is missing {mode} colours");
+    let Some(document) = cli_tokens_to_scheme(&tokens, dark) else {
+        log::warn!("noctalia palette bridge: generated palette is incomplete for {image}");
         return false;
     };
-    let path = PathBuf::from(config.cache_dir()).join("colors.json");
-    if let Err(err) = crate::paths::atomic_write(&path, colors.to_string().as_bytes()) {
-        log::warn!("noctalia palette bridge: write {} failed: {err}", path.display());
-        return false;
-    }
     let Some(custom) = cli_tokens_to_custom_palette(&tokens) else {
         log::warn!("noctalia palette bridge: could not encode shell palette for {image}");
         return false;
@@ -181,7 +175,10 @@ pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
         log::warn!("noctalia palette bridge: write {} failed: {err}", palette_path.display());
         return false;
     }
-    log::info!("noctalia palette bridge: wrote {} and {}", path.display(), palette_path.display());
+    if !crate::theme::profiles::publish_document(config, &document, dark, true) {
+        return false;
+    }
+    log::info!("noctalia palette bridge: published scheme and {}", palette_path.display());
     activate(config, dark)
 }
 
@@ -280,6 +277,28 @@ fn mode_to_custom(mode: &serde_json::Value) -> serde_json::Value {
             "bright": ansi("bright"),
         }
     })
+}
+
+fn cli_tokens_to_scheme(cli: &serde_json::Value, dark: bool) -> Option<serde_json::Value> {
+    let dark_tokens = cli.get("dark")?.as_object()?;
+    let light_tokens = cli.get("light")?.as_object()?;
+    if !crate::material::ROLE_KEYS.iter().all(|key| dark_tokens.contains_key(*key))
+        || dark_tokens.len() != light_tokens.len()
+    {
+        return None;
+    }
+    let mut colors = serde_json::Map::new();
+    for (name, value) in dark_tokens {
+        let dark_hex = crate::material::parse_seed(value.as_str()?)?;
+        let light_hex = crate::material::parse_seed(light_tokens.get(name)?.as_str()?)?;
+        colors.insert(
+            name.clone(),
+            serde_json::json!({"dark": {"color": dark_hex}, "light": {"color": light_hex}}),
+        );
+    }
+    let mut document = serde_json::json!({"colors": colors});
+    crate::material::select_mode(&mut document, dark);
+    Some(document)
 }
 
 pub fn cli_tokens_to_custom_palette(cli: &serde_json::Value) -> Option<serde_json::Value> {

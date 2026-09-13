@@ -186,3 +186,47 @@ fn failed_end_keeps_state() {
     preview_end(&st);
     assert_eq!(st.theme().noctalia_preview_orig(), Some(orig));
 }
+
+fn scheme_tokens() -> serde_json::Value {
+    let mut tokens = serde_json::json!({"dark": {}, "light": {}});
+    for (index, key) in crate::material::ROLE_KEYS.iter().enumerate() {
+        tokens["dark"][key] = serde_json::json!(format!("#{:06x}", 0x120000 + index));
+        tokens["light"][key] = serde_json::json!(format!("#{:06x}", 0xea0000 + index));
+    }
+    tokens["dark"]["terminal_cursor"] = serde_json::json!("#abcdef");
+    tokens["light"]["terminal_cursor"] = serde_json::json!("#fedcba");
+    tokens
+}
+
+#[test]
+fn scheme_preserves_all_noctalia_roles_in_both_modes() {
+    let tokens = scheme_tokens();
+    for dark in [true, false] {
+        let doc = cli_tokens_to_scheme(&tokens, dark).unwrap();
+        let mode = if dark { "dark" } else { "light" };
+        for (name, hex) in tokens["dark"].as_object().unwrap() {
+            assert_eq!(doc["colors"][name]["dark"]["color"], *hex);
+            assert_eq!(doc["colors"][name]["light"]["color"], tokens["light"][name]);
+            assert_eq!(doc["colors"][name]["default"]["color"], tokens[mode][name]);
+        }
+        assert_eq!(doc["base16"]["base0D"], tokens[mode]["primary"]);
+        assert_eq!(doc["is_dark_mode"], dark);
+        assert_eq!(doc["mode"], mode);
+    }
+}
+
+#[test]
+fn scheme_rejects_incomplete_or_invalid_noctalia_tokens() {
+    let original = scheme_tokens();
+    for mode in ["dark", "light"] {
+        let mut missing = original.clone();
+        missing[mode].as_object_mut().unwrap().remove("surface");
+        assert!(cli_tokens_to_scheme(&missing, true).is_none());
+        let mut invalid = original.clone();
+        invalid[mode]["surface"] = serde_json::json!("#nothex");
+        assert!(cli_tokens_to_scheme(&invalid, true).is_none());
+        let mut missing_mode = original.clone();
+        missing_mode.as_object_mut().unwrap().remove(mode);
+        assert!(cli_tokens_to_scheme(&missing_mode, true).is_none());
+    }
+}
