@@ -322,17 +322,45 @@ pub(super) fn clear_data(ctx: &Ctx, req: &Request) -> Response {
     Response::ok(req.id, json!({"started": true}))
 }
 
+pub(super) fn validate_apply_request(req: &Request) -> Option<Response> {
+    let kind = req.str_param("type", wall_proto::kind::STATIC);
+    let error = match kind {
+        wall_proto::kind::WE if req.str_param("we_id", "").is_empty() => "missing we_id",
+        wall_proto::kind::STATIC | wall_proto::kind::VIDEO
+            if req.str_param("path", "").is_empty() =>
+        {
+            "missing path"
+        }
+        wall_proto::kind::WE | wall_proto::kind::STATIC | wall_proto::kind::VIDEO => return None,
+        _ => return Some(Response::err(req.id, -1, format!("apply type '{kind}' not supported"))),
+    };
+    Some(Response::err(req.id, -32602, error))
+}
+
+pub(super) fn publish_apply_rejection(ctx: &Ctx, req: &Request, response: &Response) {
+    ctx.stats.error();
+    if let Some(error) = &response.error
+        && error.code == -1
+    {
+        ctx.events.publish(
+            ev::APPLY_RESULT,
+            json!({
+                "request_id": req.id, "ok": false, "output": req.str_param("output", "*"),
+                "error_kind": "apply_failed", "detail": error.message,
+            }),
+        );
+    }
+}
+
 pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, wallpaper, history, events, workers, stats, .. } = ctx;
     state.reload_config();
     let ty = req.str_param("type", wall_proto::kind::STATIC);
     let path = req.str_param("path", "");
     let we_id = req.str_param("we_id", "");
-    if ty == wall_proto::kind::WE && we_id.is_empty() {
-        return crate::infrastructure::rpc::fail_msg(stats, req.id, -32602, "missing we_id");
-    }
-    if ty != wall_proto::kind::WE && path.is_empty() {
-        return crate::infrastructure::rpc::fail_msg(stats, req.id, -32602, "missing path");
+    if let Some(error) = validate_apply_request(req) {
+        publish_apply_rejection(ctx, req, &error);
+        return error;
     }
     let output = req.str_param("output", "*");
     let (def_mute, def_vol) = {

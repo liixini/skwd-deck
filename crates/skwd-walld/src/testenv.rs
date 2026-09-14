@@ -169,6 +169,7 @@ pub(crate) fn context(
     stats: &Arc<crate::infrastructure::stats::Stats>,
 ) -> crate::composition::context::Ctx {
     crate::composition::context::Ctx {
+        apply_queue: Arc::default(),
         state: Arc::clone(state),
         config: state.config_store(),
         database: state.database(),

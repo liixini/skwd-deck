@@ -81,6 +81,7 @@ fn main() -> anyhow::Result<()> {
         debug,
     ));
     let ctx = Ctx {
+        apply_queue: Arc::default(),
         state: Arc::clone(&state),
         config,
         database,

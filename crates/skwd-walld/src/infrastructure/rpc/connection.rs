@@ -4,7 +4,7 @@ use skwd_wall_core::db;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedWriteHalf;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use wall_proto::{Request, Response, rpc};
 
 use super::router::dispatch;
@@ -22,6 +22,23 @@ const INLINE_METHODS: [&str; 5] = [
     rpc::PICKER_SESSION_BEGIN,
     rpc::PICKER_SESSION_END,
 ];
+
+#[derive(Clone)]
+pub(super) struct ResponseSink {
+    pub(super) sender: Sender<String>,
+    pub(super) close: tokio::sync::watch::Sender<bool>,
+}
+
+impl ResponseSink {
+    pub(super) fn send(&self, payload: String) {
+        if matches!(
+            self.sender.try_send(payload),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_))
+        ) {
+            self.close.send_replace(true);
+        }
+    }
+}
 
 fn next_conn_id() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -68,7 +85,19 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
     let mut source_tasks = tokio::task::JoinSet::new();
     let (sender, receiver) = tokio::sync::mpsc::channel::<String>(SUBSCRIBER_CHANNEL_CAPACITY);
     let (read_half, write_half) = stream.into_split();
-    tokio::spawn(writer_task(write_half, receiver));
+    let (close, mut closing) = tokio::sync::watch::channel(false);
+    let replies = ResponseSink { sender: sender.clone(), close };
+    tokio::spawn(async move {
+        tokio::select! {
+            () = writer_task(write_half, receiver) => {},
+            () = async {
+                while closing.changed().await.is_ok() {
+                    if *closing.borrow() { return; }
+                }
+                std::future::pending::<()>().await;
+            } => {},
+        }
+    });
 
     let mut reader = BufReader::new(read_half);
     let mut line = Vec::with_capacity(4096);
@@ -83,7 +112,7 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
                     -32600,
                     format!("request exceeds {MAX_REQUEST_BYTES} byte limit"),
                 )) {
-                    let _ = sender.send(text).await;
+                    replies.send(text);
                 }
                 break;
             }
@@ -96,11 +125,15 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
             Ok(request) => request,
             Err(payload) => {
                 if let Some(text) = payload {
-                    let _ = sender.send(text).await;
+                    replies.send(text);
                 }
                 continue;
             }
         };
+        if request.method == rpc::WALL_APPLY {
+            ctx.apply_queue.submit(ctx, request, replies.clone());
+            continue;
+        }
         if request.method == rpc::WALL_SHELL_PREVIEW {
             previewing = true;
         } else if request.method == rpc::WALL_SHELL_PREVIEW_END {
@@ -115,9 +148,7 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
             Err(response) => {
                 ctx.stats.rpc(&request.method);
                 ctx.stats.error();
-                if sender.send(response_payload(&response, request.id)).await.is_err() {
-                    break;
-                }
+                replies.send(response_payload(&response, request.id));
                 continue;
             }
             Ok(Some(call)) => {
@@ -141,17 +172,15 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
                     move || dispatch(&task_ctx, &task_request),
                 );
                 if call.generation.is_some() {
-                    let task_sender = sender.clone();
+                    let task_replies = replies.clone();
                     source_tasks.spawn(async move {
                         let response = response.await;
-                        let _ = task_sender.send(response_payload(&response, request_id)).await;
+                        task_replies.send(response_payload(&response, request_id));
                     });
                     continue;
                 }
                 let response = response.await;
-                if sender.send(response_payload(&response, request_id)).await.is_err() {
-                    break;
-                }
+                replies.send(response_payload(&response, request_id));
                 continue;
             }
             Ok(None) => {}
@@ -168,12 +197,9 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
             };
             payload
         };
-        let sent = sender.send(payload).await.is_ok();
+        replies.send(payload);
         if heavy {
             let _ = tokio::task::spawn_blocking(trim_allocator).await;
-        }
-        if !sent {
-            break;
         }
     }
     source_tasks.abort_all();
@@ -261,7 +287,7 @@ fn payload_for(ctx: &Ctx, request: &Request, heavy: bool) -> String {
     response_payload(&response, request.id)
 }
 
-fn response_payload(response: &Response, request_id: u64) -> String {
+pub(super) fn response_payload(response: &Response, request_id: u64) -> String {
     serde_json::to_string(response).unwrap_or_else(|_| {
         format!(
             r#"{{"id":{request_id},"error":{{"code":-32603,"message":"response serialize failed"}}}}"#
