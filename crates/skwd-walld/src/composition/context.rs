@@ -14,6 +14,7 @@ use crate::infrastructure::tasks::TaskRegistry;
 
 #[derive(Clone)]
 pub(crate) struct Ctx {
+    pub apply_queue: Arc<crate::infrastructure::rpc::ApplyQueue>,
     pub state: Arc<WallState>,
     pub config: Arc<ConfigStore>,
     pub database: Arc<Database>,
