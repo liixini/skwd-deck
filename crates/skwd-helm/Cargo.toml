@@ -16,5 +16,8 @@ skwd-config = { path = "../skwd-config" }
 skwd-wall-core = { path = "../skwd-wall-core" }
 wgpu = { version = "27", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

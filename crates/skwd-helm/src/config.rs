@@ -27,7 +27,12 @@ impl Config {
 
     #[cfg(test)]
     pub fn from_data(data: Value) -> Self {
-        Self { data, path: std::env::temp_dir().join("skwd_helm_test.json") }
+        Self::from_data_at(data, std::env::temp_dir().join("skwd_helm_test.json"))
+    }
+
+    #[cfg(test)]
+    pub fn from_data_at(data: Value, path: PathBuf) -> Self {
+        Self { data, path }
     }
 
     pub fn wallpaper_dir(&self) -> String {

@@ -2265,6 +2265,7 @@ dependencies = [
  "serde_json",
  "skwd-config",
  "skwd-wall-core",
+ "tempfile",
  "wall-proto",
  "wgpu",
 ]

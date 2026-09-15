@@ -441,3 +441,23 @@ fn workshop_video_uses_indexed_media_path() {
         Some(json!({"type":"video", "path":"/workshop/42/movie.mp4", "output":"DP-1"}))
     );
 }
+
+#[test]
+fn config_persist_keeps_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let dots = dir.path().join("dots");
+    std::fs::create_dir(&dots).unwrap();
+    let target = dots.join("config.json");
+    std::fs::write(&target, "{}").unwrap();
+    let link = dir.path().join("config.json");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let config = super::config::Config::from_data_at(
+        json!({"general": {"wallpaperDir": "/wp"}}),
+        link.clone(),
+    );
+    config.persist().unwrap();
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_link(&link).unwrap(), target);
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    assert_eq!(saved["general"]["wallpaperDir"], "/wp");
+}

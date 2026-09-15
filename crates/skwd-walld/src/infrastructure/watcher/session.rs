@@ -95,8 +95,8 @@ fn install(ctx: Ctx) -> Option<Session> {
             std::time::Duration::from_secs(config.library_polling_interval_seconds()),
         )
     };
-    let cfg_path = skwd_wall_core::config::config_path();
-    let cfg_path_for_loop = cfg_path.clone();
+    let cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    let cfg_for_loop = cfg.clone();
     let tx_for_loop = tx.clone();
     let mut watcher = match create_watcher(tx.clone()) {
         Ok(watcher) => watcher,
@@ -116,7 +116,7 @@ fn install(ctx: Ctx) -> Option<Session> {
                 polling_roots,
                 poll_interval,
                 tx,
-                cfg_path,
+                cfg,
                 true,
                 state,
                 events,
@@ -128,7 +128,7 @@ fn install(ctx: Ctx) -> Option<Session> {
                     None,
                     rx,
                     tx_for_loop,
-                    cfg_path_for_loop,
+                    cfg_for_loop,
                     loop_ctx,
                     settings,
                 )),
@@ -138,7 +138,7 @@ fn install(ctx: Ctx) -> Option<Session> {
     };
 
     let polling_roots = watch_media_dirs(&mut watcher, &roots);
-    watch_config_dir(&mut watcher, &cfg_path);
+    watch_config_dir(&mut watcher, &cfg);
     watch_theme_dirs(&mut watcher);
     if polling_roots.is_empty() {
         status::record_native(events.as_ref(), "native library watch is active", false);
@@ -148,7 +148,7 @@ fn install(ctx: Ctx) -> Option<Session> {
             polling_roots,
             poll_interval,
             tx.clone(),
-            cfg_path.clone(),
+            cfg.clone(),
             false,
             state.clone(),
             events.clone(),
@@ -166,10 +166,10 @@ fn install(ctx: Ctx) -> Option<Session> {
 
     let _ = tx.send(
         notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
-            .add_path(cfg_path.clone()),
+            .add_path(cfg.path().to_path_buf()),
     );
     Some(Session {
-        main: tokio::spawn(watch_loop(Some(watcher), rx, tx, cfg_path, loop_ctx, settings)),
+        main: tokio::spawn(watch_loop(Some(watcher), rx, tx, cfg, loop_ctx, settings)),
         recovery,
     })
 }

@@ -92,9 +92,65 @@ fn is_transient(path: &std::path::Path) -> bool {
         })
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ConfigWatch {
+    path: std::path::PathBuf,
+    target: std::path::PathBuf,
+}
+
+impl ConfigWatch {
+    pub(crate) fn new(path: std::path::PathBuf) -> Self {
+        let target = Self::resolve(&path);
+        Self { path, target }
+    }
+
+    fn resolve(path: &std::path::Path) -> std::path::PathBuf {
+        skwd_config::follow_links(path).unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    fn hit(&self, path: &std::path::Path) -> bool {
+        path == self.path || path == self.target
+    }
+
+    fn sibling(&self, path: &std::path::Path) -> bool {
+        let parent = path.parent();
+        parent == self.path.parent() || parent == self.target.parent()
+    }
+
+    fn target_dir(&self) -> Option<&std::path::Path> {
+        self.target.parent().filter(|dir| Some(*dir) != self.path.parent())
+    }
+
+    fn dirs(&self) -> impl Iterator<Item = &std::path::Path> {
+        self.path.parent().into_iter().chain(self.target_dir())
+    }
+
+    fn refresh(&mut self, watcher: Option<&mut notify::RecommendedWatcher>) -> bool {
+        use notify::Watcher;
+
+        let target = Self::resolve(&self.path);
+        if target == self.target {
+            return false;
+        }
+        let stale = self.target_dir().map(std::path::Path::to_path_buf);
+        self.target = target;
+        if let Some(watcher) = watcher {
+            if let Some(dir) = stale.filter(|dir| Some(dir.as_path()) != self.target_dir()) {
+                let _ = watcher.unwatch(&dir);
+            }
+            watch_config_dir(watcher, self);
+        }
+        true
+    }
+}
+
 fn split_config_events(
     paths: Vec<std::path::PathBuf>,
-    cfg_path: &std::path::Path,
+    cfg: &ConfigWatch,
     out: &mut Vec<std::path::PathBuf>,
 ) -> bool {
     let mut hit = false;
@@ -102,9 +158,9 @@ fn split_config_events(
         if skwd_wall_core::paths::is_internal_library_path(&path) {
             continue;
         }
-        if path == cfg_path {
+        if cfg.hit(&path) {
             hit = true;
-        } else if path.parent() != cfg_path.parent() && !is_transient(&path) {
+        } else if !cfg.sibling(&path) && !is_transient(&path) {
             push_capped(out, path, WATCH_BATCH_CAP);
         }
     }
@@ -241,13 +297,13 @@ fn watch_media_dirs<W: RootWatcher>(
     failed
 }
 
-fn watch_config_dir(watcher: &mut notify::RecommendedWatcher, cfg_path: &std::path::Path) {
+fn watch_config_dir(watcher: &mut notify::RecommendedWatcher, cfg: &ConfigWatch) {
     use notify::{RecursiveMode, Watcher};
 
-    if let Some(dir) = cfg_path.parent().filter(|dir| dir.is_dir())
-        && let Err(err) = watcher.watch(dir, RecursiveMode::NonRecursive)
-    {
-        log::warn!("watch config dir failed: {err}");
+    for dir in cfg.dirs().filter(|dir| dir.is_dir()) {
+        if let Err(err) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+            log::warn!("watch config dir {} failed: {err}", dir.display());
+        }
     }
 }
 
@@ -309,7 +365,7 @@ fn run_poll_cycle(
     mut roots: Vec<polling::PollingRoot>,
     mut recovery_watcher: Option<notify::RecommendedWatcher>,
     tx: UnboundedSender<notify::Event>,
-    cfg_path: &std::path::Path,
+    cfg: &ConfigWatch,
     recover_auxiliary_watches: bool,
 ) -> PollCycle {
     let mut pending = Vec::new();
@@ -336,7 +392,7 @@ fn run_poll_cycle(
         match create_watcher(tx) {
             Ok(mut watcher) => {
                 if recover_auxiliary_watches {
-                    watch_config_dir(&mut watcher, cfg_path);
+                    watch_config_dir(&mut watcher, cfg);
                     watch_theme_dirs(&mut watcher);
                 }
                 recovery_watcher = Some(watcher);
@@ -366,7 +422,7 @@ async fn poll_failed_roots(
     mut roots: Vec<polling::PollingRoot>,
     interval: std::time::Duration,
     tx: UnboundedSender<notify::Event>,
-    cfg_path: std::path::PathBuf,
+    cfg: ConfigWatch,
     recover_auxiliary_watches: bool,
     state: Arc<WallState>,
     publisher: Arc<EventHub>,
@@ -377,15 +433,9 @@ async fn poll_failed_roots(
     loop {
         tokio::time::sleep(interval).await;
         let cycle_tx = tx.clone();
-        let cycle_cfg_path = cfg_path.clone();
+        let cycle_cfg = cfg.clone();
         let cycle = tokio::task::spawn_blocking(move || {
-            run_poll_cycle(
-                roots,
-                recovery_watcher,
-                cycle_tx,
-                &cycle_cfg_path,
-                recover_auxiliary_watches,
-            )
+            run_poll_cycle(roots, recovery_watcher, cycle_tx, &cycle_cfg, recover_auxiliary_watches)
         })
         .await;
         let Ok(cycle) = cycle else {
@@ -496,10 +546,10 @@ async fn next_step(
 }
 
 async fn watch_loop(
-    _watcher: Option<notify::RecommendedWatcher>,
+    mut watcher: Option<notify::RecommendedWatcher>,
     mut rx: UnboundedReceiver<notify::Event>,
     _keepalive: UnboundedSender<notify::Event>,
-    cfg_path: std::path::PathBuf,
+    mut cfg: ConfigWatch,
     ctx: crate::composition::context::Ctx,
     settings: session::WatchSettings,
 ) -> bool {
@@ -512,7 +562,8 @@ async fn watch_loop(
         let flush_now = match next_step(&mut rx, idle, WATCH_DEBOUNCE).await {
             WatchStep::Event(event) => absorb_and_hold(
                 event,
-                &cfg_path,
+                &mut cfg,
+                watcher.as_mut(),
                 &state,
                 publisher.as_ref(),
                 &mut pending,
@@ -606,7 +657,8 @@ async fn flush_watch_batch_async(
 
 fn absorb_and_hold(
     mut event: notify::Event,
-    cfg_path: &std::path::Path,
+    cfg: &mut ConfigWatch,
+    watcher: Option<&mut notify::RecommendedWatcher>,
     state: &Arc<WallState>,
     publisher: &dyn EventPublisher,
     pending: &mut Vec<std::path::PathBuf>,
@@ -615,7 +667,8 @@ fn absorb_and_hold(
 ) -> bool {
     import_theme_event(&event, state, publisher);
     event.paths.retain(|path| skwd_wall_core::theme_provider::provider_for_path(path).is_none());
-    if absorb_watch_event(event, cfg_path, pending, removed) {
+    if absorb_watch_event(event, cfg, pending, removed) {
+        cfg.refresh(watcher);
         let backdrop_before = super::overview_backdrop::settings(&state.config());
         let (lock_screen_before, semantic_before) = {
             let config = state.config();
@@ -706,7 +759,7 @@ fn import_theme_event(
 
 fn absorb_watch_event(
     event: notify::Event,
-    cfg_path: &std::path::Path,
+    cfg: &ConfigWatch,
     pending: &mut Vec<std::path::PathBuf>,
     removed: &mut Vec<std::path::PathBuf>,
 ) -> bool {
@@ -714,11 +767,11 @@ fn absorb_watch_event(
 
     match event.kind {
         EventKind::Remove(_) => {
-            split_config_events(event.paths, cfg_path, removed);
+            split_config_events(event.paths, cfg, removed);
             false
         }
         EventKind::Create(_) | EventKind::Modify(_) => {
-            split_config_events(event.paths, cfg_path, pending)
+            split_config_events(event.paths, cfg, pending)
         }
         _ => false,
     }

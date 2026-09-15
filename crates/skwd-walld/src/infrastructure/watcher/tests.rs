@@ -250,7 +250,7 @@ fn transient_artifacts() {
 
 #[test]
 fn config_events_partials() {
-    let cfg = std::path::PathBuf::from("/home/u/.config/skwd-wall-v2/config.json");
+    let cfg = super::ConfigWatch::new("/home/u/.config/skwd-wall-v2/config.json".into());
     let mut out: Vec<std::path::PathBuf> = Vec::new();
     for _ in 0..50 {
         super::split_config_events(vec!["/vid/youtube-abc.mp4.part".into()], &cfg, &mut out);
@@ -268,11 +268,11 @@ fn config_events_partials() {
 
 #[test]
 fn config_events_flag() {
-    let cfg = std::path::PathBuf::from("/home/u/.config/skwd-wall-v2/config.json");
+    let cfg = super::ConfigWatch::new("/home/u/.config/skwd-wall-v2/config.json".into());
     let mut out: Vec<std::path::PathBuf> = Vec::new();
     let hit = super::split_config_events(
         vec![
-            cfg.clone(),
+            cfg.path().to_path_buf(),
             "/home/u/.config/skwd-wall-v2/config.json.corrupt".into(),
             "/wp/a.png".into(),
         ],
@@ -329,4 +329,94 @@ fn theme_event_kinds() {
     let unrelated = notify::Event::new(notify::EventKind::Modify(ModifyKind::Any))
         .add_path(std::path::PathBuf::from("/tmp/colors.json"));
     assert_eq!(super::theme_event_provider(&unrelated), None);
+}
+
+#[test]
+fn config_watch_resolves_symlinked_config() {
+    let dir = tmp("cfgwatch");
+    let dots = dir.join("dots");
+    std::fs::create_dir_all(&dots).unwrap();
+    let target = dots.join("config.json");
+    std::fs::write(&target, b"{}").unwrap();
+    let link = dir.join("config.json");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let cfg = super::ConfigWatch::new(link.clone());
+    assert_eq!(cfg.dirs().collect::<Vec<_>>(), vec![dir.as_path(), dots.as_path()]);
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    assert!(super::split_config_events(vec![target.clone()], &cfg, &mut out));
+    assert!(super::split_config_events(vec![link.clone()], &cfg, &mut out));
+    assert!(!super::split_config_events(
+        vec![dots.join("kitty.conf"), dir.join("other.json"), "/wp/a.png".into()],
+        &cfg,
+        &mut out
+    ));
+    assert_eq!(out, vec![std::path::PathBuf::from("/wp/a.png")]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn config_watch_plain_file_watches_one_dir() {
+    let dir = tmp("cfgplain");
+    let cfg = super::ConfigWatch::new(dir.join("config.json"));
+    assert_eq!(cfg.dirs().collect::<Vec<_>>(), vec![dir.as_path()]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn config_watch_refresh_follows_relink() {
+    let dir = tmp("cfgrelink");
+    let first = dir.join("first");
+    let second = dir.join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("config.json"), b"{}").unwrap();
+    std::fs::write(second.join("config.json"), b"{}").unwrap();
+    let link = dir.join("config.json");
+    std::os::unix::fs::symlink(first.join("config.json"), &link).unwrap();
+    let mut cfg = super::ConfigWatch::new(link.clone());
+    assert!(!cfg.refresh(None));
+    std::fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink(second.join("config.json"), &link).unwrap();
+    assert!(cfg.refresh(None));
+    assert_eq!(cfg.dirs().collect::<Vec<_>>(), vec![dir.as_path(), second.as_path()]);
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    assert!(super::split_config_events(vec![second.join("config.json")], &cfg, &mut out));
+    assert!(!super::split_config_events(vec![first.join("config.json")], &cfg, &mut out));
+    assert_eq!(out, vec![first.join("config.json")]);
+    std::fs::remove_file(&link).unwrap();
+    std::fs::write(&link, b"{}").unwrap();
+    assert!(cfg.refresh(None));
+    assert_eq!(cfg.dirs().collect::<Vec<_>>(), vec![dir.as_path()]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn config_watch_refresh_rearms_real_watcher() {
+    let dir = tmp("cfgrearm");
+    let first = dir.join("first");
+    let second = dir.join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("config.json"), b"{}").unwrap();
+    let link = dir.join("config.json");
+    std::os::unix::fs::symlink(first.join("config.json"), &link).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
+    let mut watcher = super::create_watcher(tx).unwrap();
+    let mut cfg = super::ConfigWatch::new(link.clone());
+    super::watch_config_dir(&mut watcher, &cfg);
+    std::fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink(second.join("config.json"), &link).unwrap();
+    assert!(cfg.refresh(Some(&mut watcher)));
+    skwd_config::atomic_write(&link, b"{\"after\":1}").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut seen = false;
+    while std::time::Instant::now() < deadline && !seen {
+        match rx.try_recv() {
+            Ok(event) => seen = event.paths.iter().any(|path| cfg.hit(path)),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+    assert!(seen);
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    let _ = std::fs::remove_dir_all(&dir);
 }

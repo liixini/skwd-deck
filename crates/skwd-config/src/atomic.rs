@@ -1,5 +1,7 @@
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const LINK_HOPS: usize = 40;
 
 fn suffix() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -7,14 +9,32 @@ fn suffix() -> String {
     format!("{}.{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+pub fn follow_links(path: &Path) -> std::io::Result<PathBuf> {
+    let mut current = path.to_path_buf();
+    for _ in 0..LINK_HOPS {
+        let is_link = std::fs::symlink_metadata(&current)
+            .is_ok_and(|metadata| metadata.file_type().is_symlink());
+        if !is_link {
+            return Ok(current);
+        }
+        let target = std::fs::read_link(&current)?;
+        current = match current.parent() {
+            Some(directory) if target.is_relative() => directory.join(target),
+            _ => target,
+        };
+    }
+    Err(std::io::Error::other(format!("symlink loop at {}", path.display())))
+}
+
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     atomic_write_mode(path, bytes, None)
 }
 
 pub fn atomic_write_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    let target = follow_links(path)?;
+    let mut name = target.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".{}.tmp", suffix()));
-    let temporary = path.with_file_name(name);
+    let temporary = target.with_file_name(name);
     let write = || -> std::io::Result<()> {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -28,11 +48,11 @@ pub fn atomic_write_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::i
         let _ = std::fs::remove_file(&temporary);
         return Err(error);
     }
-    if let Err(error) = std::fs::rename(&temporary, path) {
+    if let Err(error) = std::fs::rename(&temporary, &target) {
         let _ = std::fs::remove_file(&temporary);
         return Err(error);
     }
-    if let Some(directory) = path.parent() {
+    if let Some(directory) = target.parent() {
         let _ = std::fs::File::open(directory).map(|handle| handle.sync_all());
     }
     Ok(())
