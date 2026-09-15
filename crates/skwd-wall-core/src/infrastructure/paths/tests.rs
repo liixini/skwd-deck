@@ -97,6 +97,29 @@ fn binary_prefers_sibling() {
     );
 }
 
+#[test]
+fn paper_bin_never_takes_a_legacy_skwd_paper_from_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let sibling = temp.path().join("sibling");
+    let path = temp.path().join("path");
+    std::fs::create_dir_all(&sibling).unwrap();
+    std::fs::create_dir_all(&path).unwrap();
+    let search_path = std::env::join_paths([&path]).unwrap();
+    let resolve = || resolve_paper_bin(Some(&sibling), Some(&search_path));
+
+    make_executable(&path.join("skwd-paper"));
+    assert_eq!(resolve(), PathBuf::from("skwd-paper-v2"));
+
+    make_executable(&path.join("skwd-paper-v2"));
+    assert_eq!(resolve(), path.join("skwd-paper-v2"));
+
+    make_executable(&sibling.join("skwd-paper"));
+    assert_eq!(resolve(), sibling.join("skwd-paper"));
+
+    make_executable(&sibling.join("skwd-paper-v2"));
+    assert_eq!(resolve(), sibling.join("skwd-paper-v2"));
+}
+
 #[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;

@@ -32,8 +32,7 @@ impl RendererConfig<'_> {
         }
         let configured = self.config.str_at(skwd_config::keys::paths::PAPER_BIN, "");
         if configured.is_empty() {
-            colocated("skwd-paper")
-                .unwrap_or_else(|| crate::paths::paper_bin().display().to_string())
+            crate::paths::paper_bin().display().to_string()
         } else {
             self.config.resolve(&configured)
         }

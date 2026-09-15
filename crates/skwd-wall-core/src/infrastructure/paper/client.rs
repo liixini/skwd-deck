@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -120,15 +120,15 @@ impl PaperClient {
                     std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
                 ) =>
             {
-                self.start()?;
-                self.wait_for_socket()
+                let controller = self.start()?;
+                self.wait_for_socket(controller)
             }
             Err(error) => Err(error)
                 .with_context(|| format!("connect to Paper socket {}", self.socket.display())),
         }
     }
 
-    fn start(&self) -> Result<()> {
+    fn start(&self) -> Result<Child> {
         let mut command = Command::new(&self.binary);
         command
             .arg("serve")
@@ -137,25 +137,40 @@ impl PaperClient {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .process_group(0);
-        crate::infrastructure::process::spawn_reaped_pid_result(&mut command)
-            .with_context(|| format!("start Paper controller {}", self.binary.display()))?;
-        Ok(())
+        command.spawn().with_context(|| format!("start Paper controller {}", self.binary.display()))
     }
 
-    fn wait_for_socket(&self) -> Result<UnixStream> {
+    fn wait_for_socket(&self, mut controller: Child) -> Result<UnixStream> {
         let deadline = Instant::now() + self.start_timeout;
         loop {
-            match UnixStream::connect(&self.socket) {
-                Ok(stream) => return Ok(stream),
-                Err(_) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(20));
-                }
-                Err(error) => {
-                    return Err(error).with_context(|| {
-                        format!("Paper controller did not bind {}", self.socket.display())
-                    });
-                }
+            if let Ok(stream) = UnixStream::connect(&self.socket) {
+                std::thread::spawn(move || {
+                    let _ = controller.wait();
+                });
+                return Ok(stream);
             }
+            if let Some(status) = controller.try_wait().context("poll Paper controller")? {
+                if let Ok(stream) = UnixStream::connect(&self.socket) {
+                    return Ok(stream);
+                }
+                bail!(
+                    "Paper controller {} exited with {status} before binding {}",
+                    self.binary.display(),
+                    self.socket.display()
+                );
+            }
+            if Instant::now() >= deadline {
+                std::thread::spawn(move || {
+                    let _ = controller.wait();
+                });
+                bail!(
+                    "Paper controller {} did not bind {} within {:?}",
+                    self.binary.display(),
+                    self.socket.display(),
+                    self.start_timeout
+                );
+            }
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 }

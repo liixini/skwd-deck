@@ -69,12 +69,14 @@ pub fn paper_bin() -> PathBuf {
     let bin_dir = std::env::current_exe()
         .ok()
         .and_then(|executable| executable.parent().map(Path::to_path_buf));
-    resolve_preferred_binary(
-        bin_dir.as_deref(),
-        std::env::var_os("PATH").as_deref(),
-        &["skwd-paper-v2"],
-    )
-    .unwrap_or_else(|| PathBuf::from("skwd-paper-v2"))
+    resolve_paper_bin(bin_dir.as_deref(), std::env::var_os("PATH").as_deref())
+}
+
+pub fn resolve_paper_bin(bin_dir: Option<&Path>, search_path: Option<&OsStr>) -> PathBuf {
+    resolve_binary(bin_dir, None, OsStr::new("skwd-paper-v2"))
+        .or_else(|| resolve_binary(bin_dir, None, OsStr::new("skwd-paper")))
+        .or_else(|| resolve_binary(None, search_path, OsStr::new("skwd-paper-v2")))
+        .unwrap_or_else(|| PathBuf::from("skwd-paper-v2"))
 }
 
 pub fn resolve_preferred_binary(

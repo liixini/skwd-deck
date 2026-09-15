@@ -316,6 +316,20 @@ fn adapter_retired_tiny_engine() {
 }
 
 #[test]
+fn client_reports_a_controller_that_exits_before_binding() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let binary = temp.path().join("skwd-paper-v2");
+    std::fs::write(&binary, "#!/bin/sh\nexit 3\n").unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let client = PaperClient::new(&binary, temp.path().join("paper.sock"));
+
+    let error = format!("{:#}", client.status().unwrap_err());
+    assert!(error.contains("exited with exit status: 3 before binding"), "{error}");
+}
+
+#[test]
 fn invalid_apply_rejected() {
     let client = PaperClient::new("unused-paper", "/unused/paper.sock");
     let error = client

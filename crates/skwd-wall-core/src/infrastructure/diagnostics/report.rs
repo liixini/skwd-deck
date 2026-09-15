@@ -61,6 +61,7 @@ pub fn config_report(config: &Config) -> String {
     let _ = writeln!(out, "  cache_dir     = {}", config.cache_dir());
     let _ = writeln!(out, "  thumbs_dir    = {}", paths::thumbs_dir().display());
     let _ = writeln!(out, "  db_path       = {}", paths::db_path().display());
+    let _ = writeln!(out, "  paper_bin     = {}", config.renderer().paper_bin());
     let _ = writeln!(out, "  still_bin     = {}", config.renderer().still_bin());
     let _ = writeln!(out, "  paper_vk_bin  = {}", config.renderer().vk_bin());
     let _ = writeln!(out, "  fill_mode     = {}", config.display().fill_mode());
