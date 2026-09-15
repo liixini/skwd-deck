@@ -56,6 +56,7 @@ pub mod keys {
         pub const VISUAL_STYLE: &str = "filterBar.visualStyle";
     }
     pub mod general {
+        pub const APPLY_ON_PICKER_MONITOR: &str = "general.applyOnPickerMonitor";
         pub const CLOSE_ON_SELECTION: &str = "general.closeOnSelection";
         pub const FILTER_BAR_ALWAYS_VISIBLE: &str = "general.filterBarAlwaysVisible";
         pub const LOCALE: &str = "general.locale";

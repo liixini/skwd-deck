@@ -210,6 +210,8 @@ pub mod setting {
     pub mod general {
         use super::{Setting, keys};
 
+        pub const APPLY_ON_PICKER_MONITOR: Setting<bool> =
+            Setting::boolean(keys::general::APPLY_ON_PICKER_MONITOR, false);
         pub const CLOSE_ON_SELECTION: Setting<bool> =
             Setting::boolean(keys::general::CLOSE_ON_SELECTION, false);
         pub const FILTER_BAR_ALWAYS_VISIBLE: Setting<bool> =
@@ -396,6 +398,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::filter_bar::STICKY.spec(),
     setting::filter_bar::LAST_SHOW_HIDDEN_FOLDERS.spec(),
     setting::filter_bar::VISUAL_STYLE.spec(),
+    setting::general::APPLY_ON_PICKER_MONITOR.spec(),
     setting::general::CLOSE_ON_SELECTION.spec(),
     setting::general::FILTER_BAR_ALWAYS_VISIBLE.spec(),
     setting::general::MAX_FPS.spec(),

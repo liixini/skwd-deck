@@ -144,3 +144,11 @@ fn picker_keybindings_and_hidden_visibility_are_typed() {
         assert_eq!(text_default(key), Some(""));
     }
 }
+
+#[test]
+fn picker_monitor_apply_is_opt_in_and_boolean() {
+    let path = crate::keys::general::APPLY_ON_PICKER_MONITOR;
+    assert_eq!(read_boolean(&json!({}), path), Some(false));
+    assert_eq!(read_boolean(&json!({"general":{"applyOnPickerMonitor":true}}), path), Some(true));
+    assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
+}

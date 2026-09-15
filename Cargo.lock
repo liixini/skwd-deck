@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "paper-control"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "gif",
  "libc",
@@ -1547,14 +1547,14 @@ dependencies = [
 
 [[package]]
 name = "paper-geom"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "paper-log"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "tracing-appender",
  "tracing-subscriber",
@@ -1562,7 +1562,7 @@ dependencies = [
 
 [[package]]
 name = "paper-runtime"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "libc",
  "paper-log",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "paper-scene"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "paper-shaders"
-version = "1.0.0-beta.14.1"
+version = "1.0.0-beta.14.2"
 dependencies = [
  "regex-lite",
 ]
