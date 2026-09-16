@@ -14,6 +14,12 @@ impl RendererSupervisor {
         let _ = stdin.flush();
     }
 
+    pub(super) fn write_duck(stdin: &mut std::process::ChildStdin, ducked: bool) {
+        let line = PaperCommand::duck(ducked).line();
+        let _ = stdin.write_all(line.as_bytes());
+        let _ = stdin.flush();
+    }
+
     pub(super) fn signal_pause(child: &std::process::Child, paused: bool) {
         unsafe {
             libc::kill(
@@ -327,6 +333,26 @@ impl RendererSupervisor {
         if let Some((_, Some(stdin))) = lock(&self.video_papers).get_mut("multi") {
             let _ = stdin.write_all(line.as_bytes());
             let _ = stdin.flush();
+        }
+    }
+
+    pub fn audio_ducked(&self) -> bool {
+        *lock(&self.audio_ducked)
+    }
+
+    pub fn set_audio_ducked(&self, ducked: bool) {
+        let mut current = lock(&self.audio_ducked);
+        if *current == ducked {
+            return;
+        }
+        *current = ducked;
+        for (_, stdin) in lock(&self.video_papers).values_mut() {
+            if let Some(stdin) = stdin {
+                Self::write_duck(stdin, ducked);
+            }
+        }
+        if let Some(stdin) = lock(&self.paper_stdin).as_mut() {
+            Self::write_duck(stdin, ducked);
         }
     }
 

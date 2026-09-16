@@ -151,8 +151,18 @@ pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolic
             max_effect_chains: performance_mode.then_some(PERF_SCENE_EFFECT_CHAINS),
             max_effect_passes: performance_mode.then_some(PERF_SCENE_EFFECT_PASSES),
             strict: Some(false),
+            clamp: scene_clamp(&config.renderer().we_clamp()),
         }),
         output_fps,
+    }
+}
+
+fn scene_clamp(value: &str) -> Option<paper_control::SceneClamp> {
+    match value.trim() {
+        "border" => Some(paper_control::SceneClamp::Border),
+        "repeat" => Some(paper_control::SceneClamp::Repeat),
+        "clamp" => Some(paper_control::SceneClamp::Clamp),
+        _ => None,
     }
 }
 

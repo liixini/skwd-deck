@@ -467,6 +467,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::wallhaven::COLLECTIONS, "wallhaven.collections");
     assert_eq!(keys::wallhaven::API_KEY, "wallhaven.apiKey");
     assert_eq!(keys::wallhaven::USERNAME, "wallhaven.username");
+    assert_eq!(keys::we_render::CLAMP, "weRender.clamp");
     assert_eq!(keys::we_render::DISABLE_PARTICLES, "weRender.disableParticles");
     assert_eq!(keys::we_render::ENGINE, "weRender.engine");
     assert_eq!(keys::we_render::FPS, "weRender.fps");

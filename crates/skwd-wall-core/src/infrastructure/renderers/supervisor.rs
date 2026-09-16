@@ -18,6 +18,7 @@ pub struct RendererSupervisor {
     pub(super) assignments: Mutex<HashMap<String, String>>,
     pub(super) policies: Mutex<HashMap<String, String>>,
     pub(super) pause: Mutex<PauseState>,
+    pub(super) audio_ducked: Mutex<bool>,
     pub(super) we_render: Mutex<WeRender>,
     pub(super) ready: ReadinessRegistry,
 }

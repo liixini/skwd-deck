@@ -6,6 +6,7 @@ pub mod keys {
         pub const MAXIMIZED: &str = "playback.maximized";
         pub const FULLSCREEN_SCOPE: &str = "playback.fullscreenScope";
         pub const RESUME_DELAY: &str = "playback.resumeDelay";
+        pub const MUTE_ON_OTHER_AUDIO: &str = "playback.muteOnOtherAudio";
     }
     pub mod wallpaper {
         pub const MUTE: &str = "wallpaperMute";
@@ -504,6 +505,7 @@ pub mod keys {
     }
     pub mod we_render {
         pub const PREFIX: &str = "weRender.";
+        pub const CLAMP: &str = "weRender.clamp";
         pub const DISABLE_PARTICLES: &str = "weRender.disableParticles";
         pub const ENGINE: &str = "weRender.engine";
         pub const FPS: &str = "weRender.fps";

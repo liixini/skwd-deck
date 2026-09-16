@@ -148,6 +148,7 @@ impl RendererSupervisor {
                 Self::signal_pause(&child, true);
             }
         }
+        self.duck_installed(stdin.as_mut());
         *lock(&self.paper_stdin) = stdin;
         *lock(&self.paper_child) = Some(child);
     }
@@ -198,7 +199,16 @@ impl RendererSupervisor {
                 Self::signal_pause(&child, true);
             }
         }
+        self.duck_installed(stdin.as_mut());
         lock(&self.video_papers).insert(output.to_string(), (child, stdin));
+    }
+
+    fn duck_installed(&self, stdin: Option<&mut std::process::ChildStdin>) {
+        if let Some(stdin) = stdin
+            && *lock(&self.audio_ducked)
+        {
+            Self::write_duck(stdin, true);
+        }
     }
 
     pub fn restore_video_paper_state(&self, output: &str, renderer: HeldRenderer, scene: bool) {
@@ -235,6 +245,7 @@ impl RendererSupervisor {
                     Self::signal_pause(child, true);
                 }
             }
+            self.duck_installed(stdin.as_mut());
         }
         let mut restored_scenes = Vec::new();
         let mut video_papers = lock(&self.video_papers);

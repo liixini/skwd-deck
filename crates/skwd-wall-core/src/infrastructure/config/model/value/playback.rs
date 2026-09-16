@@ -20,6 +20,7 @@ impl<'a> PlaybackConfig<'a> {
         fullscreen_pause: bool(skwd_config::keys::playback::FULLSCREEN, false);
         maximized_pause: bool(skwd_config::keys::playback::MAXIMIZED, false);
         fullscreen_scope: str(skwd_config::keys::playback::FULLSCREEN_SCOPE, "all");
+        mute_on_other_audio: bool(skwd_config::keys::playback::MUTE_ON_OTHER_AUDIO, false);
     }
     pub fn window_pause_enabled(&self) -> bool {
         self.fullscreen_pause() || self.maximized_pause() || self.full_width_pause()

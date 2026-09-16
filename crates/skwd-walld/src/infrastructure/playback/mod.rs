@@ -1,5 +1,6 @@
 mod fullscreen;
 mod niri_columns;
+mod other_audio;
 mod overview;
 mod plasma;
 pub(crate) mod processes;
@@ -38,6 +39,9 @@ pub(crate) fn start(ctx: Ctx) {
     let (columns_enabled, receive_columns_enabled) = watch::channel(false);
     let (columns, receive_columns) = watch::channel(niri_columns::Snapshot::default());
     tokio::spawn(niri_columns::run(receive_columns_enabled, columns));
+    let (other_audio_enabled, receive_other_audio_enabled) = watch::channel(false);
+    let (other_audio, receive_other_audio) = watch::channel(other_audio::Snapshot::default());
+    tokio::spawn(other_audio::run(receive_other_audio_enabled, other_audio, ctx.state.clone()));
     tokio::spawn(run(
         ctx,
         enabled,
@@ -46,6 +50,8 @@ pub(crate) fn start(ctx: Ctx) {
         receive_overview,
         columns_enabled,
         receive_columns,
+        other_audio_enabled,
+        receive_other_audio,
     ));
 }
 
@@ -57,6 +63,8 @@ async fn run(
     mut overview: watch::Receiver<Option<bool>>,
     columns_enabled: watch::Sender<bool>,
     mut columns: watch::Receiver<niri_columns::Snapshot>,
+    other_audio_enabled: watch::Sender<bool>,
+    mut other_audio: watch::Receiver<other_audio::Snapshot>,
 ) {
     let mut held = HashSet::new();
     let mut last_desired = HashSet::new();
@@ -65,6 +73,7 @@ async fn run(
     let mut running = Vec::new();
     let mut previous_rules = String::new();
     let mut independent_playback = None;
+    let mut audio_was_ducked = false;
     loop {
         let config = ctx.config.read().clone();
         let policy = config.playback();
@@ -81,6 +90,20 @@ async fn run(
             *enabled = policy.full_width_pause();
             changed
         });
+        other_audio_enabled.send_if_modified(|enabled| {
+            let changed = *enabled != policy.mute_on_other_audio();
+            *enabled = policy.mute_on_other_audio();
+            changed
+        });
+        let audio_observation = other_audio.borrow().clone();
+        let audio_ducked = policy.mute_on_other_audio() && audio_observation.playing;
+        let duck_changed = std::mem::replace(&mut audio_was_ducked, audio_ducked) != audio_ducked;
+        if duck_changed {
+            log::info!(
+                "other audio: {} wallpaper audio",
+                if audio_ducked { "pausing" } else { "resuming" }
+            );
+        }
         let column_observation = columns.borrow().clone();
         let full_width_paused = policy.full_width_pause() && !column_observation.outputs.is_empty();
         let overview_open = *overview.borrow();
@@ -149,13 +172,21 @@ async fn run(
         let observed_outputs = observation.observed_outputs.clone();
         let _ = tokio::task::spawn_blocking(move || {
             state.renderers().set_automatic_paused(all, paused_outputs);
+            state.renderers().set_audio_ducked(audio_ducked);
             plasma::refresh_policy(&state, &observed_outputs);
+            if duck_changed && skwd_wall_core::plasma::available() {
+                let _apply = state.apply().lock();
+                if let Err(error) = skwd_wall_core::plasma::apply_current(&state) {
+                    log::warn!("other audio: Plasma update failed: {error:#}");
+                }
+            }
         })
         .await;
         let mut names: Vec<_> = outputs.into_iter().collect();
         names.sort();
         let value = json!({"full_width_supported": column_observation.supported, "full_width_paused": full_width_paused, "fullscreen_supported": observation.supported, "maximized_supported": observation.maximized_supported, "window_state_backend": observation.backend, "maximized_paused": maximized_paused, "processes": matched,
-            "outputs": names, "all_displays": all, "automatic_paused": !held.is_empty() || overview_paused, "resume_pending": release_at.is_some(), "overview_open": overview_open, "overview_paused": overview_paused});
+            "outputs": names, "all_displays": all, "automatic_paused": !held.is_empty() || overview_paused, "resume_pending": release_at.is_some(), "overview_open": overview_open, "overview_paused": overview_paused,
+            "other_audio_supported": audio_observation.supported, "other_audio_playing": audio_observation.playing, "audio_ducked": audio_ducked});
         let changed = {
             let mut previous = skwd_wall_core::lock(STATUS.get_or_init(|| Mutex::new(Value::Null)));
             if *previous == value {
@@ -175,6 +206,7 @@ async fn run(
             changed = fullscreen.changed() => { if changed.is_err() { break; } }
             changed = columns.changed() => { if changed.is_err() { break; } }
             changed = overview.changed() => { if changed.is_err() { break; } }
+            changed = other_audio.changed() => { if changed.is_err() { break; } }
             () = async { if let Some(deadline) = deadline { tokio::time::sleep_until(deadline).await; } else { std::future::pending::<()>().await; } } => {}
         }
     }

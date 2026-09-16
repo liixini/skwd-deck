@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::state::WallState;
 
 static REQUESTS: Mutex<BTreeMap<String, u64>> = Mutex::new(BTreeMap::new());
+const THUMBNAIL_SETTLE: Duration = Duration::from_millis(1200);
 
 pub struct ThumbnailCapture {
     _guard: std::fs::File,
@@ -124,6 +125,10 @@ pub(super) fn schedule(
             guard.lock()?;
             let item_key = format!("we:{we_id}");
             if !database.with_connection(|conn| Ok(crate::db::has_entry(conn, &item_key)))? {
+                return Ok(());
+            }
+            std::thread::sleep(THUMBNAIL_SETTLE);
+            if !current() {
                 return Ok(());
             }
             let input = signature(&source, &properties)?;

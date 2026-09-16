@@ -119,6 +119,7 @@ fn transition_policy_golden() {
             max_effect_chains: Some(4),
             max_effect_passes: Some(8),
             strict: Some(true),
+            clamp: None,
         }),
         output_fps: [("DP-1".into(), 60), ("DP-2".into(), 120)].into(),
     };

@@ -72,3 +72,28 @@ fn monitor_pause_is_independent_and_preserves_other_reasons() {
     assert_eq!(lines("DP-1"), [true, false, true, false]);
     assert_eq!(lines("DP-2"), [true, false]);
 }
+
+#[test]
+fn audio_duck_reaches_live_and_new_renderers_without_touching_pause() {
+    let dir = tempfile::tempdir().unwrap();
+    let supervisor = RendererSupervisor::default();
+    let (child, stdin) = capture_child(&dir.path().join("live"));
+    supervisor.set_video_paper("DP-1", child, stdin);
+    assert!(!supervisor.audio_ducked());
+    supervisor.set_audio_ducked(true);
+    supervisor.set_audio_ducked(true);
+    assert!(supervisor.audio_ducked());
+    assert!(!supervisor.paused());
+    let (child, stdin) = capture_child(&dir.path().join("new"));
+    supervisor.restore_video_paper("DP-2", (child, stdin));
+    supervisor.set_audio_ducked(false);
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("live")).unwrap(),
+        "{\"to\":\"\",\"duck\":true}\n{\"to\":\"\",\"duck\":false}\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("new")).unwrap(),
+        "{\"to\":\"\",\"duck\":true}\n{\"to\":\"\",\"duck\":false}\n"
+    );
+}

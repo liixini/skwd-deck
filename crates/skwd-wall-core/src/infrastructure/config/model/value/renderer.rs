@@ -47,6 +47,7 @@ impl<'a> RendererConfig<'a> {
         awww_filter: str(skwd_config::keys::paper::AWWW_FILTER, "Lanczos3");
         we_disable_particles: bool(skwd_config::keys::we_render::DISABLE_PARTICLES, false);
         we_scaling: str(skwd_config::keys::we_render::SCALING, "default");
+        we_clamp: str(skwd_config::keys::we_render::CLAMP, "clamp");
     }
 
     pub fn awww_arg(&self, key: &str) -> Option<String> {

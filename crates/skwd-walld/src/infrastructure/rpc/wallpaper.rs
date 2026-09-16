@@ -745,6 +745,13 @@ fn reapply_scene_if_current(ctx: &Ctx, we_id: &str) -> bool {
     if skwd_wall_core::plasma::available() {
         return skwd_wall_core::plasma::apply_current(state).is_ok();
     }
+    match skwd_wall_core::we::swap_scene_properties(state, we_id) {
+        Ok(true) => return true,
+        Ok(false) => {}
+        Err(error) => {
+            log::warn!("scene property swap failed, falling back to a full apply: {error:#}");
+        }
+    }
     matches!(reload_current_we(state, wallpaper.as_ref()), Ok(true))
 }
 

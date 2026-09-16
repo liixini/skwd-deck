@@ -105,6 +105,30 @@ fn assignments_are_connector_keyed_and_complete() {
 }
 
 #[test]
+fn assignment_mutes_while_other_audio_ducks_without_touching_state() {
+    let state = crate::state::WallState::test_new(serde_json::json!({}));
+    let outputs = vec![crate::outputs::OutputInfo { name: "DP-1".into(), ..Default::default() }];
+    let map = serde_json::json!({
+        "DP-1": {"type": "video", "path": "/video.mp4", "mute": false, "volume": 40}
+    });
+    for ducked in [false, true, false] {
+        state.renderers().set_audio_ducked(ducked);
+        let payload = assignments(
+            &state,
+            &outputs,
+            map.as_object().unwrap(),
+            &std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+        let mute = payload["DP-1"]["assignment"]["mute"].as_bool().unwrap_or(true);
+        assert_eq!(mute, ducked);
+        assert_eq!(payload["DP-1"]["assignment"]["volume"], 40);
+        assert_eq!(payload["DP-1"]["paused"], false);
+    }
+    assert_eq!(map["DP-1"]["mute"], false);
+}
+
+#[test]
 fn assignment_carries_only_the_requested_transition() {
     let state = crate::state::WallState::test_new(serde_json::json!({}));
     let outputs = ["DP-1", "DP-2"].map(|name| crate::outputs::OutputInfo {

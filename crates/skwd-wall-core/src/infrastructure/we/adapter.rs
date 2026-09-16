@@ -369,6 +369,66 @@ fn native_scene<'a>(
     })
 }
 
+pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<bool> {
+    if !valid_we_id(we_id) || crate::plasma::available() {
+        return Ok(false);
+    }
+    let item_dir = state.config().we_dir().join(we_id);
+    if !["scene.pkg", "gifscene.pkg"].iter().any(|name| item_dir.join(name).is_file()) {
+        return Ok(false);
+    }
+    let dir = item_dir.display().to_string();
+    let outs = outputs::names();
+    let keys: Vec<String> = if outs.is_empty() { vec!["*".to_string()] } else { outs };
+    let size = if apply::independent_playback(state) { 1 } else { keys.len().max(1) };
+    let assignments = state.renderers().assignments();
+    let renderer_keys: Vec<String> = keys
+        .chunks(size)
+        .map(scene_renderer_key)
+        .filter(|key| {
+            key.split(',').all(|output| assignments.get(output).is_some_and(|path| *path == dir))
+                && state.renderers().is_scene_paper(key)
+                && state.renderers().has_video_paper(key)
+        })
+        .collect();
+    if renderer_keys.is_empty() {
+        return Ok(false);
+    }
+    let cache = state.config().cache_dir();
+    let audio = crate::audio::read_state(&cache);
+    let (_, we_audio) =
+        apply::resolve_we_from_state(audio.as_object().unwrap_or(&serde_json::Map::new()));
+    let (scene_mute, scene_volume) = we_audio.get(we_id).copied().unwrap_or((true, 100));
+    let properties = scene_overrides(state, we_id);
+    let overrides = (!properties.is_empty()).then_some(&properties);
+    for (index, key) in renderer_keys.iter().enumerate() {
+        let Some(pid) = state.renderers().video_paper_pid(key) else {
+            return Ok(false);
+        };
+        state.renderers().arm_ready_gate(pid);
+        if !state.renderers().scene_swap(
+            key,
+            &dir,
+            scene_mute || index > 0,
+            scene_volume,
+            overrides,
+        ) {
+            return Ok(false);
+        }
+        state
+            .renderers()
+            .wait_ready_result(pid, apply::NATIVE_SCENE_READY_TIMEOUT)
+            .map_err(anyhow::Error::msg)?;
+    }
+    let signature = apply::scene_properties_signature(&[(we_id.to_string(), properties.clone())]);
+    apply::record_scene_properties(state, &signature);
+    for key in &renderer_keys {
+        super::thumbnail::schedule(state, key, we_id, &properties);
+    }
+    log::info!("we scene {we_id}: properties swapped on {} renderer(s)", renderer_keys.len());
+    Ok(true)
+}
+
 pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>> {
     if !state.config().steam_enabled() {
         anyhow::bail!("steam/WE feature is disabled");
