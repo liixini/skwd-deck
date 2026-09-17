@@ -57,6 +57,43 @@ fn reap_stale_renderers() {
         &plasmas,
         &DIRS
     ));
+    assert!(!super::is_reapable_stale_renderer(
+        &argv(&[
+            "skwd-wall-still",
+            "*",
+            "/w/a.png",
+            "--frame-stream",
+            "1920x1080",
+            "--frame-fd",
+            "4"
+        ]),
+        1051,
+        &wallds,
+        &plasmas,
+        &DIRS
+    ));
+    assert!(super::is_reapable_stale_renderer(
+        &argv(&[
+            "skwd-wall-still",
+            "*",
+            "/w/a.png",
+            "--frame-stream",
+            "1920x1080",
+            "--frame-fd",
+            "4"
+        ]),
+        1,
+        &wallds,
+        &plasmas,
+        &DIRS
+    ));
+    assert!(!super::is_reapable_stale_renderer(
+        &argv(&["skwd-wall-vk", "--preview-stream", "/w/b.png", "--stream-fd", "3"]),
+        1051,
+        &wallds,
+        &plasmas,
+        &DIRS
+    ));
     assert!(super::is_reapable_stale_renderer(
         &argv(&["/opt/bin/linux-wallpaperengine", "12345"]),
         1,
@@ -174,12 +211,15 @@ fn collect_orphans() {
     mkproc("500", &["skwd-wall-scan"], 1);
     mkproc("600", &["skwd-wall-vk", "*", "/v/a.mp4"], 1051);
     mkproc("700", &["skwd-wall-vk", "--video-stream", "/v/b.mp4"], 1051);
+    mkproc("800", &["skwd-wall-still", "*", "/w/a.png", "--frame-stream", "1920x1080"], 1051);
+    mkproc("900", &["skwd-wall-vk", "--preview-stream", "/w/a.png", "--stream-fd", "3"], 800);
+    mkproc("1000", &["skwd-wall-vk", "--preview-stream", "/w/a.png", "--stream-fd", "3"], 1);
     mkproc("4321", &["/usr/bin/skwd-walld"], 1);
     mkproc("1051", &["/usr/bin/plasmashell"], 1);
     std::fs::create_dir_all(root.join("not-a-pid")).unwrap();
 
     let mut got = super::collect_reapable_renderers(&root, &DIRS);
     got.sort_unstable();
-    assert_eq!(got, vec![100, 300, 400, 600]);
+    assert_eq!(got, vec![100, 300, 400, 600, 1000]);
     let _ = std::fs::remove_dir_all(&root);
 }

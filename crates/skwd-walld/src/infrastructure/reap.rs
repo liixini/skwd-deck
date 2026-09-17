@@ -1,5 +1,6 @@
 const REAPABLE_RENDERER_BINS: [&str; 3] =
     ["skwd-wall-still", "skwd-wall-vk", "linux-wallpaperengine"];
+const PLASMA_STREAM_ARGS: [&str; 3] = ["--video-stream", "--frame-stream", "--preview-stream"];
 
 fn arg0_base(arg0: &str) -> &str {
     arg0.rsplit('/').next().unwrap_or(arg0)
@@ -19,9 +20,8 @@ fn is_reapable_stale_renderer(
         return false;
     };
     let name = arg0_base(arg0);
-    if name == "skwd-wall-vk"
-        && args.iter().any(|arg| arg == "--video-stream")
-        && plasma_pids.contains(&ppid)
+    if plasma_pids.contains(&ppid)
+        && args.iter().any(|arg| PLASMA_STREAM_ARGS.contains(&arg.as_str()))
     {
         return false;
     }
@@ -76,22 +76,31 @@ fn read_proc_ppid_args(proc_dir: &std::path::Path) -> Option<(i32, Vec<String>)>
 
 fn collect_reapable_renderers(proc_root: &std::path::Path, owned_dirs: &[String]) -> Vec<i32> {
     let walld_pids = collect_process_pids(proc_root, "skwd-walld");
-    let plasma_pids = collect_process_pids(proc_root, "plasmashell");
-    let mut pids = Vec::new();
+    let mut plasma_pids = collect_process_pids(proc_root, "plasmashell");
     let Ok(entries) = std::fs::read_dir(proc_root) else {
-        return pids;
+        return Vec::new();
     };
-    for entry in entries.flatten() {
-        let Some(pid) = entry.file_name().to_str().and_then(|name| name.parse::<i32>().ok()) else {
-            continue;
-        };
-        if let Some((ppid, args)) = read_proc_ppid_args(&entry.path())
-            && is_reapable_stale_renderer(&args, ppid, &walld_pids, &plasma_pids, owned_dirs)
-        {
-            pids.push(pid);
-        }
-    }
-    pids
+    let processes: Vec<(i32, i32, Vec<String>)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let pid = entry.file_name().to_str()?.parse::<i32>().ok()?;
+            let (ppid, args) = read_proc_ppid_args(&entry.path())?;
+            Some((pid, ppid, args))
+        })
+        .collect();
+    let children: Vec<i32> = processes
+        .iter()
+        .filter(|(_, ppid, _)| plasma_pids.contains(ppid))
+        .map(|(pid, _, _)| *pid)
+        .collect();
+    plasma_pids.extend(children);
+    processes
+        .into_iter()
+        .filter(|(_, ppid, args)| {
+            is_reapable_stale_renderer(args, *ppid, &walld_pids, &plasma_pids, owned_dirs)
+        })
+        .map(|(pid, _, _)| pid)
+        .collect()
 }
 
 pub(crate) fn kill_stale_renderers(owned_dirs: &[String]) {
