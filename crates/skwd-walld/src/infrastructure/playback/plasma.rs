@@ -13,9 +13,18 @@ use tokio::task::JoinSet;
 use super::fullscreen::Snapshot;
 
 static POLICY: OnceLock<watch::Sender<HashMap<String, bool>>> = OnceLock::new();
+static PUBLISHED: OnceLock<watch::Sender<u64>> = OnceLock::new();
 
 fn policy() -> &'static watch::Sender<HashMap<String, bool>> {
     POLICY.get_or_init(|| watch::channel(HashMap::new()).0)
+}
+
+fn published() -> &'static watch::Sender<u64> {
+    PUBLISHED.get_or_init(|| watch::channel(0).0)
+}
+
+fn assignments_published() {
+    published().send_modify(|generation| *generation = generation.wrapping_add(1));
 }
 
 pub(super) fn refresh_policy(
@@ -46,17 +55,45 @@ struct Observation {
     maximized: bool,
 }
 
+fn valid_output(output: &str) -> bool {
+    !output.is_empty() && output.len() <= 256 && !output.chars().any(char::is_control)
+}
+
 impl Observation {
-    fn decode(bytes: &[u8]) -> anyhow::Result<Self> {
-        let observation: Self = serde_json::from_slice(bytes)?;
+    fn from_value(value: serde_json::Value) -> anyhow::Result<Self> {
+        let observation: Self = serde_json::from_value(value)?;
         anyhow::ensure!(observation.version == 1, "unknown Plasma window-state version");
-        anyhow::ensure!(
-            !observation.output.is_empty()
-                && observation.output.len() <= 256
-                && !observation.output.chars().any(char::is_control),
-            "invalid Plasma output name"
-        );
+        anyhow::ensure!(valid_output(&observation.output), "invalid Plasma output name");
         Ok(observation)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Subscription {
+    version: u32,
+    output: String,
+    subscribe: String,
+}
+
+enum Frame {
+    Observation(Observation),
+    Subscribe(String),
+}
+
+impl Frame {
+    fn decode(bytes: &[u8]) -> anyhow::Result<Self> {
+        let value: serde_json::Value = serde_json::from_slice(bytes)?;
+        if value.get("version").and_then(serde_json::Value::as_u64) != Some(2) {
+            return Ok(Self::Observation(Observation::from_value(value)?));
+        }
+        let request: Subscription = serde_json::from_value(value)?;
+        anyhow::ensure!(
+            request.version == 2 && request.subscribe == "assignments",
+            "unknown Plasma subscription"
+        );
+        anyhow::ensure!(valid_output(&request.output), "invalid Plasma output name");
+        Ok(Self::Subscribe(request.output))
     }
 }
 
@@ -122,11 +159,14 @@ async fn receive(
     id: u64,
     events: &mpsc::Sender<(u64, Option<Observation>)>,
     mut policies: watch::Receiver<HashMap<String, bool>>,
+    mut published: watch::Receiver<u64>,
 ) -> anyhow::Result<()> {
     let (read, mut write) = stream.into_split();
     let mut reader = BufReader::new(read);
     let mut output = String::new();
     let mut previous = None;
+    let mut subscription = None;
+    let mut delivered = None;
     let mut bytes = Vec::new();
     loop {
         let mut limited = (&mut reader).take((4097 - bytes.len()) as u64);
@@ -134,24 +174,41 @@ async fn receive(
             count = limited.read_until(b'\n', &mut bytes) => {
                 if count? == 0 { return Ok(()); }
                 anyhow::ensure!(bytes.len() <= 4096 && bytes.last() == Some(&b'\n'), "invalid Plasma observation frame");
-                let observation = Observation::decode(&bytes)?;
-                output.clone_from(&observation.output);
-                events.send((id, Some(observation))).await?;
+                match Frame::decode(&bytes)? {
+                    Frame::Observation(observation) => {
+                        output.clone_from(&observation.output);
+                        events.send((id, Some(observation))).await?;
+                    }
+                    Frame::Subscribe(requested) => {
+                        anyhow::ensure!(output == requested, "Plasma subscription names another output");
+                        subscription = Some(skwd_wall_core::plasma::channel::subscribe(&requested));
+                    }
+                }
                 bytes.clear();
             }
             changed = policies.changed() => { if changed.is_err() { return Ok(()); } }
+            changed = published.changed() => { if changed.is_err() { return Ok(()); } }
         }
-        let paused = policies.borrow().get(&output).copied();
-        if paused != previous
-            && let Some(paused) = paused
-        {
-            let line = format!("{{\"version\":1,\"paused\":{paused}}}\n");
-            tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                write.write_all(line.as_bytes()),
-            )
+        let Some(paused) = policies.borrow().get(&output).copied() else { continue };
+        let entry = subscription
+            .as_ref()
+            .and_then(|_| skwd_wall_core::plasma::channel::entry(&output))
+            .filter(|entry| delivered.as_ref() != Some(entry));
+        if previous == Some(paused) && entry.is_none() {
+            continue;
+        }
+        let mut line =
+            serde_json::json!({"version": 1, "paused": paused, "capabilities": ["assignments"]});
+        if let Some(entry) = &entry {
+            line["entry"] = entry.clone();
+        }
+        let mut text = line.to_string();
+        text.push('\n');
+        tokio::time::timeout(std::time::Duration::from_secs(2), write.write_all(text.as_bytes()))
             .await??;
-            previous = Some(paused);
+        previous = Some(paused);
+        if entry.is_some() {
+            delivered = entry;
         }
     }
 }
@@ -175,8 +232,9 @@ async fn serve(
                 let id = next_id;
                 let events = events.clone();
                 let policies = policies.clone();
+                let published = published().subscribe();
                 tasks.spawn(async move {
-                    let result = receive(stream, id, &events, policies).await;
+                    let result = receive(stream, id, &events, policies, published).await;
                     let _ = events.send((id, None)).await;
                     result
                 });
@@ -196,6 +254,7 @@ async fn serve(
 }
 
 pub(super) async fn run(sender: watch::Sender<Snapshot>) {
+    skwd_wall_core::plasma::channel::set_notifier(assignments_published);
     let path = wall_proto::resolve_socket().with_file_name("window-state.sock");
     if let Err(error) = serve(&path, sender.clone(), policy().subscribe()).await {
         log::warn!("Plasma window-state detection: {error:#}");

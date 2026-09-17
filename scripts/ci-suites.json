@@ -5,7 +5,7 @@
     {"id": "deck.format", "expectedSkips": 0, "coverage": "Rust formatting"},
     {"id": "deck.clippy", "expectedSkips": 0, "coverage": "workspace all-target lint gate"},
     {"id": "deck.release", "expectedSkips": 0, "coverage": "release workspace build"},
-    {"id": "deck.tests", "expectedSkips": 35, "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks and a live compositor check excluded"},
+    {"id": "deck.tests", "expectedSkips": 38, "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks and a live compositor check excluded"},
     {"id": "deck.layers", "expectedSkips": 0, "coverage": "Core and daemon dependency-layer guards"},
     {"id": "deck.repository", "expectedSkips": 0, "coverage": "repository ownership and dependency guard"},
     {"id": "deck.loom", "expectedSkips": 0, "coverage": "ready-gate concurrency model"},

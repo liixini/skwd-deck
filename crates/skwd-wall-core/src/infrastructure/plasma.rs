@@ -9,6 +9,7 @@ use super::paper::{
 };
 use crate::state::WallState;
 
+pub mod channel;
 mod presentation;
 
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
@@ -324,18 +325,22 @@ pub fn apply(
 ) -> anyhow::Result<()> {
     let mut payload = assignments(state, outputs, map, transitions)?;
     let presentation = presentation::Pending::new(&mut payload)?;
-    let program = qdbus_program().context("find qdbus6 or qdbus-qt6 in PATH")?;
-    let status = Command::new(program)
-        .args([
-            "org.kde.plasmashell",
-            "/PlasmaShell",
-            "org.kde.PlasmaShell.evaluateScript",
-            &script(&payload),
-        ])
-        .status()
-        .context("run Plasma wallpaper script")?;
-    if !status.success() {
-        anyhow::bail!("Plasma wallpaper script exited with {status}");
+    let entries = payload.as_object().context("Plasma assignments must be an object")?;
+    channel::publish(entries);
+    if !channel::subscribed(entries.keys()) {
+        let program = qdbus_program().context("find qdbus6 or qdbus-qt6 in PATH")?;
+        let status = Command::new(program)
+            .args([
+                "org.kde.plasmashell",
+                "/PlasmaShell",
+                "org.kde.PlasmaShell.evaluateScript",
+                &script(&payload),
+            ])
+            .status()
+            .context("run Plasma wallpaper script")?;
+        if !status.success() {
+            anyhow::bail!("Plasma wallpaper script exited with {status}");
+        }
     }
     let transition_ms =
         transitions.values().filter_map(|transition| transition.duration_ms).max().unwrap_or(0);
