@@ -7,6 +7,8 @@ pub use wall_geom::cover_dims;
 
 pub const THUMB_W: u32 = 640;
 pub const THUMB_H: u32 = 360;
+pub const TALL_W: u32 = 360;
+pub const TALL_H: u32 = 640;
 pub const SMALL_W: u32 = 240;
 pub const SMALL_H: u32 = 135;
 
@@ -120,9 +122,13 @@ pub(super) fn write_thumbs(
     } else {
         img
     };
+    let tall = (height > width).then(|| tall_from(&base));
     let full = base.resize_to_fill(THUMB_W, THUMB_H, FilterType::Lanczos3);
     drop(base);
     encode_webp(&full, thumb_path, FULL_QUALITY)?;
+    if let Some(tall) = tall {
+        encode_webp(&tall, &crate::paths::tall_thumb(thumb_path), FULL_QUALITY)?;
+    }
     let small = full.resize_to_fill(SMALL_W, SMALL_H, FilterType::Lanczos3);
     encode_webp(&small, thumb_sm_path, SMALL_QUALITY)?;
     let (near_dest, far_dest) = crate::blocks::dests_for(&thumb_path.to_string_lossy());
@@ -131,6 +137,24 @@ pub(super) fn write_thumbs(
     }
     let (hue, sat, richness) = extract_hue_sat(&full);
     Ok(ThumbResult { hue, sat, richness, width, height, duration_ms: 0 })
+}
+
+fn tall_from(img: &DynamicImage) -> DynamicImage {
+    img.resize_to_fill(TALL_W, TALL_H, FilterType::Lanczos3).rotate90()
+}
+
+pub fn write_tall(img: &DynamicImage, thumb_path: &Path) -> anyhow::Result<std::path::PathBuf> {
+    let dest = crate::paths::tall_thumb(thumb_path);
+    encode_webp(&tall_from(img), &dest, FULL_QUALITY)?;
+    Ok(dest)
+}
+
+pub fn generate_image_tall_thumb(
+    src: &Path,
+    thumb_path: &Path,
+) -> anyhow::Result<std::path::PathBuf> {
+    let img = open_limited(src).with_context(|| format!("decode {}", src.display()))?;
+    write_tall(&img, thumb_path)
 }
 
 pub fn generate_image_thumbs(

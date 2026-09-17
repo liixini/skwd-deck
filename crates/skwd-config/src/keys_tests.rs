@@ -218,6 +218,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::HAND_CUT, "components.wallpaperSelector.handCut");
     assert_eq!(keys::selector::HAND_CUT_VARIANCE, "components.wallpaperSelector.handCutVariance");
     assert_eq!(keys::selector::HAND_GHOSTS, "components.wallpaperSelector.handGhosts");
+    assert_eq!(keys::selector::HAND_REVEAL_FILL, "components.wallpaperSelector.handRevealFill");
     assert_eq!(keys::selector::HAND_MOVE, "components.wallpaperSelector.handMove");
     assert_eq!(keys::selector::HAND_MOVE_CASCADE, "components.wallpaperSelector.handMoveCascade");
     assert_eq!(
@@ -485,6 +486,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::keybind::FAVOURITE, "keys.favourite");
     assert_eq!(keys::keybind::FILTER_BAR, "keys.filterBar");
     assert_eq!(keys::keybind::FLIP, "keys.flip");
+    assert_eq!(keys::keybind::REVEAL, "keys.reveal");
     assert_eq!(keys::keybind::HELP, "keys.help");
     assert_eq!(keys::keybind::NAV_DOWN, "keys.navDown");
     assert_eq!(keys::keybind::NAV_LEFT, "keys.navLeft");

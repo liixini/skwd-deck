@@ -417,3 +417,36 @@ fn extract_frame_decodable() {
     let img = image::open(&dest).unwrap();
     assert_eq!((img.width(), img.height()), (160, 120));
 }
+
+#[test]
+fn tall_thumbs_only_for_portrait_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    let wide = dir.path().join("wide.png");
+    RgbImage::from_pixel(800, 600, Rgb([10, 200, 10])).save(&wide).unwrap();
+    let wide_thumb = dir.path().join("thumbs/wide.webp");
+    generate_image_thumbs(&wide, &wide_thumb, &dir.path().join("thumbs-sm/wide.webp")).unwrap();
+    assert!(!crate::paths::tall_thumb(&wide_thumb).exists());
+
+    let tall = dir.path().join("tall.png");
+    let mut buf = RgbImage::new(600, 1200);
+    for (_x, y, p) in buf.enumerate_pixels_mut() {
+        *p = if y < 600 { Rgb([200, 40, 40]) } else { Rgb([40, 40, 200]) };
+    }
+    buf.save(&tall).unwrap();
+    let tall_thumb = dir.path().join("thumbs/tall.webp");
+    generate_image_thumbs(&tall, &tall_thumb, &dir.path().join("thumbs-sm/tall.webp")).unwrap();
+    let path = crate::paths::tall_thumb(&tall_thumb);
+    assert_eq!(path, dir.path().join("thumbs/tall.tall.webp"));
+    let decoded = image::open(&path).unwrap().to_rgb8();
+    assert_eq!((decoded.width(), decoded.height()), (640, 360));
+    let left = decoded.get_pixel(20, 180);
+    let right = decoded.get_pixel(620, 180);
+    assert!(
+        right[0] > 150 && left[2] > 150,
+        "rotated clockwise: top of the picture lands on the right"
+    );
+
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(generate_image_tall_thumb(&tall, &tall_thumb).unwrap(), path);
+    assert!(path.exists());
+}

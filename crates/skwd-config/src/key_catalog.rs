@@ -253,6 +253,7 @@ pub mod keys {
         pub const HAND_MOVE_SPIRAL: &str = "components.wallpaperSelector.handMoveSpiral";
         pub const HAND_PERSPECTIVE: &str = "components.wallpaperSelector.handPerspective";
         pub const HAND_RIBBON_AXIS: &str = "components.wallpaperSelector.handRibbonAxis";
+        pub const HAND_REVEAL_FILL: &str = "components.wallpaperSelector.handRevealFill";
         pub const HAND_RIBBONS: &str = "components.wallpaperSelector.handRibbons";
         pub const HAND_SPEED: &str = "components.wallpaperSelector.handSpeed";
         pub const HAND_SPREAD: &str = "components.wallpaperSelector.handSpread";
@@ -533,6 +534,7 @@ pub mod keys {
         pub const FOLDER_TOGGLE: &str = "keys.folderToggle";
         pub const HIDDEN_FOLDERS: &str = "keys.hiddenFolders";
         pub const FLIP: &str = "keys.flip";
+        pub const REVEAL: &str = "keys.reveal";
         pub const HELP: &str = "keys.help";
         pub const SCENE_PROPERTIES: &str = "keys.sceneProperties";
         pub const SELECT: &str = "keys.select";

@@ -129,6 +129,11 @@ async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
             })
             .await??;
         }
+        Command::Tall { source, thumb, video } => {
+            sandbox::restrict_decode(&storage_policy(&state.config()).read(&source))?;
+            tokio::task::spawn_blocking(move || media_jobs::generate_tall(&source, &thumb, video))
+                .await?;
+        }
         Command::Preview { key, video } => {
             sandbox::restrict_decode(&storage_policy(&state.config()).read(&video))?;
             let worker = reporter.clone();
@@ -240,6 +245,7 @@ fn command_deadline(command: &Command) -> std::time::Duration {
     let seconds = match command {
         Command::SceneThumbnail { .. }
         | Command::Preview { .. }
+        | Command::Tall { .. }
         | Command::Stream { .. }
         | Command::StreamPersist
         | Command::Theme { .. }
