@@ -546,6 +546,19 @@ pub mod keys {
         pub const TAG_CLOUD: &str = "keys.tagCloud";
         pub const TAG_MODE: &str = "keys.tagMode";
         pub const THEME_PANEL: &str = "keys.themePanel";
+        pub const DOWNLOADS: &str = "keys.downloads";
+        pub const RANDOM_ROTATE: &str = "keys.randomRotate";
+        pub const SEARCH_MODE: &str = "keys.searchMode";
+        pub const SORT_NEXT: &str = "keys.sortNext";
+        pub const SORT_PREV: &str = "keys.sortPrev";
+        pub const SOURCE_BING: &str = "keys.sourceBing";
+        pub const SOURCE_PEXELS: &str = "keys.sourcePexels";
+        pub const SOURCE_STEAM: &str = "keys.sourceSteam";
+        pub const SOURCE_UNSPLASH: &str = "keys.sourceUnsplash";
+        pub const SOURCE_WALLHAVEN: &str = "keys.sourceWallhaven";
+        pub const SOURCE_YOUTUBE: &str = "keys.sourceYoutube";
+        pub const TYPE_NEXT: &str = "keys.typeNext";
+        pub const TYPE_PREV: &str = "keys.typePrev";
     }
     pub mod performance {
         pub const AUTO_DELETE_IMAGE_TRASH: &str = "performance.autoDeleteImageTrash";

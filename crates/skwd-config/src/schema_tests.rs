@@ -139,6 +139,19 @@ fn picker_keybindings_and_hidden_visibility_are_typed() {
         keybind::FOLDER_TOGGLE,
         keybind::HIDDEN_FOLDERS,
         keybind::THEME_PANEL,
+        keybind::DOWNLOADS,
+        keybind::RANDOM_ROTATE,
+        keybind::SEARCH_MODE,
+        keybind::SORT_NEXT,
+        keybind::SORT_PREV,
+        keybind::SOURCE_BING,
+        keybind::SOURCE_PEXELS,
+        keybind::SOURCE_STEAM,
+        keybind::SOURCE_UNSPLASH,
+        keybind::SOURCE_WALLHAVEN,
+        keybind::SOURCE_YOUTUBE,
+        keybind::TYPE_NEXT,
+        keybind::TYPE_PREV,
     ] {
         assert_eq!(value_kind(key), Some(ValueKind::Text));
         assert_eq!(text_default(key), Some(""));
