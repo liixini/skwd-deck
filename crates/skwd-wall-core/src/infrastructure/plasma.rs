@@ -13,6 +13,7 @@ pub mod channel;
 mod presentation;
 
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
+const LOCK_SCREEN_GROUPS: [&str; 4] = ["Greeter", "Wallpaper", PLUGIN_ID, "General"];
 const QDBUS_PROGRAMS: &[&str] = &["qdbus6", "qdbus-qt6"];
 
 pub struct LockScreenCurrent<'a> {
@@ -90,16 +91,33 @@ fn qdbus_program() -> Option<PathBuf> {
     qdbus_program_in(std::env::var_os("PATH").as_deref())
 }
 
-fn kconfig_write(groups: &[&str], key: &str, value: &str) -> anyhow::Result<()> {
-    let mut command = Command::new("kwriteconfig6");
+fn kconfig(program: &str, groups: &[&str], key: &str) -> Command {
+    let mut command = Command::new(program);
     command.args(["--file", "kscreenlockerrc"]);
     for group in groups {
         command.args(["--group", group]);
     }
-    let status = command
-        .args(["--key", key, value])
-        .status()
-        .with_context(|| format!("write Plasma lock-screen key {key}"))?;
+    command.args(["--key", key]);
+    command
+}
+
+fn kconfig_read(groups: &[&str], key: &str) -> anyhow::Result<String> {
+    let output = kconfig("kreadconfig6", groups, key)
+        .output()
+        .with_context(|| format!("read Plasma lock-screen key {key}"))?;
+    if !output.status.success() {
+        anyhow::bail!("kreadconfig6 failed while reading {key}: {}", output.status);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn kconfig_write(groups: &[&str], key: &str, value: Option<&str>) -> anyhow::Result<()> {
+    let mut command = kconfig("kwriteconfig6", groups, key);
+    match value {
+        Some(value) => command.arg(value),
+        None => command.arg("--delete"),
+    };
+    let status = command.status().with_context(|| format!("write Plasma lock-screen key {key}"))?;
     if !status.success() {
         anyhow::bail!("kwriteconfig6 failed while writing {key}: {status}");
     }
@@ -107,8 +125,26 @@ fn kconfig_write(groups: &[&str], key: &str, value: &str) -> anyhow::Result<()> 
 }
 
 fn select_lock_screen_plugin(plugin: &str) -> anyhow::Result<()> {
+    let previous = kconfig_read(&["Greeter"], "WallpaperPlugin")?;
+    if previous != plugin {
+        kconfig_write(&LOCK_SCREEN_GROUPS, "PreviousWallpaperPlugin", Some(&previous))?;
+    }
     // Select the plugin last so the greeter can never observe half-written plugin configuration.
-    kconfig_write(&["Greeter"], "WallpaperPlugin", plugin)
+    kconfig_write(&["Greeter"], "WallpaperPlugin", Some(plugin))
+}
+
+fn restored_lock_screen_plugin(previous: &str) -> Option<&str> {
+    (!previous.is_empty() && previous != PLUGIN_ID).then_some(previous)
+}
+
+fn release_lock_screen() -> anyhow::Result<bool> {
+    if kconfig_read(&["Greeter"], "WallpaperPlugin")? != PLUGIN_ID {
+        return Ok(false);
+    }
+    let previous = kconfig_read(&LOCK_SCREEN_GROUPS, "PreviousWallpaperPlugin")?;
+    kconfig_write(&["Greeter"], "WallpaperPlugin", restored_lock_screen_plugin(&previous))?;
+    notify_lock_screen();
+    Ok(true)
 }
 
 fn notify_lock_screen() {
@@ -147,7 +183,7 @@ fn use_lock_screen_paper(state: &WallState, current: &LockScreenCurrent<'_>) -> 
     let outputs = crate::outputs::enumerate();
     let (width, height) = lock_screen_stream_size(&outputs);
     let fps = state.config().renderer().we_fps().max(1);
-    let groups = ["Greeter", "Wallpaper", PLUGIN_ID, "General"];
+    let groups = LOCK_SCREEN_GROUPS;
     let entry = serde_json::json!({
         "type": current.kind,
         "path": current.path,
@@ -156,12 +192,12 @@ fn use_lock_screen_paper(state: &WallState, current: &LockScreenCurrent<'_>) -> 
         "volume": 0,
     });
     let assignment = paper_assignment(state, "*", &entry)?;
-    kconfig_write(&groups, "Assignment", &serde_json::to_string(&assignment)?)?;
-    kconfig_write(&groups, "Paper", &state.config().renderer().paper_bin())?;
-    kconfig_write(&groups, "Paused", "false")?;
-    kconfig_write(&groups, "StreamWidth", &width.to_string())?;
-    kconfig_write(&groups, "StreamHeight", &height.to_string())?;
-    kconfig_write(&groups, "StreamFps", &fps.to_string())?;
+    kconfig_write(&groups, "Assignment", Some(&serde_json::to_string(&assignment)?))?;
+    kconfig_write(&groups, "Paper", Some(&state.config().renderer().paper_bin()))?;
+    kconfig_write(&groups, "Paused", Some("false"))?;
+    kconfig_write(&groups, "StreamWidth", Some(&width.to_string()))?;
+    kconfig_write(&groups, "StreamHeight", Some(&height.to_string()))?;
+    kconfig_write(&groups, "StreamFps", Some(&fps.to_string()))?;
     select_lock_screen_plugin(PLUGIN_ID)?;
     notify_lock_screen();
     Ok(())
@@ -224,7 +260,7 @@ pub fn sync_lock_screen(
                 )?;
             }
         }
-        _ => return Ok(false),
+        _ => return release_lock_screen(),
     }
     Ok(true)
 }

@@ -177,6 +177,13 @@ fn lock_screen_uses_the_same_paper_connector() {
 }
 
 #[test]
+fn releasing_the_lock_screen_never_keeps_skwd_selected() {
+    assert_eq!(super::restored_lock_screen_plugin("org.kde.slideshow"), Some("org.kde.slideshow"));
+    assert_eq!(super::restored_lock_screen_plugin(""), None);
+    assert_eq!(super::restored_lock_screen_plugin(super::PLUGIN_ID), None);
+}
+
+#[test]
 fn plasma_without_its_plugin_reports_the_missing_package() {
     let root = tempfile::tempdir().unwrap();
     let roots = [root.path().to_path_buf()];

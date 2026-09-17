@@ -15,7 +15,7 @@ pub struct FakePlasma {
 }
 
 impl FakePlasma {
-    pub fn install(sandbox: &mut Sandbox, qdbus: &str) -> Self {
+    pub fn install(sandbox: &mut Sandbox, qdbus: &str, kconfig: &str) -> Self {
         let dir = sandbox.root.join("plasma");
         let bin = dir.join("bin");
         let plugin = sandbox.root.join("data/plasma/wallpapers/org.skwd.wall.plasma");
@@ -28,6 +28,9 @@ impl FakePlasma {
         )
         .expect("plugin metadata");
         std::os::unix::fs::symlink(qdbus, bin.join("qdbus6")).expect("qdbus6 shim");
+        for tool in ["kreadconfig6", "kwriteconfig6"] {
+            std::os::unix::fs::symlink(kconfig, bin.join(tool)).expect("KConfig shim");
+        }
         let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
         sandbox.set_env("PATH", &path);
         sandbox.set_env("XDG_CURRENT_DESKTOP", "KDE");

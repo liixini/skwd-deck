@@ -33,18 +33,18 @@ ForegroundPositive={{colors.tertiary.default.red}},{{colors.tertiary.default.gre
 ForegroundVisited={{colors.tertiary_container.default.red}},{{colors.tertiary_container.default.green}},{{colors.tertiary_container.default.blue}}
 
 [Colors:Complementary]
-BackgroundAlternate={{colors.surface.default.red}},{{colors.surface.default.green}},{{colors.surface.default.blue}}
-BackgroundNormal={{colors.surface.default.red}},{{colors.surface.default.green}},{{colors.surface.default.blue}}
-DecorationFocus={{colors.tertiary.default.red}},{{colors.tertiary.default.green}},{{colors.tertiary.default.blue}}
-DecorationHover={{colors.tertiary.default.red}},{{colors.tertiary.default.green}},{{colors.tertiary.default.blue}}
-ForegroundActive={{colors.tertiary.default.red}},{{colors.tertiary.default.green}},{{colors.tertiary.default.blue}}
-ForegroundInactive={{colors.outline.default.red}},{{colors.outline.default.green}},{{colors.outline.default.blue}}
-ForegroundLink={{colors.tertiary.default.red}},{{colors.tertiary.default.green}},{{colors.tertiary.default.blue}}
-ForegroundNegative={{colors.error.default.red}},{{colors.error.default.green}},{{colors.error.default.blue}}
-ForegroundNeutral={{colors.outline_variant.default.red}},{{colors.outline_variant.default.green}},{{colors.outline_variant.default.blue}}
-ForegroundNormal={{colors.on_surface.default.red}},{{colors.on_surface.default.green}},{{colors.on_surface.default.blue}}
-ForegroundPositive={{colors.tertiary.default.red}},{{colors.tertiary.default.green}},{{colors.tertiary.default.blue}}
-ForegroundVisited={{colors.tertiary_container.default.red}},{{colors.tertiary_container.default.green}},{{colors.tertiary_container.default.blue}}
+BackgroundAlternate={{colors.surface.dark.red}},{{colors.surface.dark.green}},{{colors.surface.dark.blue}}
+BackgroundNormal={{colors.surface.dark.red}},{{colors.surface.dark.green}},{{colors.surface.dark.blue}}
+DecorationFocus={{colors.tertiary.dark.red}},{{colors.tertiary.dark.green}},{{colors.tertiary.dark.blue}}
+DecorationHover={{colors.tertiary.dark.red}},{{colors.tertiary.dark.green}},{{colors.tertiary.dark.blue}}
+ForegroundActive={{colors.tertiary.dark.red}},{{colors.tertiary.dark.green}},{{colors.tertiary.dark.blue}}
+ForegroundInactive={{colors.outline.dark.red}},{{colors.outline.dark.green}},{{colors.outline.dark.blue}}
+ForegroundLink={{colors.tertiary.dark.red}},{{colors.tertiary.dark.green}},{{colors.tertiary.dark.blue}}
+ForegroundNegative={{colors.error.dark.red}},{{colors.error.dark.green}},{{colors.error.dark.blue}}
+ForegroundNeutral={{colors.outline_variant.dark.red}},{{colors.outline_variant.dark.green}},{{colors.outline_variant.dark.blue}}
+ForegroundNormal={{colors.on_surface.dark.red}},{{colors.on_surface.dark.green}},{{colors.on_surface.dark.blue}}
+ForegroundPositive={{colors.tertiary.dark.red}},{{colors.tertiary.dark.green}},{{colors.tertiary.dark.blue}}
+ForegroundVisited={{colors.tertiary_container.dark.red}},{{colors.tertiary_container.dark.green}},{{colors.tertiary_container.dark.blue}}
 
 [Colors:Header]
 BackgroundAlternate={{colors.surface_container.default.red}},{{colors.surface_container.default.green}},{{colors.surface_container.default.blue}}

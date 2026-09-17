@@ -247,3 +247,27 @@ fn render_doc_base16_slots() {
     }
     assert_eq!(render_doc("{{base16.nope.hex}}", &doc), "{{base16.nope.hex}}");
 }
+
+#[test]
+fn kde_complementary_stays_dark_for_light_schemes() {
+    let template = include_str!("../../../../../data/matugen/templates/kde-colors.colors");
+    let section = |text: &str, name: &str| {
+        text.split("\n[")
+            .find(|block| block.trim_start_matches('[').starts_with(name))
+            .map(str::to_string)
+            .unwrap_or_default()
+    };
+    let dark = crate::material::document("#f06e44", true).unwrap();
+    let light = crate::material::document("#f06e44", false).unwrap();
+    let (dark_scheme, light_scheme) = (render_doc(template, &dark), render_doc(template, &light));
+    let complementary = section(&light_scheme, "Colors:Complementary]");
+    assert_eq!(complementary, section(&dark_scheme, "Colors:Complementary]"));
+    let surface =
+        "{{colors.surface.dark.red}},{{colors.surface.dark.green}},{{colors.surface.dark.blue}}";
+    let text = "{{colors.on_surface.dark.red}},{{colors.on_surface.dark.green}},{{colors.on_surface.dark.blue}}";
+    assert!(
+        complementary.contains(&format!("\nBackgroundNormal={}\n", render_doc(surface, &light)))
+    );
+    assert!(complementary.contains(&format!("\nForegroundNormal={}\n", render_doc(text, &light))));
+    assert_ne!(section(&light_scheme, "Colors:View]"), section(&dark_scheme, "Colors:View]"));
+}

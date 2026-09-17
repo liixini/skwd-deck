@@ -10,7 +10,11 @@ const STUB: &str = "fake_renderer";
 
 fn plasma_session(name: &str) -> (Sandbox, FakePlasma) {
     let mut sandbox = Sandbox::new(name);
-    let plasma = FakePlasma::install(&mut sandbox, env!("CARGO_BIN_EXE_fake_qdbus"));
+    let plasma = FakePlasma::install(
+        &mut sandbox,
+        env!("CARGO_BIN_EXE_fake_qdbus"),
+        env!("CARGO_BIN_EXE_fake_kconfig"),
+    );
     let stub = skwd_e2e::stub_renderer!();
     sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
     sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
@@ -322,4 +326,62 @@ fn plasma_pauses_reach_only_their_output() {
     );
     assert_eq!(latest(&left)["manualPaused"], false, "{:?}", left.lines());
     assert_eq!(plasma.scripts().len(), scripts, "{:?}", plasma.calls());
+}
+
+fn lock_screen_plugin(sandbox: &Sandbox) -> String {
+    std::process::Command::new(sandbox.root.join("plasma/bin/kreadconfig6"))
+        .arg("--file")
+        .arg(sandbox.root.join("config/kscreenlockerrc"))
+        .args(["--group", "Greeter", "--key", "WallpaperPlugin"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+fn set_lock_screen_mode(sandbox: &Sandbox, config: &mut Value, mode: &str) {
+    config["plasma"]["lockScreen"]["mode"] = json!(mode);
+    sandbox.write_config(config);
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_lock_screen_off_gives_the_lock_screen_back() {
+    let (sandbox, plasma) = plasma_session("plasma-lock-screen-release");
+    let image = still(&sandbox, "lock.png", "red");
+    let lockrc = sandbox.root.join("config/kscreenlockerrc");
+    let mut config: Value =
+        serde_json::from_str(&std::fs::read_to_string(sandbox.config_path()).expect("config"))
+            .expect("config json");
+    config["plasma"] = json!({"lockScreen": {"mode": "static", "image": image}});
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let selected = |plugin: &str| {
+        wait_until(|| lock_screen_plugin(&sandbox) == plugin, Duration::from_secs(10))
+    };
+
+    assert!(selected("org.skwd.wall.plasma"), "no takeover\n{}", walld.log_contents());
+    set_lock_screen_mode(&sandbox, &mut config, "off");
+    assert!(selected(""), "Plasma default not restored\n{}", walld.log_contents());
+    let released = std::fs::read_to_string(&lockrc).unwrap_or_default();
+    assert!(!released.lines().any(|line| line.starts_with("WallpaperPlugin=")), "{released}");
+
+    std::fs::write(&lockrc, "[Greeter]\nWallpaperPlugin=org.kde.slideshow\n").expect("user choice");
+    set_lock_screen_mode(&sandbox, &mut config, "static");
+    assert!(selected("org.skwd.wall.plasma"), "no second takeover\n{}", walld.log_contents());
+    set_lock_screen_mode(&sandbox, &mut config, "off");
+    assert!(selected("org.kde.slideshow"), "user plugin not restored\n{}", walld.log_contents());
+
+    let reloads = plasma
+        .calls()
+        .iter()
+        .filter(|args| args.iter().any(|arg| arg == "org.kde.screensaver.configure"))
+        .count();
+    assert!(reloads >= 4, "{:?}", plasma.calls());
+    let kconfig =
+        std::fs::read_to_string(sandbox.root.join("plasma/kconfig.log")).unwrap_or_default();
+    assert!(
+        kconfig.contains("PreviousWallpaperPlugin"),
+        "walld bypassed the KConfig shim: {kconfig}"
+    );
+    assert!(walld.responsive());
 }
