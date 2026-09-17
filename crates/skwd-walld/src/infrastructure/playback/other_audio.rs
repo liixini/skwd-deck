@@ -32,10 +32,13 @@ pub(crate) fn other_stream_playing(inputs: &Value, own_pids: &HashSet<u32>) -> b
             let property = |key: &str| properties.and_then(|props| props.get(key)?.as_str());
             let own_binary = property("application.process.binary")
                 .is_some_and(|binary| binary.starts_with("skwd-"));
+            let own_name = ["application.name", "node.name", "media.name"]
+                .iter()
+                .any(|key| property(key).is_some_and(|name| name.contains("skwd-")));
             let own_pid = property("application.process.id")
                 .and_then(|pid| pid.parse::<u32>().ok())
                 .is_some_and(|pid| own_pids.contains(&pid));
-            !corked && !muted && !own_binary && !own_pid
+            !corked && !muted && !own_binary && !own_name && !own_pid
         })
     })
 }

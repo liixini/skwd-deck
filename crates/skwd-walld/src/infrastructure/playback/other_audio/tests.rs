@@ -33,6 +33,29 @@ fn corked_and_own_streams_do_not_count() {
 }
 
 #[test]
+fn renderer_streams_through_the_alsa_plugin_do_not_count() {
+    let own = HashSet::new();
+    let alsa = json!({
+        "index": 8,
+        "corked": false,
+        "mute": false,
+        "properties": {
+            "application.name": "PipeWire ALSA [skwd-wall-vk]",
+            "node.name": "alsa_playback.skwd-wall-vk",
+            "media.name": "ALSA Playback"
+        }
+    });
+    assert!(!other_stream_playing(&json!([alsa]), &own));
+    let other = json!({
+        "index": 9,
+        "corked": false,
+        "mute": false,
+        "properties": {"application.name": "PipeWire ALSA [mpv]", "node.name": "alsa_playback.mpv"}
+    });
+    assert!(other_stream_playing(&json!([other]), &own));
+}
+
+#[test]
 fn muted_streams_and_missing_fields_do_not_count() {
     let own = HashSet::new();
     let mut muted = input(1, false, "firefox", 100);
