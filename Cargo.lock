@@ -2253,6 +2253,7 @@ dependencies = [
  "paper-control",
  "rusqlite",
  "serde_json",
+ "skwd-config",
  "skwd-wall-core",
  "wall-proto",
 ]

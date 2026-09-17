@@ -140,6 +140,10 @@ jobs:
         if: always()
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.vm --reason 'requires KVM and the declared distribution/compositor image matrix' --out ci-artifacts/results/deck-vm.json
 
+      - name: Record deliberate theme provider VM coverage
+        if: always()
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.theme-vm --reason 'requires KVM; run scripts/theme-provider-vm.py run locally and attach test-results/theme-provider-matrix' --out ci-artifacts/results/deck-theme-vm.json
+
       - name: Record blocked suites
         if: always()
         shell: bash

@@ -15,7 +15,9 @@ impl Sandbox {
     pub fn new(name: &str) -> Self {
         let root = std::env::temp_dir().join(format!("skwd-e2e-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for sub in ["runtime/skwd-wall-v2", "config/skwd-wall-v2", "cache", "data", "library"] {
+        for sub in
+            ["runtime/skwd-wall-v2", "config/skwd-wall-v2", "cache", "data", "state", "library"]
+        {
             std::fs::create_dir_all(root.join(sub)).expect("sandbox dir");
         }
         set_mode(&root.join("runtime"), 0o700);
@@ -37,6 +39,14 @@ impl Sandbox {
 
     pub fn library(&self) -> PathBuf {
         self.root.join("library")
+    }
+
+    pub fn state(&self) -> PathBuf {
+        self.root.join("state")
+    }
+
+    pub fn cache(&self) -> PathBuf {
+        self.root.join("cache/skwd-wall-v2")
     }
 
     pub fn sqlite_path(&self) -> PathBuf {
@@ -69,6 +79,7 @@ impl Sandbox {
             ("XDG_CONFIG_HOME".into(), dir("config")),
             ("XDG_CACHE_HOME".into(), dir("cache")),
             ("XDG_DATA_HOME".into(), dir("data")),
+            ("XDG_STATE_HOME".into(), dir("state")),
             ("SKWD_WALL_V2_SOCK".into(), self.socket().to_string_lossy().into_owned()),
             ("SKWD_WALLD_NO_REAP".into(), "1".into()),
             ("SKWD_WALL_LOG".into(), "info".into()),

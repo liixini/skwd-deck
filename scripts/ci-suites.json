@@ -1,16 +1,65 @@
 {
   "schema": 1,
   "suites": [
-    {"id": "verify.repository", "expectedSkips": 0, "coverage": "external verifier self-tests and repository boundary"},
-    {"id": "deck.format", "expectedSkips": 0, "coverage": "Rust formatting"},
-    {"id": "deck.clippy", "expectedSkips": 0, "coverage": "workspace all-target lint gate"},
-    {"id": "deck.release", "expectedSkips": 0, "coverage": "release workspace build"},
-    {"id": "deck.tests", "expectedSkips": 39, "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks and a live compositor check excluded"},
-    {"id": "deck.layers", "expectedSkips": 0, "coverage": "Core and daemon dependency-layer guards"},
-    {"id": "deck.repository", "expectedSkips": 0, "coverage": "repository ownership and dependency guard"},
-    {"id": "deck.loom", "expectedSkips": 0, "coverage": "ready-gate concurrency model"},
-    {"id": "deck.packaging", "expectedSkips": 0, "coverage": "package staging and Fedora Steamworks companion contracts"},
-    {"id": "deck.process-e2e", "expectedSkips": 0, "coverage": "RPC, schedule, lifecycle, apply, restore, WE, concurrency, hotplug, library, playback, and fake Plasma session processes"},
-    {"id": "deck.vm", "expectedSkips": 1, "coverage": "distribution and compositor VM matrix"}
+    {
+      "id": "verify.repository",
+      "expectedSkips": 0,
+      "coverage": "external verifier self-tests and repository boundary"
+    },
+    {
+      "id": "deck.format",
+      "expectedSkips": 0,
+      "coverage": "Rust formatting"
+    },
+    {
+      "id": "deck.clippy",
+      "expectedSkips": 0,
+      "coverage": "workspace all-target lint gate"
+    },
+    {
+      "id": "deck.release",
+      "expectedSkips": 0,
+      "coverage": "release workspace build"
+    },
+    {
+      "id": "deck.tests",
+      "expectedSkips": 43,
+      "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks and a live compositor check excluded"
+    },
+    {
+      "id": "deck.layers",
+      "expectedSkips": 0,
+      "coverage": "Core and daemon dependency-layer guards"
+    },
+    {
+      "id": "deck.repository",
+      "expectedSkips": 0,
+      "coverage": "repository ownership and dependency guard"
+    },
+    {
+      "id": "deck.loom",
+      "expectedSkips": 0,
+      "coverage": "ready-gate concurrency model"
+    },
+    {
+      "id": "deck.packaging",
+      "expectedSkips": 0,
+      "coverage": "package staging and Fedora Steamworks companion contracts"
+    },
+    {
+      "id": "deck.process-e2e",
+      "expectedSkips": 0,
+      "coverage": "RPC, schedule, lifecycle, apply, restore, WE, concurrency, hotplug, library, playback, fake Plasma sessions, and desktop-theme provider processes"
+    },
+    {
+      "id": "deck.vm",
+      "expectedSkips": 1,
+      "coverage": "distribution and compositor VM matrix"
+    },
+    {
+      "id": "deck.theme-vm",
+      "expectedSkips": 1,
+      "coverage": "pinned Caelestia, DMS, Noctalia, and end-4 shells accepting Deck palettes, hover previews, and screenshots in QEMU"
+    }
   ]
 }

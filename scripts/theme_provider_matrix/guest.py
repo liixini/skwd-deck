@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
+import platform
 import signal
 import subprocess
 import sys
@@ -15,8 +14,8 @@ import time
 HOME = Path.home()
 PREFIX = HOME / ".local" / "lib" / "skwd-theme-matrix"
 SOURCE = PREFIX / "src"
-BUILD = PREFIX / "build"
 PROVIDERS = ("caelestia", "dms", "noctalia", "end4")
+PREVIEW_PROVIDERS = ("dms", "noctalia")
 PROVIDER_COMPOSITORS = {
     "caelestia": "hyprland",
     "dms": "sway",
@@ -41,6 +40,17 @@ CANONICAL_KEYS = {
     "inverseSurfaceText", "inversePrimary", "error", "errorText", "errorContainer",
     "errorContainerText", "onPrimary",
 }
+RECORDED_PACKAGES = [
+    "quickshell", "hyprland", "sway", "matugen", "grim", "qt6-base", "qt6-declarative",
+    "mesa", "python-pillow", "linux",
+]
+SCREEN = (1280, 720)
+PIXEL_TOLERANCE = 12
+PIXEL_FLOOR = 100
+MIN_SATURATION = 0.25
+MIN_VALUE = 96
+PROBE_COLOR = (0x22, 0x66, 0xDD)
+SHELL_SETTLE_SECONDS = 8
 
 
 class GuestError(RuntimeError):
@@ -50,99 +60,6 @@ class GuestError(RuntimeError):
 def command(argv, **kwargs):
     print("+", " ".join(str(item) for item in argv), flush=True)
     return subprocess.run([str(item) for item in argv], check=True, **kwargs)
-
-
-def clone_pinned(name, spec):
-    target = SOURCE / name
-    if not target.exists():
-        command(["git", "clone", "--filter=blob:none", "--no-checkout", spec["url"], target])
-    command(["git", "-C", target, "fetch", "--depth", "1", "origin", spec["commit"]])
-    command(["git", "-C", target, "checkout", "--detach", spec["commit"]])
-    command(["git", "-C", target, "submodule", "update", "--init", "--recursive", "--depth", "1"])
-    actual = command(["git", "-C", target, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    if actual != spec["commit"]:
-        raise GuestError(f"{name}: expected {spec['commit']}, got {actual}")
-    return target
-
-
-def provision(args):
-    data = json.loads(Path(args.pins).read_text())
-    packages = [
-        "base-devel", "git", "python", "jq", "go", "cmake", "ninja", "meson", "pkgconf",
-        "quickshell", "sway", "hyprland", "grim", "matugen", "dbus", "xorg-xwayland",
-        "ttf-material-symbols-variable", "ttf-jetbrains-mono-nerd", "ttf-roboto",
-        "qt6-base", "qt6-declarative", "qt6-shadertools", "qt6-quick3d", "qt6-imageformats",
-        "qt6-5compat", "qt6-positioning", "kirigami", "syntax-highlighting",
-        "libqalculate", "pipewire", "wireplumber", "aubio", "cava", "fftw", "lm_sensors",
-        "wayland", "wayland-protocols", "libglvnd", "freetype2", "fontconfig", "cairo", "pango",
-        "harfbuzz", "libxkbcommon", "glib2", "libsecret", "libsodium", "sdbus-cpp", "polkit",
-        "pam", "curl", "libwebp", "libjxl", "libsndfile", "librsvg", "libxml2", "md4c",
-        "tomlplusplus", "libical", "nlohmann-json", "stb", "jemalloc",
-    ]
-    command(["sudo", "pacman", "-Syu", "--noconfirm", "--needed", *packages])
-    command(["sudo", "usermod", "-a", "-G", "seat", os.environ.get("USER", "skwd")])
-    SOURCE.mkdir(parents=True, exist_ok=True)
-    BUILD.mkdir(parents=True, exist_ok=True)
-    providers = {name: clone_pinned(name, spec) for name, spec in data["providers"].items()}
-
-    libcava = clone_pinned("libcava", data["dependencies"]["libcava"])
-    libcava_build = BUILD / "libcava"
-    command(["cmake", "-S", libcava, "-B", libcava_build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"])
-    command(["cmake", "--build", libcava_build, "-j4"])
-    include_dir = PREFIX / "include" / "cava"
-    library_dir = PREFIX / "lib"
-    pkgconfig_dir = library_dir / "pkgconfig"
-    include_dir.mkdir(parents=True, exist_ok=True)
-    pkgconfig_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(libcava / "cavacore.h", include_dir / "cavacore.h")
-    shutil.copy2(libcava_build / "libcavacore.a", library_dir / "libcavacore.a")
-    (pkgconfig_dir / "libcava.pc").write_text(
-        f"prefix={PREFIX}\n"
-        "exec_prefix=${prefix}\n"
-        "libdir=${exec_prefix}/lib\n"
-        "includedir=${prefix}/include\n\n"
-        "Name: libcava\n"
-        "Description: pinned Cava core for the Caelestia compatibility guest\n"
-        "Version: 0.10.7\n"
-        "Libs: -L${libdir} -lcavacore -lfftw3 -lm\n"
-        "Cflags: -I${includedir}\n"
-    )
-
-    dms = providers["dms"]
-    command(["make", "build"], cwd=dms)
-    command(["make", "install-bin", "install-shell", f"PREFIX={PREFIX}"], cwd=dms)
-
-    caelestia = providers["caelestia"]
-    caelestia_build = BUILD / "caelestia"
-    build_env = os.environ.copy()
-    build_env["PKG_CONFIG_PATH"] = str(pkgconfig_dir)
-    command([
-        "cmake", "-S", caelestia, "-B", caelestia_build, "-G", "Ninja",
-        "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={PREFIX}",
-        "-DVERSION=1.0.0", f"-DGIT_REVISION={data['providers']['caelestia']['commit']}",
-        "-DDISTRIBUTOR=skwd-theme-matrix", "-DENABLE_MODULES=extras;plugin;shell;m3shapes",
-        f"-DINSTALL_QSCONFDIR={PREFIX}/share/quickshell/caelestia",
-    ], env=build_env)
-    command(["cmake", "--build", caelestia_build, "-j4"])
-    command(["cmake", "--install", caelestia_build])
-
-    noctalia = providers["noctalia"]
-    noctalia_build = BUILD / "noctalia"
-    command([
-        "meson", "setup", noctalia_build, noctalia, "--buildtype=release",
-        f"--prefix={PREFIX}", "-Dtests=disabled", "-Djemalloc=auto",
-    ])
-    command(["meson", "compile", "-C", noctalia_build, "-j4"])
-    command(["meson", "install", "-C", noctalia_build])
-
-    marker = PREFIX / "prepared.json"
-    marker.write_text(json.dumps({
-        "schema": 1,
-        "pins": {name: spec["commit"] for name, spec in data["providers"].items()},
-        "dependencies": {name: spec["commit"] for name, spec in data["dependencies"].items()},
-        "prepared": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }, indent=2) + "\n")
-    return 0
 
 
 def wait_process(process, seconds, name):
@@ -206,6 +123,230 @@ def mutate_native(name, value):
     else:
         changed["primary"] = "#11aa77"
     return changed
+
+
+def parse_hex(value):
+    if not isinstance(value, str):
+        return None
+    digits = value.strip().lstrip("#")
+    if len(digits) != 6:
+        return None
+    try:
+        return tuple(int(digits[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def chromatic(rgb):
+    high = max(rgb)
+    low = min(rgb)
+    return high >= MIN_VALUE and (high - low) / high >= MIN_SATURATION
+
+
+def published_colors(name, value):
+    if name == "caelestia":
+        raw = value.get("colours", {}).values()
+    elif name == "dms":
+        colors = value.get("colors", {})
+        raw = [*colors.get("dark", {}).values(), *colors.get("light", {}).values()]
+    elif name == "noctalia":
+        raw = []
+        for mode in ("dark", "light"):
+            raw.extend(hex for key, hex in value.get(mode, {}).items() if key.startswith("m"))
+    else:
+        raw = value.values()
+    colors = set()
+    for item in raw:
+        rgb = parse_hex(item)
+        if rgb and chromatic(rgb):
+            colors.add(rgb)
+    return colors
+
+
+def near(rgb, candidates):
+    return any(
+        abs(rgb[0] - c[0]) <= PIXEL_TOLERANCE
+        and abs(rgb[1] - c[1]) <= PIXEL_TOLERANCE
+        and abs(rgb[2] - c[2]) <= PIXEL_TOLERANCE
+        for c in candidates
+    )
+
+
+def coverage(histogram, candidates):
+    matched = 0
+    per_color = {}
+    for count, rgb in histogram:
+        if near(rgb, candidates):
+            matched += count
+            for c in candidates:
+                if (
+                    abs(rgb[0] - c[0]) <= PIXEL_TOLERANCE
+                    and abs(rgb[1] - c[1]) <= PIXEL_TOLERANCE
+                    and abs(rgb[2] - c[2]) <= PIXEL_TOLERANCE
+                ):
+                    key = "#%02x%02x%02x" % c
+                    per_color[key] = per_color.get(key, 0) + count
+                    break
+    return matched, per_color
+
+
+def screenshot_histogram(path):
+    from PIL import Image
+
+    with Image.open(path) as image:
+        rgb = image.convert("RGB")
+        if rgb.size != SCREEN:
+            raise GuestError(f"{path.name}: unexpected geometry {rgb.size}")
+        histogram = rgb.getcolors(maxcolors=rgb.size[0] * rgb.size[1])
+    if not histogram:
+        raise GuestError(f"{path.name}: could not build a colour histogram")
+    return histogram
+
+
+def visual_check(name, screenshot, value):
+    candidates = sorted(published_colors(name, value))
+    if not candidates:
+        raise GuestError(f"{name}: published palette has no chromatic roles to look for")
+    histogram = screenshot_histogram(screenshot)
+    matched, per_color = coverage(histogram, candidates)
+    decoys = [(255 - r, 255 - g, 255 - b) for r, g, b in candidates]
+    decoy_matched, _ = coverage(histogram, decoys)
+    dominant = [
+        {"color": "#%02x%02x%02x" % rgb, "pixels": count}
+        for count, rgb in sorted(histogram, reverse=True)[:8]
+    ]
+    result = {
+        "candidates": ["#%02x%02x%02x" % c for c in candidates],
+        "tolerance": PIXEL_TOLERANCE,
+        "floor": PIXEL_FLOOR,
+        "matched": matched,
+        "decoyMatched": decoy_matched,
+        "perColor": dict(sorted(per_color.items(), key=lambda item: -item[1])),
+        "dominant": dominant,
+    }
+    if matched < PIXEL_FLOOR:
+        raise GuestError(
+            f"{name}: only {matched} screenshot pixels carry the published palette (floor {PIXEL_FLOOR}); "
+            f"dominant colours {[item['color'] for item in dominant]}"
+        )
+    if matched <= 2 * decoy_matched:
+        raise GuestError(
+            f"{name}: palette match {matched} is not distinguishable from the inverted decoy {decoy_matched}"
+        )
+    return result
+
+
+def write_probe_image(path):
+    from PIL import Image
+
+    Image.new("RGB", (64, 64), PROBE_COLOR).save(path)
+    return path
+
+
+def write_skwd_config(env, name, wallpaper_dir):
+    config_dir = Path(env["XDG_CONFIG_HOME"]) / "skwd-wall-v2"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    document = {
+        "paths": {
+            "wallpaper": str(wallpaper_dir),
+            "noctaliaBin": str(PREFIX / "bin" / "noctalia"),
+        },
+        "theme": {"policy": "wallpaper", "authority": name, "mode": "dark", "scheme": "tonal-spot"},
+        "noctalia": {"hoverPreview": True, "themeMode": "follow"},
+        "dms": {"hoverPreview": True},
+    }
+    (config_dir / "config.json").write_text(json.dumps(document, indent=2) + "\n")
+
+
+def preview_cycle(name, contract, env, results, probe):
+    output = results / f"{name}-preview.json"
+    write_skwd_config(env, name, results)
+    log_path = results / f"{name}-preview.log"
+    with log_path.open("wb") as log:
+        result = subprocess.run(
+            [str(contract), "preview-cycle", name, str(probe), str(output)],
+            env=env, stdout=log, stderr=subprocess.STDOUT,
+        )
+    if result.returncode != 0 or not output.is_file():
+        detail = log_path.read_text(errors="replace").strip()
+        raise GuestError(f"{name}: hover preview cycle failed ({result.returncode}): {detail}")
+    report = json.loads(output.read_text())
+    before, after, restored = report["before"], report["after"], report["restored"]
+    if report.get("previewError"):
+        raise GuestError(f"{name}: hover preview reported {report['previewError']}")
+    if name == "dms":
+        if after["native"] == before["native"]:
+            raise GuestError("dms: hover preview left dms-colors.json unchanged")
+        if restored["native"] != before["native"]:
+            raise GuestError("dms: hover preview end did not restore dms-colors.json")
+    else:
+        if not after.get("hoverPalette"):
+            raise GuestError("noctalia: hover preview did not write the skwd-hover palette")
+        if after.get("scheme") != "custom skwd-hover":
+            raise GuestError(f"noctalia: shell reports {after.get('scheme')!r} during the hover preview")
+        if restored.get("scheme") != before.get("scheme"):
+            raise GuestError(
+                f"noctalia: hover preview end restored {restored.get('scheme')!r}, expected {before.get('scheme')!r}"
+            )
+        if restored.get("hoverPalette"):
+            raise GuestError("noctalia: hover palette file survived the preview end")
+        if restored["native"] != before["native"]:
+            raise GuestError("noctalia: hover preview touched the applied palette")
+    return {
+        "status": "pass",
+        "sink": report["sink"],
+        "before": before.get("scheme"),
+        "during": after.get("scheme"),
+        "report": output.name,
+        "log": log_path.name,
+    }
+
+
+def prime_shell(name, env):
+    if name == "dms":
+        config_dir = Path(env["XDG_CONFIG_HOME"]) / "DankMaterialShell"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "settings.json").write_text(json.dumps({
+            "currentThemeName": "dynamic",
+            "matugenScheme": "scheme-tonal-spot",
+        }, indent=2) + "\n")
+        (config_dir / ".firstlaunch").touch()
+    elif name == "noctalia":
+        state_dir = Path(env["XDG_STATE_HOME"]) / "noctalia"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "settings.toml").write_text(
+            "[theme]\n"
+            "source = \"custom\"\n"
+            "custom_palette = \"skwd-wall\"\n"
+            "\n"
+            "[shell]\n"
+            "setup_wizard_enabled = false\n"
+        )
+        (state_dir / ".setup-complete").touch()
+
+
+def activate_live(name, contract, env, results):
+    log_path = results / f"{name}-activate.log"
+    with log_path.open("wb") as log:
+        result = subprocess.run(
+            [str(contract), "publish", "#42ff77"], env=env, stdout=log, stderr=subprocess.STDOUT,
+        )
+    if result.returncode != 0:
+        raise GuestError(f"{name}: republishing to the live shell failed ({result.returncode})")
+    if name != "noctalia":
+        return {"status": "pass", "log": log_path.name}
+    deadline = time.monotonic() + 10
+    scheme = ""
+    while time.monotonic() < deadline:
+        probe = subprocess.run(
+            [str(PREFIX / "bin" / "noctalia"), "msg", "color-scheme-get"], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=5,
+        )
+        scheme = probe.stdout.strip()
+        if probe.returncode == 0 and scheme == "custom skwd-wall":
+            return {"status": "pass", "scheme": scheme, "log": log_path.name}
+        time.sleep(0.5)
+    raise GuestError(f"noctalia: shell reports {scheme!r} after Deck activated custom skwd-wall")
 
 
 def provider_command(name):
@@ -348,25 +489,34 @@ def capture_provider(name, env, results, log):
         raise GuestError(f"{name}: screenshot is not a PNG")
     width = int.from_bytes(header[16:20], "big")
     height = int.from_bytes(header[20:24], "big")
-    if (width, height) != (1280, 720) or screenshot.stat().st_size < 4096:
+    if (width, height) != SCREEN or screenshot.stat().st_size < 4096:
         raise GuestError(f"{name}: invalid screenshot geometry or payload")
     return {"file": screenshot.name, "width": width, "height": height}
 
 
-def run_provider(name, contract, value, env, results):
+def run_provider(name, contract, value, env, results, probe):
     native = provider_path(name, env)
     log_path = results / f"{name}.log"
+    preview = None
+    prime_shell(name, env)
     with log_path.open("wb") as log:
         process = subprocess.Popen(
             [str(item) for item in provider_command(name)], env=env,
             stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         )
         try:
-            wait_process(process, 8, name)
+            wait_process(process, SHELL_SETTLE_SECONDS, name)
+            activation = activate_live(name, contract, env, results)
+            wait_process(process, 2, name)
             screenshot = capture_provider(name, env, results, log)
+            if name in PREVIEW_PROVIDERS:
+                preview = preview_cycle(name, contract, env, results, probe)
+                if process.poll() is not None:
+                    raise GuestError(f"{name}: shell exited during the hover preview cycle")
         finally:
             terminate(process)
     compositor = validate_compositor(name, env, log_path)
+    visual = visual_check(name, results / screenshot["file"], value)
     reverse = mutate_native(name, value)
     native.write_text(json.dumps(reverse, indent=2) + "\n")
     normalized = results / f"{name}-to-skwd.json"
@@ -378,13 +528,41 @@ def run_provider(name, contract, value, env, results):
         raise GuestError(f"{name}: reverse primary sentinel was lost")
     return {
         "status": "pass",
-        "shell_process": "stable for 8s",
+        "shell_process": f"stable for {SHELL_SETTLE_SECONDS}s",
         "compositor": compositor,
         "compositor_contract": "pass",
         "screenshot": screenshot,
+        "activation": activation,
+        "visual": visual,
+        "preview": preview,
         "outbound": f"skwd-to-{name}.json",
         "inbound": f"{name}-to-skwd.json",
         "log": f"{name}.log",
+    }
+
+
+def provenance():
+    packages = {}
+    result = subprocess.run(
+        ["pacman", "-Q", *RECORDED_PACKAGES],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+    )
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            packages[parts[0]] = parts[1]
+    prepared = {}
+    marker = PREFIX / "prepared.json"
+    if marker.is_file():
+        try:
+            prepared = json.loads(marker.read_text())
+        except json.JSONDecodeError:
+            prepared = {"error": "unreadable prepared.json"}
+    return {
+        "kernel": platform.release(),
+        "packages": packages,
+        "prepared": prepared,
+        "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
 
@@ -434,8 +612,16 @@ def run_matrix(args):
         "name": "native", "flavour": "default", "mode": "dark",
         "variant": "tonalspot", "colours": {},
     }) + "\n")
+    probe = write_probe_image(results / "probe.png")
 
-    report = {"schema": 2, "providers": {}, "pins": json.loads(Path(args.pins).read_text())["providers"]}
+    pins = json.loads(Path(args.pins).read_text())
+    report = {
+        "schema": 3,
+        "label": args.label,
+        "providers": {},
+        "pins": pins["providers"],
+        "provenance": provenance(),
+    }
     values = {}
     command(["sudo", "systemctl", "start", "seatd.service"])
     command([contract, "publish", "#42ff77"], env=env, capture_output=True, text=True)
@@ -454,7 +640,7 @@ def run_matrix(args):
         sway, sway_log = start_sway(sway_env, results)
         for name in ("dms", "noctalia"):
             report["providers"][name] = run_provider(
-                name, contract, values[name], sway_env, results
+                name, contract, values[name], sway_env, results, probe
             )
     finally:
         if sway:
@@ -468,7 +654,7 @@ def run_matrix(args):
         hyprland, hyprland_log, hyprland_env = start_hyprland(hyprland_env, results)
         for name in ("caelestia", "end4"):
             report["providers"][name] = run_provider(
-                name, contract, values[name], hyprland_env, results
+                name, contract, values[name], hyprland_env, results, probe
             )
     finally:
         if hyprland:
@@ -476,25 +662,35 @@ def run_matrix(args):
         if hyprland_log:
             hyprland_log.close()
     report["status"] = "pass"
+    report["provenance"]["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     (results / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     lines = [
         "# Skwd desktop-theme provider VM matrix", "",
-        "| Provider | Contract | Compositor | Shell | Screenshot |",
-        "| --- | --- | --- | --- | --- |",
+        f"Label: {args.label}", "",
+        "| Provider | Contract | Compositor | Shell | Palette pixels | Hover preview | Screenshot |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name in PROVIDERS:
         item = report["providers"][name]
         screenshot = item["screenshot"]
+        preview = item["preview"]
+        preview_cell = "n/a" if preview is None else f"PASS ({preview['sink']})"
         lines.append(
             f"| {name} | PASS | {item['compositor']} PASS | PASS | "
+            f"{item['visual']['matched']} (decoy {item['visual']['decoyMatched']}) | {preview_cell} | "
             f"{screenshot['width']}x{screenshot['height']} |"
         )
+    packages = report["provenance"]["packages"]
     lines += [
+        "",
+        "Guest packages: " + ", ".join(f"{name} {version}" for name, version in sorted(packages.items())),
         "",
         "The contract columns use the current Deck encoder/decoder binary copied into the guest.",
         "Caelestia and end4 run under direct DRM Hyprland; DMS and Noctalia run under headless Sway.",
         "Compositor PASS includes session identity and required protocol-log checks.",
         "Shell PASS means the pinned real process accepted its published native file and stayed alive for the observation window.",
+        "Palette pixels counts screenshot pixels within the tolerance of a chromatic published role; the decoy count uses the inverted palette and must stay well below it.",
+        "Hover preview runs Deck's real preview sink against the live shell and requires the shell state to change and then restore.",
         "Screenshots are captured from the provider's own compositor at the required output geometry.",
         "GPU-native visual acceptance remains a separate workstation test.",
         "",
@@ -506,20 +702,17 @@ def run_matrix(args):
 def parse_args():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    provision_parser = subparsers.add_parser("provision")
-    provision_parser.add_argument("--pins", required=True)
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--pins", required=True)
     run_parser.add_argument("--contract", required=True)
     run_parser.add_argument("--results", required=True)
+    run_parser.add_argument("--label", default="pinned")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     try:
-        if args.command == "provision":
-            return provision(args)
         return run_matrix(args)
     except (GuestError, OSError, ValueError, subprocess.CalledProcessError) as err:
         print(f"theme-provider-matrix guest: {err}", file=sys.stderr)
