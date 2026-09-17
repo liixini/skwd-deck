@@ -22,6 +22,34 @@ fn calls(root: &Path) -> String {
     std::fs::read_to_string(root.join("calls")).unwrap_or_default()
 }
 
+fn generator_palettes(sandbox: &mut Sandbox, matugen: bool) {
+    let root = sandbox.root.to_string_lossy().into_owned();
+    sandbox.set_env("SKWD_E2E_PALETTES", &root);
+    for (name, seed) in [("a", "#ff0000"), ("b", "#00ff00")] {
+        let mut document = material::document_with(seed, true, "tonal-spot").unwrap();
+        for mode in ["dark", "light", "default"] {
+            document["colors"]["primary"][mode]["color"] = json!(seed);
+        }
+        let mut tokens = json!({"dark": {}, "light": {}});
+        for (role, variants) in document["colors"].as_object().unwrap() {
+            for mode in ["dark", "light"] {
+                tokens[mode][role] = variants[mode]["color"].clone();
+            }
+        }
+        std::fs::write(
+            sandbox.root.join(format!("{name}-native.json")),
+            serde_json::to_vec(&json!({"colors": tokens})).unwrap(),
+        )
+        .unwrap();
+        let value = if matugen { document } else { tokens };
+        std::fs::write(
+            sandbox.root.join(format!("{name}-palette.json")),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
 fn read(path: &Path) -> Vec<u8> {
     std::fs::read(path).unwrap_or_default()
 }
@@ -376,18 +404,37 @@ fn hover_preview_bridge_restores_integrations() {
 fn hover_preview_dms_restores_native_file() {
     let stub = skwd_e2e::stub_renderer!();
     let mut sandbox = Sandbox::new("theme-dms");
+    generator_palettes(&mut sandbox, true);
     sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
     sandbox.set_env("SKWD_E2E_CALLS", &sandbox.root.join("calls").to_string_lossy());
     let path = std::env::var("PATH").unwrap_or_default();
     sandbox.set_env("PATH", &format!("{}:{path}", sandbox.root.join("bin").display()));
+    let templates = sandbox.root.join("config/quickshell/dms/matugen/configs");
+    std::fs::create_dir_all(&templates).unwrap();
+    std::fs::write(templates.join("base.toml"), "[config]\n").unwrap();
+    fake(
+        &sandbox.root,
+        "dms",
+        r#"if [ "$1" = version ]; then echo 'dms v1.0.0'; exit 0; fi
+printf '%s\n' "$*" >> "$SKWD_E2E_CALLS"
+if [ "$1 $2" = 'matugen check' ]; then echo '[{"id":"gtk"}]'; exit 0; fi
+if [ "$1 $2" = 'matugen queue' ]; then
+    case "$*" in *b.png*) name=b;; *) name=a;; esac
+    mkdir -p "$XDG_CACHE_HOME/DankMaterialShell"
+    cp "$SKWD_E2E_PALETTES/$name-native.json" "$XDG_CACHE_HOME/DankMaterialShell/dms-colors.json"
+    exit 0
+fi
+exit 1
+"#,
+    );
     fake(
         &sandbox.root,
         "matugen",
-        r##"if [ "$1" = --version ]; then echo 'matugen 2.4.0'; exit 0; fi
+        r#"if [ "$1" = --version ]; then echo 'matugen 2.4.0'; exit 0; fi
 printf '%s\n' "$*" >> "$SKWD_E2E_CALLS"
-case "$2" in *b.png) p=00ff00; s=003300;; *) p=ff0000; s=330000;; esac
-printf '{"colors":{"primary":{"dark":{"color":"#%s"},"light":{"color":"#%s"}},"surface":{"dark":{"color":"#%s"},"light":{"color":"#ffffff"}},"on_surface":{"dark":{"color":"#ffffff"},"light":{"color":"#000000"}}}}\n' "$p" "$p" "$s"
-"##,
+case "$2" in *b.png) name=b;; *) name=a;; esac
+cat "$SKWD_E2E_PALETTES/$name-palette.json"
+"#,
     );
     let red = sandbox.library().join("a.png");
     let green = sandbox.library().join("b.png");
@@ -439,21 +486,22 @@ printf '{"colors":{"primary":{"dark":{"color":"#%s"},"light":{"color":"#%s"}},"s
 fn hover_preview_noctalia_restores_scheme() {
     let stub = skwd_e2e::stub_renderer!();
     let mut sandbox = Sandbox::new("theme-noctalia");
+    generator_palettes(&mut sandbox, false);
     sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
     sandbox.set_env("SKWD_E2E_CALLS", &sandbox.root.join("calls").to_string_lossy());
     sandbox.set_env("NOCTALIA_CONFIG_HOME", &sandbox.root.join("config").to_string_lossy());
     let noctalia = fake(
         &sandbox.root,
         "noctalia",
-        r##"if [ "$1" = --version ]; then echo 'noctalia v5.0.0'; exit 0; fi
+        r#"if [ "$1" = --version ]; then echo 'noctalia v5.0.0'; exit 0; fi
 printf '%s\n' "$*" >> "$SKWD_E2E_CALLS"
 if [ "$1" = theme ]; then
-    case "$2" in *b.png) p=00ff00; s=003300;; *) p=ff0000; s=330000;; esac
-    printf '{"dark":{"primary":"#%s","surface":"#%s","on_surface":"#ffffff"},"light":{"primary":"#%s","surface":"#ffffff","on_surface":"#000000"}}\n' "$p" "$s" "$p"
+    case "$2" in *b.png) name=b;; *) name=a;; esac
+    cat "$SKWD_E2E_PALETTES/$name-palette.json"
 fi
 if [ "$1" = msg ] && [ "$2" = color-scheme-get ]; then echo 'wallpaper m3-content'; fi
 exit 0
-"##,
+"#,
     );
     let red = sandbox.library().join("a.png");
     let green = sandbox.library().join("b.png");
