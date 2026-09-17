@@ -122,7 +122,12 @@ fn inspect(env: &Environment, config: &crate::config::Config, recipe: &Recipe) -
     let check = || -> Result<(String, String, bool, bool)> {
         files::writable(&path)?;
         files::writable(&output)?;
-        let text = files::read(&path)?.unwrap_or_default();
+        let text = files::read(&path)?;
+        ensure!(
+            recipe.id != "waybar" || text.is_some(),
+            "Waybar has no style.css yet; copy the default stylesheet first"
+        );
+        let text = text.unwrap_or_default();
         if let Some(receipt) = files::load(&receipt_path)? {
             env.check_receipt(recipe, &receipt)?;
             if receipt.enabled || receipt.pending {
@@ -302,6 +307,8 @@ pub(super) fn migratable(config: &crate::config::Config, recipe: &Recipe) -> boo
                 "niri" => "niri-colors.kdl",
                 "ghostty" => "ghostty.conf",
                 "kde" => "kde-colors.colors",
+                "rofi" => "rofi.rasi",
+                "waybar" => "waybar.css",
                 _ => "kitty.conf",
             };
             Path::new(&entry.template).file_name().is_some_and(|name| name == expected)

@@ -89,13 +89,17 @@ pub(super) fn patch(recipe: &Recipe, original: &str) -> Result<(String, String)>
             return Ok(((*before).to_string(), after));
         }
     }
-    let comment = if recipe.id == "niri" { "//" } else { "#" };
+    let (open, close) = match recipe.id {
+        "niri" | "rofi" => ("// ", ""),
+        "waybar" => ("/* ", " */"),
+        _ => ("# ", ""),
+    };
     ensure!(!original.contains("Skwd app theme"), "An existing Skwd setup needs review");
     let separator = if original.is_empty() || original.ends_with('\n') { "" } else { "\n" };
     Ok((
         String::new(),
         format!(
-            "{separator}{comment} Skwd app theme\n{}\n{comment} End Skwd app theme\n",
+            "{separator}{open}Skwd app theme{close}\n{}\n{open}End Skwd app theme{close}\n",
             recipe.directive
         ),
     ))

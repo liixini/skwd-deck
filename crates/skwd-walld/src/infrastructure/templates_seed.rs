@@ -1,4 +1,4 @@
-const TEMPLATES: [(&str, &str); 19] = [
+const TEMPLATES: [(&str, &str); 21] = [
     ("btop.theme", include_str!("../../../../data/matugen/templates/btop.theme")),
     ("foot-live.sh", include_str!("../../../../data/matugen/templates/foot-live.sh")),
     ("foot.ini", include_str!("../../../../data/matugen/templates/foot.ini")),
@@ -13,6 +13,7 @@ const TEMPLATES: [(&str, &str); 19] = [
     ("omp-env.sh", include_str!("../../../../data/matugen/templates/omp-env.sh")),
     ("omp.json", include_str!("../../../../data/matugen/templates/omp.json")),
     ("qt6ct-colors.conf", include_str!("../../../../data/matugen/templates/qt6ct-colors.conf")),
+    ("rofi.rasi", include_str!("../../../../data/matugen/templates/rofi.rasi")),
     (
         "quickshell-colors.json",
         include_str!("../../../../data/matugen/templates/quickshell-colors.json"),
@@ -21,6 +22,7 @@ const TEMPLATES: [(&str, &str); 19] = [
     ("spicetify.ini", include_str!("../../../../data/matugen/templates/spicetify.ini")),
     ("vesktop.css", include_str!("../../../../data/matugen/templates/vesktop.css")),
     ("vscode-theme.json", include_str!("../../../../data/matugen/templates/vscode-theme.json")),
+    ("waybar.css", include_str!("../../../../data/matugen/templates/waybar.css")),
     ("yazi-theme.toml", include_str!("../../../../data/matugen/templates/yazi-theme.toml")),
     ("zen-content.css", include_str!("../../../../data/matugen/templates/zen-content.css")),
     ("zen.css", include_str!("../../../../data/matugen/templates/zen.css")),
