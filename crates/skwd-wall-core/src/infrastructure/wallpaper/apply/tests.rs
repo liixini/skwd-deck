@@ -2039,3 +2039,21 @@ fn maximized_display_pause_uses_independent_renderers() {
         assert_eq!(super::policy::independent_playback(&state), independent);
     }
 }
+
+#[test]
+fn plasma_still_for_one_output_never_takes_the_native_override() {
+    let st = Stub::new();
+    assert!(
+        super::static_media::native_still_override(&st, true, "DP-1", "/w/a.png", "fill").is_none()
+    );
+}
+
+#[test]
+fn still_for_one_output_carries_that_outputs_audio_memory() {
+    let st = Stub::new();
+    let cache = st.config().cache_dir();
+    crate::audio::set_entry(&cache, "DP-1", "video", "/v/a.mp4", "", true, 40);
+    crate::audio::set_entry(&cache, "DP-3", "we", "", "2212279721", false, 70);
+    assert_eq!(super::static_media::carried_still_audio(&st, "DP-1"), (true, 40));
+    assert_eq!(super::static_media::carried_still_audio(&st, "DP-3"), (false, 70));
+}

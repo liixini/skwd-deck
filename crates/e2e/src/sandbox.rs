@@ -80,14 +80,29 @@ impl Sandbox {
 
     pub fn walld_command(&self) -> Command {
         let mut cmd = Command::new(target_bin("skwd-walld"));
-        for (key, val) in self.env() {
-            cmd.env(key, val);
-        }
         for stale in ["SKWD_WALL_CONFIG", "SKWD_WALL_V2_CONFIG", "SKWD_WALL_V2_CACHE"] {
             cmd.env_remove(stale);
         }
         for display in ["WAYLAND_DISPLAY", "WAYLAND_SOCKET", "DISPLAY"] {
             cmd.env_remove(display);
+        }
+        for session in [
+            "XDG_CURRENT_DESKTOP",
+            "XDG_SESSION_DESKTOP",
+            "DESKTOP_SESSION",
+            "KDE_FULL_SESSION",
+            "SKWD_PLASMA_BACKEND",
+            "NIRI_SOCKET",
+            "HYPRLAND_INSTANCE_SIGNATURE",
+        ] {
+            cmd.env_remove(session);
+        }
+        cmd.env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:path={}", self.root.join("runtime/no-session-bus").display()),
+        );
+        for (key, val) in self.env() {
+            cmd.env(key, val);
         }
         cmd
     }

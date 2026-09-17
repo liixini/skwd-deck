@@ -17,8 +17,8 @@
 
 use crate::state::WallState;
 
-use super::lifecycle::validate_source;
 use super::transition::TransitionSelection;
+use super::{lifecycle::validate_source, static_media::native_still_override};
 
 pub use super::engine::{VideoEngine, video_engine_is_vk};
 pub use super::policy::{
@@ -44,12 +44,12 @@ pub fn apply_static(
     duration_ms: u64,
 ) -> anyhow::Result<()> {
     let resolved = super::resolver::resolve_current_image(path);
-    if output != "*" && !crate::plasma::available() {
-        if let Some(result) =
-            super::engine::apply_static_override(state, output, &resolved, fill_mode)
-        {
+    if output != "*" {
+        let plasma = crate::plasma::available();
+        if let Some(result) = native_still_override(state, plasma, output, &resolved, fill_mode) {
             return result;
         }
+        let (mute, volume) = super::static_media::carried_still_audio(state, output);
         return apply_output_with_transition(
             state,
             output,
@@ -57,8 +57,8 @@ pub fn apply_static(
             &resolved,
             "",
             fill_mode,
-            false,
-            0,
+            mute,
+            volume,
             Some(crate::backend::wallpaper::OutputTransitionRequest {
                 enabled: transition_enabled,
                 shader,

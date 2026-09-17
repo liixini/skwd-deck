@@ -133,6 +133,29 @@ impl<'a> StaticSteadyRequest<'a> {
     }
 }
 
+pub(super) fn native_still_override(
+    state: &WallState,
+    plasma: bool,
+    output: &str,
+    path: &str,
+    fill_mode: &str,
+) -> Option<anyhow::Result<()>> {
+    if plasma {
+        return None;
+    }
+    apply_static_override(state, output, path, fill_mode)
+}
+
+pub(super) fn carried_still_audio(state: &WallState, output: &str) -> (bool, u32) {
+    let config = state.config();
+    crate::audio::resolve_defaults(
+        &config.cache_dir(),
+        output,
+        config.renderer().mute(),
+        config.renderer().volume(),
+    )
+}
+
 pub(super) struct StaticApplyRequest<'a> {
     pub(super) output: &'a str,
     pub(super) path: &'a str,

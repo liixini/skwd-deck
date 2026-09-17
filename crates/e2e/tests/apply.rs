@@ -290,6 +290,77 @@ fn output_lock_blocks_apply() {
 
 #[test]
 #[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn still_on_one_output_keeps_its_audio_memory() {
+    let stub_owned = skwd_e2e::stub_renderer!();
+    let stub = stub_owned.as_str();
+    let mut sandbox = Sandbox::new("apply-still-audio");
+    let lib = sandbox.library();
+    let img = lib.join("a.png");
+    let vid = lib.join("v.mp4");
+    let other = lib.join("w.mp4");
+    assert!(ffmpeg_still(&img, "color=c=red:s=320x180"), "ffmpeg fixture a");
+    assert!(ffmpeg_video(&vid, "blue", 1.0), "ffmpeg fixture v");
+    assert!(ffmpeg_video(&other, "yellow", 1.0), "ffmpeg fixture w");
+
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:2560x1440");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", stub);
+    sandbox.set_env("SKWD_WALL_PAPER_VK", stub);
+    let lib_str = lib.to_string_lossy().into_owned();
+    sandbox.write_config(&json!({
+        "paths": { "wallpaper": lib_str, "videoWallpaper": lib_str },
+        "pickOnlyMode": false,
+        "restoreOnStartup": false,
+        "general": { "randomInterval": 0 },
+        "effects": { "autoRecolor": false, "autoTheme": "" },
+        "transition": { "enabled": false },
+    }));
+
+    let walld = Walld::start(&sandbox);
+    let wpid = walld.pid();
+    let mut client = walld.client();
+    let mut checks = Checks::default();
+    let audio = |output: &str| {
+        let entry = sandbox.outputs_json()[output].clone();
+        (entry["type"].clone(), entry["mute"].clone(), entry["volume"].clone())
+    };
+
+    apply(&mut client, 1, json!({ "type": "video", "path": vid, "mute": false, "volume": 70 }));
+    checks.check(
+        "video apply records unmuted audio at volume 70",
+        wait_star(&sandbox, "volume", &json!(70)) && star(&sandbox, "mute") == json!(false),
+        || format!("{}", sandbox.outputs_json()),
+    );
+
+    apply(&mut client, 2, json!({ "type": "static", "path": img, "output": "DP-1" }));
+    checks.check(
+        "a still on one output keeps that output's audio memory",
+        wait_until(
+            || audio("DP-1") == (json!("static"), json!(false), json!(70)),
+            Duration::from_secs(6),
+        ),
+        || format!("{}", sandbox.outputs_json()),
+    );
+
+    apply(&mut client, 3, json!({ "type": "video", "path": other, "output": "DP-1" }));
+    checks.check(
+        "a video back on that output plays at the remembered volume",
+        wait_until(
+            || audio("DP-1") == (json!("video"), json!(false), json!(70)),
+            Duration::from_secs(6),
+        ),
+        || format!("{}", sandbox.outputs_json()),
+    );
+    checks.check("no panics in walld log", !walld.log_contents().contains("panicked"), String::new);
+
+    reap_stubs(wpid);
+    if checks.failed() {
+        sandbox.mark_failed();
+    }
+    checks.finish();
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
 fn saved_scheme_reaches_current_theme_and_templates() {
     use skwd_wall_core::material;
     use std::fmt::Write;
