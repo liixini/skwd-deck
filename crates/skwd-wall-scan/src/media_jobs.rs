@@ -63,3 +63,20 @@ pub(crate) fn generate_preview(key: &str, video: &str, reporter: &Reporter) {
         Err(error) => log::warn!("preview failed for {key}: {error}"),
     }
 }
+
+pub(crate) fn generate_tall(source: &str, thumb: &str, video: bool) {
+    let thumb = Path::new(thumb);
+    let destination = paths::tall_thumb(thumb);
+    if destination.exists() {
+        return;
+    }
+    let result = if video {
+        media::generate_video_tall_thumb(Path::new(source), thumb, 1)
+    } else {
+        media::generate_image_tall_thumb(Path::new(source), thumb)
+    };
+    match result {
+        Ok(path) => log::info!("tall thumb: {}", path.display()),
+        Err(error) => log::warn!("tall thumb failed for {source}: {error}"),
+    }
+}

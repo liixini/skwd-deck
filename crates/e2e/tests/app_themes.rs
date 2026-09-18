@@ -12,7 +12,9 @@ fn managed_themes_migrate_and_restore_through_rpc() {
     sandbox.set_env("XDG_STATE_HOME", state_home.to_str().unwrap());
     let tools = sandbox.root.join("bin");
     std::fs::create_dir_all(&tools).unwrap();
-    for name in ["kitty", "btop", "ghostty", "niri", "code", "alacritty", "yazi", "zed"] {
+    for name in
+        ["kitty", "btop", "ghostty", "niri", "rofi", "waybar", "code", "alacritty", "yazi", "zed"]
+    {
         let path = tools.join(name);
         std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -55,6 +57,9 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
     let kitty = sandbox.root.join("config/kitty/kitty.conf");
     std::fs::create_dir_all(kitty.parent().unwrap()).unwrap();
     std::fs::write(&kitty, "font_size 13\n").unwrap();
+    let waybar = sandbox.root.join("config/waybar/style.css");
+    std::fs::create_dir_all(waybar.parent().unwrap()).unwrap();
+    std::fs::write(&waybar, "window#waybar { color: @primary; }\n").unwrap();
     let walld = Walld::start(&sandbox);
     let mut client = walld.client();
     let invalid = client.call("theme.app.set", json!({"id": "kitty"}), 1).unwrap();
@@ -77,7 +82,9 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
             .is_some_and(|response| response.get("error").is_none()),
         Duration::from_secs(10)
     ));
-    for id in ["kitty", "btop", "ghostty", "niri", "kde", "code", "alacritty", "yazi"] {
+    for id in
+        ["kitty", "btop", "ghostty", "niri", "rofi", "waybar", "kde", "code", "alacritty", "yazi"]
+    {
         let response = client
             .call(
                 "theme.app.set",
@@ -101,6 +108,7 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         assert!(!std::path::Path::new(output).exists());
     }
     assert_eq!(std::fs::read_to_string(&kitty).unwrap(), "font_size 13\n");
+    assert_eq!(std::fs::read_to_string(&waybar).unwrap(), "window#waybar { color: @primary; }\n");
     let saved: Value =
         serde_json::from_str(&std::fs::read_to_string(sandbox.config_path()).unwrap()).unwrap();
     assert_eq!(saved["integrations"][0]["enabled"], false);

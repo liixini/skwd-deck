@@ -24,6 +24,25 @@ fn preview_positionals() {
 }
 
 #[test]
+fn tall_positionals() {
+    let Command::Tall { source, thumb, video } =
+        parse(&arguments(&["scan", "--tall", "/tmp/a.png", "/tmp/thumbs/a.webp"]))
+    else {
+        panic!("expected tall command");
+    };
+    assert_eq!(
+        (source.as_str(), thumb.as_str(), video),
+        ("/tmp/a.png", "/tmp/thumbs/a.webp", false)
+    );
+    let Command::Tall { video, .. } =
+        parse(&arguments(&["scan", "--tall", "/tmp/a.mp4", "/tmp/t.webp", "--video"]))
+    else {
+        panic!("expected tall command");
+    };
+    assert!(video);
+}
+
+#[test]
 fn ansi_options() {
     let Command::Ansi16 { dark, auto, variant, .. } =
         parse(&arguments(&["scan", "--ansi16", "a.png", "--light", "--auto", "--variant", "soft"]))

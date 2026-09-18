@@ -8,7 +8,7 @@ pub(super) struct Recipe {
     pub signal: Option<i32>,
 }
 
-pub(super) const RECIPES: [Recipe; 4] = [
+pub(super) const RECIPES: [Recipe; 6] = [
     Recipe {
         id: "kitty",
         name: "Kitty",
@@ -44,6 +44,24 @@ pub(super) const RECIPES: [Recipe; 4] = [
         directive: "include \"skwd-colors.kdl\"",
         template: "layout {\n    focus-ring {\n        active-color \"{{colors.primary.default.hex}}\"\n        inactive-color \"{{colors.outline.default.hex}}\"\n    }\n    border {\n        active-color \"{{colors.primary.default.hex}}\"\n        inactive-color \"{{colors.outline.default.hex}}\"\n    }\n}\n",
         signal: None,
+    },
+    Recipe {
+        id: "rofi",
+        name: "Rofi",
+        config: "rofi/config.rasi",
+        output: "skwd-colors.rasi",
+        directive: "@import \"skwd-colors.rasi\"",
+        template: include_str!("../../../../../../data/matugen/templates/rofi.rasi"),
+        signal: None,
+    },
+    Recipe {
+        id: "waybar",
+        name: "Waybar",
+        config: "waybar/style.css",
+        output: "skwd-colors.css",
+        directive: "@import \"skwd-colors.css\";",
+        template: include_str!("../../../../../../data/matugen/templates/waybar.css"),
+        signal: Some(libc::SIGUSR2),
     },
 ];
 

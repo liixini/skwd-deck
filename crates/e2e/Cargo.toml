@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 serde_json = { workspace = true }
 wall-proto = { path = "../wall-proto" }
+skwd-config = { path = "../skwd-config" }
 paper-control = { path = "../../../skwd-paper/crates/paper-control" }
 skwd-wall-core = { path = "../skwd-wall-core", features = ["daemon"] }
 rusqlite = { version = "0.32", features = ["bundled"] }

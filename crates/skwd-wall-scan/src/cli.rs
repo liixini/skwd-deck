@@ -10,6 +10,7 @@ pub(crate) enum Command {
     Theme { image: String, dark: bool },
     RemoteThumb { source: String },
     Preview { key: String, video: String },
+    Tall { source: String, thumb: String, video: bool },
     Stream { video: String },
     StreamPersist,
     Paths { changed: Vec<PathBuf>, request_id: Option<String> },
@@ -72,6 +73,13 @@ pub(crate) fn parse(arguments: &[String]) -> Command {
         return Command::Preview {
             key: arguments.get(position + 1).cloned().unwrap_or_default(),
             video: arguments.get(position + 2).cloned().unwrap_or_default(),
+        };
+    }
+    if let Some(position) = position(arguments, "--tall") {
+        return Command::Tall {
+            source: arguments.get(position + 1).cloned().unwrap_or_default(),
+            thumb: arguments.get(position + 2).cloned().unwrap_or_default(),
+            video: has(arguments, "--video"),
         };
     }
     if let Some(position) = position(arguments, "--stream") {

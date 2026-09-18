@@ -17,6 +17,8 @@ def load(name, path):
 
 host = load("theme_provider_vm", ROOT / "scripts" / "theme-provider-vm.py")
 guest = load("theme_provider_guest", ROOT / "scripts" / "theme_provider_matrix" / "guest.py")
+provision = load("theme_provider_provision", ROOT / "scripts" / "theme_provider_matrix" / "provision.py")
+GOLDENS = ROOT / "crates" / "e2e" / "tests" / "golden" / "theme-provider"
 
 
 class ThemeProviderVmTests(unittest.TestCase):
@@ -105,11 +107,42 @@ class ThemeProviderVmTests(unittest.TestCase):
             with self.assertRaises(guest.GuestError):
                 guest.validate_compositor("noctalia", {}, log)
 
-    def test_prepared_recipe_tracks_guest_and_pins(self):
+    def test_prepared_recipe_tracks_provision_and_pins_only(self):
         recipe = host.prepared_recipe()
-        self.assertEqual(recipe["schema"], 2)
+        self.assertEqual(recipe["schema"], 3)
         self.assertEqual(recipe["pins_sha256"], host.sha256(host.PINS_PATH))
-        self.assertEqual(recipe["guest_sha256"], host.sha256(host.GUEST_PATH))
+        self.assertEqual(recipe["provision_sha256"], host.sha256(host.PROVISION_PATH))
+        self.assertNotIn("guest_sha256", recipe)
+
+    def test_provision_records_the_packages_the_guest_reports(self):
+        self.assertEqual(provision.RECORDED_PACKAGES, guest.RECORDED_PACKAGES)
+        self.assertIn("python-pillow", provision.PACKAGES)
+        self.assertEqual(set(host.PROVIDERS), set(guest.PROVIDERS))
+        self.assertTrue(set(guest.PREVIEW_PROVIDERS) <= set(guest.PROVIDERS))
+
+    def test_goldens_cover_every_provider_and_feed_the_visual_check(self):
+        for name in guest.PROVIDERS:
+            value = json.loads((GOLDENS / f"{name}.json").read_text())
+            guest.validate_native(name, value)
+            colors = guest.published_colors(name, value)
+            self.assertTrue(colors, name)
+            for rgb in colors:
+                self.assertTrue(guest.chromatic(rgb), (name, rgb))
+
+    def test_visual_coverage_counts_only_nearby_pixels(self):
+        candidates = [(0x42, 0xFF, 0x77)]
+        histogram = [(500, (0x42, 0xFF, 0x77)), (300, (0x4A, 0xF8, 0x70)), (900, (0x00, 0x00, 0x00)), (100, (0x60, 0xFF, 0x77))]
+        matched, per_color = guest.coverage(histogram, candidates)
+        self.assertEqual(matched, 800)
+        self.assertEqual(per_color, {"#42ff77": 800})
+        self.assertFalse(guest.chromatic((0x20, 0x20, 0x22)))
+        self.assertFalse(guest.chromatic((0xF0, 0xF0, 0xF0)))
+        self.assertTrue(guest.chromatic((0x11, 0xAA, 0x77)))
+
+    def test_preview_report_shapes_are_gated(self):
+        self.assertEqual(guest.PIXEL_FLOOR, 100)
+        self.assertGreater(guest.PIXEL_TOLERANCE, 0)
+        self.assertEqual(guest.SCREEN, (1280, 720))
 
     def test_prepared_image_rejects_a_stale_recipe(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -118,7 +151,7 @@ class ThemeProviderVmTests(unittest.TestCase):
             metadata = root / "prepared.json"
             prepared.write_bytes(b"qcow")
             value = host.prepared_recipe()
-            value["guest_sha256"] = "0" * 64
+            value["provision_sha256"] = "0" * 64
             metadata.write_text(json.dumps(value))
             self.assertFalse(host.prepared_is_current(prepared, metadata))
 

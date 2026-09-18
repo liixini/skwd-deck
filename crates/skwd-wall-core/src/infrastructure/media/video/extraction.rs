@@ -25,6 +25,15 @@ pub fn generate_video_thumbs(
     Ok(result)
 }
 
+pub fn generate_video_tall_thumb(
+    source: &Path,
+    thumbnail: &Path,
+    seek_seconds: i64,
+) -> anyhow::Result<std::path::PathBuf> {
+    let image = decode_video_frame(source, seek_seconds)?;
+    super::super::images::write_tall(&image, thumbnail)
+}
+
 pub fn extract_frame_to(
     source: &Path,
     destination: &Path,

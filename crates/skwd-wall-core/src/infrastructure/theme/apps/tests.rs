@@ -69,7 +69,7 @@ fn every_recipe_enables_updates_and_restores_unrelated_edits() {
 #[test]
 fn absent_configs_are_created_and_removed_on_disable() {
     let (_root, env, config) = fixture();
-    for recipe in &RECIPES {
+    for recipe in RECIPES.iter().filter(|recipe| recipe.id != "waybar") {
         manager::set_with(&env, &config, recipe.id, true, &palette("#123456"), true).unwrap();
         manager::set_with(&env, &config, recipe.id, false, &Value::Null, true).unwrap();
         assert!(!env.config.join(recipe.config).exists());
@@ -157,4 +157,49 @@ fn disabled_custom_outputs_are_retained_but_never_rendered() {
     manager::set_with(&env, &config, "kitty", true, &palette("#123456"), true).unwrap();
     assert!(!output.exists());
     assert_eq!(skwd_config::schema::read_boolean(&json!({}), "integrations.0.enabled"), Some(true));
+}
+
+#[test]
+fn waybar_without_a_stylesheet_is_held_for_review() {
+    let (_root, env, config) = fixture();
+    let status =
+        manager::list_with(&env, &config).apps.into_iter().find(|app| app.id == "waybar").unwrap();
+    assert_eq!(status.state, "needs-review");
+    assert!(!status.can_enable);
+    assert!(manager::set_with(&env, &config, "waybar", true, &palette("#123456"), true).is_err());
+    assert!(!env.config.join("waybar").exists());
+}
+
+#[test]
+fn stylesheet_apps_use_their_own_comment_syntax_after_existing_theme_lines() {
+    let (_root, env, config) = fixture();
+    let rofi = env.config.join("rofi/config.rasi");
+    let waybar = env.config.join("waybar/style.css");
+    files::write(&rofi, "configuration { show-icons: true; }\n@theme \"arthur\"\n").unwrap();
+    files::write(&waybar, "@import \"base.css\";\nwindow#waybar { color: @primary; }\n").unwrap();
+    manager::set_with(&env, &config, "rofi", true, &palette("#123456"), true).unwrap();
+    manager::set_with(&env, &config, "waybar", true, &palette("#123456"), true).unwrap();
+    let rasi = std::fs::read_to_string(&rofi).unwrap();
+    let css = std::fs::read_to_string(&waybar).unwrap();
+    assert!(rasi.ends_with(
+        "@theme \"arthur\"\n// Skwd app theme\n@import \"skwd-colors.rasi\"\n// End Skwd app theme\n"
+    ));
+    assert!(css.ends_with(
+        "/* Skwd app theme */\n@import \"skwd-colors.css\";\n/* End Skwd app theme */\n"
+    ));
+    assert!(!rasi.contains('#'));
+    assert!(!css.contains("\n#") && !css.contains("\n//"));
+    let colors = std::fs::read_to_string(env.config.join("waybar/skwd-colors.css")).unwrap();
+    assert!(colors.contains("@define-color primary #123456;"));
+    assert!(colors.contains("@define-color ansi_magenta_bright #"));
+    let rendered = std::fs::read_to_string(env.config.join("rofi/skwd-colors.rasi")).unwrap();
+    assert!(rendered.contains("selected-normal-background:  #123456;"));
+}
+
+#[test]
+fn apps_without_a_resident_process_report_next_open() {
+    let (_root, mut env, _) = fixture();
+    env.reload = true;
+    let rofi = RECIPES.iter().find(|recipe| recipe.id == "rofi").unwrap();
+    assert_eq!(super::reload::reload(&env, rofi), "on-next-open");
 }

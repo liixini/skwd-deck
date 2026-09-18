@@ -215,6 +215,12 @@ pub fn thumb_name(rel: &str) -> String {
     stem.replace('/', "--")
 }
 
+pub fn tall_thumb(thumb: &Path) -> PathBuf {
+    let name = thumb.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = name.strip_suffix(".webp").unwrap_or(&name);
+    thumb.with_file_name(format!("{stem}.tall.webp"))
+}
+
 pub fn image_thumb(rel: &str) -> PathBuf {
     thumbs_dir().join(format!("{}.webp", thumb_name(rel)))
 }

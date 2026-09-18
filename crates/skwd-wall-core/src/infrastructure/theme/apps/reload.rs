@@ -10,7 +10,7 @@ pub(super) fn reload(env: &Environment, recipe: &Recipe) -> String {
     if recipe.id == "niri" {
         return "watching".into();
     }
-    let Some(signal) = recipe.signal else { return "reload-needed".into() };
+    let Some(signal) = recipe.signal else { return "on-next-open".into() };
     let Ok(processes) = std::fs::read_dir("/proc") else { return "reload-needed".into() };
     let mut sent = false;
     let mut unverified = false;
