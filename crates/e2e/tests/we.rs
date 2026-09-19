@@ -318,3 +318,103 @@ fn scene_properties_round_trip() {
 
     checks.finish();
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn scene_property_swaps_reuse_renderers_and_run_together() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("we-live-props");
+    scene_dir_with_properties(
+        &sandbox,
+        "scene-p",
+        &json!({
+            "glow": {"type": "bool", "value": true},
+            "zoom": {"type": "slider", "min": 0.5, "max": 3.0, "value": 1.0}
+        }),
+    );
+    let trace = sandbox.root.join("swaps.jsonl");
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:1920x1080,DP-3:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    sandbox.set_env("SKWD_FAKE_SWAP_TRACE", &trace.to_string_lossy());
+    sandbox.set_env("SKWD_FAKE_SWAP_DELAY_MS", "500");
+    sandbox.write_config(&json!({
+        "paths": {"wallpaper": sandbox.library(), "steamWorkshop": sandbox.root.join("we")},
+        "restoreOnStartup": false,
+        "general": {"randomInterval": 0},
+        "effects": {"autoRecolor": false, "autoTheme": ""},
+        "transition": {"enabled": false},
+        "playback": {"fullscreen": true, "fullscreenScope": "display"}
+    }));
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let applied = client.call("wall.apply", json!({"type": "we", "we_id": "scene-p"}), 1);
+    assert!(applied.as_ref().is_some_and(|reply| reply.get("error").is_none()), "{applied:?}");
+    let pids = child_pids(walld.pid(), STUB);
+    assert_eq!(pids.len(), 3, "one renderer per output");
+
+    let events = || -> Vec<Value> {
+        std::fs::read_to_string(&trace)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("swap trace"))
+            .collect()
+    };
+    let start = std::time::Instant::now();
+    let changed = client.call(
+        "wall.set_we_property",
+        json!({"we_id": "scene-p", "name": "zoom", "value": 2.5}),
+        2,
+    );
+    eprintln!("three-output property update with 500 ms renderer delay: {:?}", start.elapsed());
+    assert_eq!(
+        changed.as_ref().and_then(|reply| reply.pointer("/result/reapplied")),
+        Some(&json!(true))
+    );
+    let first = events();
+    assert_eq!(first.len(), 6, "{first:?}");
+    assert!(first[..3].iter().all(|event| event["event"] == "received"), "{first:?}");
+    assert!(first[..3].iter().all(|event| event["command"]["properties"]["zoom"] == 2.5));
+
+    let repeated = client.call(
+        "wall.set_we_property",
+        json!({"we_id": "scene-p", "name": "zoom", "value": 2.5}),
+        3,
+    );
+    assert_eq!(
+        repeated.as_ref().and_then(|reply| reply.pointer("/result/reapplied")),
+        Some(&json!(true))
+    );
+    assert_eq!(events().len(), 6, "acknowledged properties must not rebuild again");
+
+    let newer = client.call(
+        "wall.set_we_property",
+        json!({"we_id": "scene-p", "name": "glow", "value": false}),
+        4,
+    );
+    assert_eq!(
+        newer.as_ref().and_then(|reply| reply.pointer("/result/reapplied")),
+        Some(&json!(true))
+    );
+    let updated = events();
+    assert_eq!(updated.len(), 12, "{updated:?}");
+    assert!(updated[6..9].iter().all(|event| {
+        event["event"] == "received"
+            && event["command"]["properties"] == json!({"glow": false, "zoom": 2.5})
+    }));
+
+    let reset = client.call("wall.set_we_property", json!({"we_id": "scene-p", "reset": true}), 5);
+    assert_eq!(
+        reset.as_ref().and_then(|reply| reply.pointer("/result/reapplied")),
+        Some(&json!(true))
+    );
+    let cleared = events();
+    assert_eq!(cleared.len(), 18, "{cleared:?}");
+    assert!(cleared[12..15].iter().all(|event| {
+        event["event"] == "received" && event["command"].get("properties").is_none()
+    }));
+    let mut current = child_pids(walld.pid(), STUB);
+    let mut original = pids;
+    current.sort_unstable();
+    original.sort_unstable();
+    assert_eq!(current, original, "property updates retain the live renderers");
+}

@@ -23,7 +23,7 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 44,
+      "expectedSkips": 45,
       "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
     },
     {

@@ -319,6 +319,35 @@ fn scene_key_selected_outputs() {
 }
 
 #[test]
+fn failed_property_swap_invalidates_the_previous_acknowledgement() {
+    let directory = tempfile::tempdir().unwrap();
+    let item = directory.path().join("42");
+    std::fs::create_dir(&item).unwrap();
+    std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+    let state = WallState::test_new(serde_json::json!({
+        "paths": {"steamWorkshop": directory.path()},
+    }));
+    let mut outputs = crate::outputs::names();
+    if outputs.is_empty() {
+        outputs.push("*".to_string());
+    }
+    let key = scene_renderer_key(&outputs);
+    let child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    state.renderers().set_video_paper(&key, child, None);
+    state.renderers().mark_scene_paper(&key, true);
+    state.renderers().set_all_assignments(&outputs, &item.to_string_lossy());
+    crate::apply::record_scene_properties(&state, "42={}");
+    assert!(crate::apply::native_scene_properties_match(&state, "42"));
+    state
+        .with_db(|conn| crate::db::set_we_property(conn, "42", "zoom", Some(&serde_json::json!(2))))
+        .unwrap();
+    assert!(!swap_scene_properties(&state, "42").unwrap());
+    state.with_db(|conn| crate::db::clear_we_properties(conn, "42")).unwrap();
+    assert!(!crate::apply::native_scene_properties_match(&state, "42"));
+    state.renderers().kill_all();
+}
+
+#[test]
 fn scene_process_output_set() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;

@@ -32,9 +32,28 @@ fn is_swap_command(line: &str) -> bool {
 }
 
 fn acknowledge_swaps(pid: u32) {
+    let delay = std::env::var("SKWD_FAKE_SWAP_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(Duration::ZERO, Duration::from_millis);
+    let mut trace = std::env::var_os("SKWD_FAKE_SWAP_TRACE")
+        .and_then(|path| std::fs::File::options().create(true).append(true).open(path).ok());
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { return };
         if is_swap_command(&line) {
+            if let Some(trace) = trace.as_mut() {
+                let command: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let record = format!(
+                    "{}\n",
+                    serde_json::json!({"event": "received", "pid": pid, "command": command})
+                );
+                let _ = trace.write_all(record.as_bytes());
+            }
+            std::thread::sleep(delay);
+            if let Some(trace) = trace.as_mut() {
+                let record = format!("{}\n", serde_json::json!({"event": "ready", "pid": pid}));
+                let _ = trace.write_all(record.as_bytes());
+            }
             signal_ready(pid);
         }
     }

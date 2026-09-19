@@ -394,6 +394,9 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
     if renderer_keys.is_empty() {
         return Ok(false);
     }
+    if apply::native_scene_properties_match(state, we_id) {
+        return Ok(true);
+    }
     let cache = state.config().cache_dir();
     let audio = crate::audio::read_state(&cache);
     let (_, we_audio) =
@@ -401,6 +404,8 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
     let (scene_mute, scene_volume) = we_audio.get(we_id).copied().unwrap_or((true, 100));
     let properties = scene_overrides(state, we_id);
     let overrides = (!properties.is_empty()).then_some(&properties);
+    let mut pending = Vec::with_capacity(renderer_keys.len());
+    apply::record_scene_properties(state, "");
     for (index, key) in renderer_keys.iter().enumerate() {
         let Some(pid) = state.renderers().video_paper_pid(key) else {
             return Ok(false);
@@ -415,6 +420,9 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
         ) {
             return Ok(false);
         }
+        pending.push(pid);
+    }
+    for pid in pending {
         state
             .renderers()
             .wait_ready_result(pid, apply::NATIVE_SCENE_READY_TIMEOUT)
