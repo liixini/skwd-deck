@@ -318,7 +318,13 @@ fn reconcile_outputs_inner(
     keep_video.sort();
     keep_video.dedup();
     let we_audio = super::resolver::resolve_we_audio(&map, &we_groups);
-    let prepared_we = prepare_we(state, we_groups, we_audio)?;
+    let scene_transition =
+        intent.transition().map(|plan| crate::backend::wallpaper::OutputTransitionRequest {
+            enabled: plan.enabled(),
+            shader: plan.shader(),
+            duration_ms: plan.duration_ms(),
+        });
+    let prepared_we = prepare_we(state, we_groups, we_audio, scene_transition)?;
     let mut we_assignments = Vec::new();
     for output in &targets {
         let Some(entry) = map.get(output) else { continue };

@@ -418,3 +418,196 @@ fn scene_property_swaps_reuse_renderers_and_run_together() {
     original.sort_unstable();
     assert_eq!(current, original, "property updates retain the live renderers");
 }
+
+fn transition_sandbox(name: &str, configured: bool) -> Sandbox {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new(name);
+    scene_dir(&sandbox, "scene-a");
+    scene_dir(&sandbox, "scene-b");
+    let video = sandbox.root.join("we/video-a");
+    std::fs::create_dir_all(&video).expect("WE video directory");
+    std::fs::write(
+        video.join("project.json"),
+        json!({"type": "video", "file": "clip.mp4"}).to_string(),
+    )
+    .expect("WE video project");
+    assert!(ffmpeg_video(&video.join("clip.mp4"), "blue", 0.5));
+    assert!(ffmpeg_still(&sandbox.library().join("before.png"), "color=c=red:s=320x180"));
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    sandbox.set_env("SKWD_FAKE_SWAP_TRACE", &sandbox.root.join("swaps.jsonl").to_string_lossy());
+    sandbox.write_config(&json!({
+        "paths": {
+            "wallpaper": sandbox.library(),
+            "steamWorkshop": sandbox.root.join("we"),
+            "steamWeAssets": sandbox.root.join("we")
+        },
+        "restoreOnStartup": false,
+        "general": {"randomInterval": 0},
+        "theme": {"policy": "off"},
+        "effects": {"autoRecolor": false, "autoTheme": ""},
+        "transition": {"enabled": configured, "shader": "sand-globe", "durationMs": 275}
+    }));
+    sandbox
+}
+
+fn scene_transition_requests() -> [(Value, bool); 3] {
+    [
+        (
+            json!({"transition": true, "transition_shader": "crossfade", "transition_duration_ms": 1234}),
+            true,
+        ),
+        (
+            json!({"transition": false, "transition_shader": "crossfade", "transition_duration_ms": 1234}),
+            false,
+        ),
+        (
+            json!({"transition": true, "transition_shader": "crossfade", "transition_duration_ms": 1234, "no_transition": true}),
+            false,
+        ),
+    ]
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn we_request_transitions_reach_cold_renderers() {
+    for configured in [false, true] {
+        let sandbox = transition_sandbox("we-trans-cold", configured);
+        let walld = Walld::start(&sandbox);
+        let mut client = walld.client();
+        for project in ["scene-a", "video-a"] {
+            for output in ["*", "DP-1"] {
+                for (mut params, fade) in scene_transition_requests() {
+                    let reset = client.call(
+                    "wall.apply",
+                    json!({"type": "static", "path": sandbox.library().join("before.png"), "output": "*", "no_transition": true}),
+                    1,
+                );
+                    assert!(
+                        reset.as_ref().is_some_and(|reply| reply.get("result").is_some()),
+                        "{reset:?}"
+                    );
+                    params["type"] = json!("we");
+                    params["we_id"] = json!(project);
+                    params["output"] = json!(output);
+                    let applied = client.call("wall.apply", params.clone(), 2);
+                    assert!(
+                        applied.as_ref().is_some_and(|reply| reply.get("result").is_some()),
+                        "{params:?}: {applied:?}\n{}",
+                        walld.log_contents()
+                    );
+                    let expected = if project == "scene-a" {
+                        ("we".into(), "scene-a".into())
+                    } else {
+                        ("video".into(), "clip.mp4".into())
+                    };
+                    assert_eq!(output_id(&mut client, "DP-1"), expected);
+                    if output == "*" {
+                        assert_eq!(output_id(&mut client, "DP-2"), expected);
+                    } else {
+                        assert_eq!(
+                            output_id(&mut client, "DP-2"),
+                            ("static".into(), "before.png".into())
+                        );
+                    }
+                    let launches: Vec<Vec<String>> = child_pids(walld.pid(), STUB)
+                        .into_iter()
+                        .filter_map(|pid| std::fs::read(format!("/proc/{pid}/cmdline")).ok())
+                        .map(|bytes| {
+                            bytes
+                                .split(|byte| *byte == 0)
+                                .filter(|arg| !arg.is_empty())
+                                .map(|arg| String::from_utf8_lossy(arg).into_owned())
+                                .collect::<Vec<_>>()
+                        })
+                        .filter(|args| {
+                            if project == "scene-a" {
+                                args.iter().any(|arg| arg == "--scene")
+                            } else {
+                                args.iter().any(|arg| arg.ends_with("/clip.mp4"))
+                            }
+                        })
+                        .collect();
+                    assert_eq!(launches.len(), 1, "{params:?}: {launches:?}");
+                    let args = &launches[0];
+                    assert_eq!(
+                        args.iter().any(|arg| arg == "--transition-from"),
+                        fade,
+                        "{params:?}: {args:?}"
+                    );
+                    if fade {
+                        assert!(
+                            args.windows(2).any(|pair| pair == ["--shader", "crossfade"]),
+                            "{args:?}"
+                        );
+                        assert!(
+                            args.windows(2).any(|pair| pair == ["--duration-ms", "1234"]),
+                            "{args:?}"
+                        );
+                        assert!(
+                            args.windows(2).any(|pair| pair[0] == "--transition-from"
+                                && pair[1].ends_with("/before.png")),
+                            "{args:?}"
+                        );
+                    } else {
+                        assert!(
+                            !args.iter().any(|arg| arg == "--shader" || arg == "--duration-ms"),
+                            "{args:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn scene_request_transitions_reach_warm_swaps() {
+    for configured in [false, true] {
+        let sandbox = transition_sandbox("we-trans-warm", configured);
+        let walld = Walld::start(&sandbox);
+        let mut client = walld.client();
+        let applied = client.call(
+            "wall.apply",
+            json!({"type": "we", "we_id": "scene-a", "output": "*", "no_transition": true}),
+            1,
+        );
+        assert!(applied.as_ref().is_some_and(|reply| reply.get("result").is_some()), "{applied:?}");
+        let pids = child_pids(walld.pid(), STUB);
+        assert_eq!(pids.len(), 1);
+        for (index, (mut params, fade)) in scene_transition_requests().into_iter().enumerate() {
+            let scene = if index % 2 == 0 { "scene-b" } else { "scene-a" };
+            params["type"] = json!("we");
+            params["we_id"] = json!(scene);
+            params["output"] = json!("*");
+            let applied = client.call("wall.apply", params.clone(), 2 + index as u64);
+            assert!(
+                applied.as_ref().is_some_and(|reply| reply.get("result").is_some()),
+                "{params:?}: {applied:?}\n{}",
+                walld.log_contents()
+            );
+            let events: Vec<Value> = std::fs::read_to_string(sandbox.root.join("swaps.jsonl"))
+                .expect("swap trace")
+                .lines()
+                .map(|line| serde_json::from_str::<Value>(line).expect("swap event"))
+                .filter(|event| event["event"] == "received")
+                .collect();
+            assert_eq!(events.len(), index + 1, "{events:?}");
+            let command = &events[index]["command"];
+            assert!(
+                command["to"].as_str().is_some_and(|path| path.ends_with(scene)),
+                "{command:?}"
+            );
+            if fade {
+                assert_eq!(command["shader"], "crossfade");
+                assert_eq!(command["duration_ms"], 1234);
+            } else {
+                assert!(command.get("shader").is_none(), "{params:?}: {command:?}");
+                assert!(command.get("duration_ms").is_none(), "{params:?}: {command:?}");
+            }
+            assert_eq!(child_pids(walld.pid(), STUB), pids, "warm swaps retain their renderer");
+        }
+    }
+}

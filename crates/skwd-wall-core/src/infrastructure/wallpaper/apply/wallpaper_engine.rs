@@ -100,11 +100,12 @@ pub(super) fn group_output(
     groups.entry(we_id.to_string()).or_default().push(output.to_string());
 }
 
-pub(super) fn prepare_we(
-    state: &WallState,
+pub(super) fn prepare_we<'a>(
+    state: &'a WallState,
     mut groups: std::collections::BTreeMap<String, Vec<String>>,
     audio: std::collections::BTreeMap<String, (bool, u32)>,
-) -> anyhow::Result<PreparedWe<'_>> {
+    transition: Option<crate::backend::wallpaper::OutputTransitionRequest<'_>>,
+) -> anyhow::Result<PreparedWe<'a>> {
     for outputs in groups.values_mut() {
         outputs.sort();
     }
@@ -141,6 +142,7 @@ pub(super) fn prepare_we(
                 mute || index > 0,
                 volume,
                 false,
+                transition,
             )?);
         }
     }
@@ -152,7 +154,7 @@ pub(super) fn rebuild_we(
     groups: std::collections::BTreeMap<String, Vec<String>>,
     audio: std::collections::BTreeMap<String, (bool, u32)>,
 ) -> anyhow::Result<()> {
-    let prepared = prepare_we(state, groups, audio)?.prepare_commit()?;
+    let prepared = prepare_we(state, groups, audio, None)?.prepare_commit()?;
     prepared.finalize(state);
     Ok(())
 }

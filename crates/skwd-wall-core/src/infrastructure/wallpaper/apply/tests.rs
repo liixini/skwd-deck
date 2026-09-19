@@ -1983,27 +1983,113 @@ fn static_fade_overlay() {
     let st = Stub::new();
     let out = st.path().join("base-still.stdin");
     let (child, stdin) = capture_child(&out);
+    let old_pid = child.id();
     st.renderers().set_base_still(child, stdin);
     st.renderers().set_output_still("DP-2", sleeper(), None);
     let _ready = st.readiness();
     apply_static_transition(&st, "/w/old.png", "/w/new.png", "fill", "fade", 600).unwrap();
-    assert_eq!(
-        wait_spawns(st.path(), 1),
-        vec![managed_transition_args("/w/old.png", "/w/new.png", "fill", "fade", 600)]
-    );
+    let launches = wait_spawns(st.path(), 2);
+    assert!(launches.contains(&managed_transition_args(
+        "/w/old.png",
+        "/w/new.png",
+        "fill",
+        "fade",
+        600
+    )));
+    assert!(launches.contains(&vec![
+        "*".into(),
+        "/w/new.png".into(),
+        "--fill-mode".into(),
+        "fill".into(),
+        "--persist".into()
+    ]));
     assert!(st.renderers().has_base_still());
-    let (mut overlay, stdin) =
-        st.renderers().take_paper().expect("transition overlay remains owned until it exits");
-    drop(stdin);
-    let _ = overlay.wait();
+    assert!(st.renderers().paper_pid().is_some());
     assert!(!st.renderers().has_output_still("DP-2"));
-    let (mut child, stdin) = st.renderers().take_base_still().unwrap();
-    drop(stdin);
-    let _ = child.wait();
-    assert_eq!(
-        wait_stdin_lines(&out, 1),
-        vec![serde_json::json!({"path": "/w/new.png", "fill": "fill"})]
+    assert!(!Path::new(&format!("/proc/{old_pid}")).exists());
+    assert_eq!(std::fs::read_to_string(out).unwrap_or_default(), "");
+}
+
+fn delayed_static_destination(fail: bool) {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::new();
+    let input = st.path().join("old-still.stdin");
+    let (incumbent, stdin) = capture_child(&input);
+    let incumbent_pid = incumbent.id();
+    st.renderers().set_base_still(incumbent, stdin);
+    st.renderers().set_assignment("*", "/w/old.png");
+    let assignments = st.renderers().assignments();
+    let old_overlay = sleeper();
+    let old_overlay_pid = old_overlay.id();
+    st.renderers().restore_paper((old_overlay, None));
+
+    let (result, launched, overlay_pid, destination_pid, held) = std::thread::scope(|scope| {
+        let action = scope.spawn(|| {
+            apply_static_transition(&st, "/w/old.png", "/w/new.png", "fill", "crossfade", 100)
+        });
+        wait_spawns(st.path(), 1);
+        let overlay_pid = launch_order(st.path())[0].0;
+        st.renderers().signal_ready(overlay_pid);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while launch_order(st.path()).len() < 2
+            && !action.is_finished()
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let launches = launch_order(st.path());
+        let Some((destination_pid, _)) = launches.get(1) else {
+            return (action.join().unwrap(), false, overlay_pid, 0, false);
+        };
+        let destination_pid = *destination_pid;
+        std::thread::sleep(Duration::from_millis(350));
+        let held = !action.is_finished()
+            && Path::new(&format!("/proc/{overlay_pid}")).exists()
+            && Path::new(&format!("/proc/{incumbent_pid}")).exists()
+            && std::fs::read_to_string(&input).unwrap_or_default().is_empty();
+        if fail {
+            st.renderers().signal_failed(destination_pid, "injected destination failure");
+        } else {
+            st.renderers().signal_ready(destination_pid);
+        }
+        (action.join().unwrap(), true, overlay_pid, destination_pid, held)
+    });
+    assert!(launched, "transition reused the old still without a first-frame receipt");
+    assert!(
+        held,
+        "overlay and incumbent must survive beyond duration+grace until destination is ready"
     );
+    if fail {
+        assert!(result.is_err());
+        assert!(st.renderers().base_still_pid_alive(incumbent_pid));
+        assert_eq!(st.renderers().paper_pid(), Some(old_overlay_pid));
+        assert_eq!(st.renderers().assignments(), assignments);
+        assert!(Path::new(&format!("/proc/{old_overlay_pid}")).exists());
+        assert!(!Path::new(&format!("/proc/{overlay_pid}")).exists());
+        assert!(!Path::new(&format!("/proc/{destination_pid}")).exists());
+    } else {
+        result.unwrap();
+        assert!(st.renderers().base_still_pid_alive(destination_pid));
+        assert!(!Path::new(&format!("/proc/{incumbent_pid}")).exists());
+        assert!(!Path::new(&format!("/proc/{old_overlay_pid}")).exists());
+        assert_eq!(st.renderers().paper_pid(), Some(overlay_pid));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Path::new(&format!("/proc/{overlay_pid}")).exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(!Path::new(&format!("/proc/{overlay_pid}")).exists());
+        assert!(st.renderers().base_still_pid_alive(destination_pid));
+    }
+}
+
+#[test]
+fn static_transition_holds_overlay_until_destination_first_frame() {
+    delayed_static_destination(false);
+}
+
+#[test]
+fn static_transition_destination_failure_restores_incumbent_and_overlay() {
+    delayed_static_destination(true);
 }
 
 #[test]

@@ -62,7 +62,11 @@ pub trait WallpaperApplication: Send + Sync {
     fn apply_video(&self, request: ApplyVideoRequest<'_>) -> anyhow::Result<()>;
     fn apply_output(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()>;
     fn apply_video_transition(&self, request: VideoTransitionRequest<'_>) -> anyhow::Result<()>;
-    fn apply_we(&self, we_id: &str) -> anyhow::Result<Option<String>>;
+    fn apply_we(
+        &self,
+        we_id: &str,
+        transition: Option<OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>>;
     fn video_engine_is_vk(&self) -> bool;
     fn reload_we(&self) -> anyhow::Result<()>;
 }

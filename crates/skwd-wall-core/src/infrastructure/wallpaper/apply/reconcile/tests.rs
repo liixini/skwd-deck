@@ -146,8 +146,15 @@ fn mixed_batch_late_native_exit_preserves_scene_state_and_static_incumbent() {
                 std::thread::sleep(Duration::from_millis(2));
             }
         });
-        let native =
-            crate::we::spawn_scene_for(&state, &["DP-W".to_string()], "4242", true, 100, false);
+        let native = crate::we::spawn_scene_for(
+            &state,
+            &["DP-W".to_string()],
+            "4242",
+            true,
+            100,
+            false,
+            None,
+        );
         stop.store(true, Ordering::Relaxed);
         readiness.join().unwrap();
         native

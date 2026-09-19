@@ -246,13 +246,13 @@ fn apply_we_bails() {
     let state = WallState::test_new(serde_json::json!({ "paths": { "steamWorkshop": ws } }));
     let disabled = WallState::test_new(serde_json::json!({ "features": { "steam": false } }));
     let msg = |result: anyhow::Result<Option<String>>| result.unwrap_err().to_string();
-    assert!(msg(apply_we(&disabled, "123")).contains("disabled"));
-    assert!(msg(apply_we(&state, "../123")).contains("invalid WE id"));
-    assert!(msg(apply_we(&state, "999")).contains("not found"));
-    assert!(msg(apply_we(&state, "123")).contains("unsafe"));
-    assert!(msg(apply_we(&state, "124")).contains("no media file"));
-    assert!(msg(apply_we(&state, "125")).contains("unsupported type \"web\""));
-    assert!(msg(apply_we(&state, "126")).contains("unsupported type \"application\""));
+    assert!(msg(apply_we(&disabled, "123", None)).contains("disabled"));
+    assert!(msg(apply_we(&state, "../123", None)).contains("invalid WE id"));
+    assert!(msg(apply_we(&state, "999", None)).contains("not found"));
+    assert!(msg(apply_we(&state, "123", None)).contains("unsafe"));
+    assert!(msg(apply_we(&state, "124", None)).contains("no media file"));
+    assert!(msg(apply_we(&state, "125", None)).contains("unsupported type \"web\""));
+    assert!(msg(apply_we(&state, "126", None)).contains("unsupported type \"application\""));
 }
 
 #[test]
@@ -391,7 +391,7 @@ fn scene_process_output_set() {
             }
         });
         let candidate =
-            spawn_scene_for(&state, &["DP-2".into(), "DP-1".into()], "42", true, 100, true)
+            spawn_scene_for(&state, &["DP-2".into(), "DP-1".into()], "42", true, 100, true, None)
                 .unwrap();
         commit_scene_set(&state, vec![candidate]).unwrap();
         stop.store(true, Ordering::Relaxed);
@@ -408,7 +408,11 @@ fn scene_process_output_set() {
     state.renderers().kill_all();
 }
 
-fn warm_scene_command(transitions: bool, no_transition: bool) -> serde_json::Value {
+fn warm_scene_command(
+    transitions: bool,
+    no_transition: bool,
+    transition: Option<OutputTransitionRequest<'_>>,
+) -> serde_json::Value {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
@@ -453,9 +457,10 @@ fn warm_scene_command(transitions: bool, no_transition: bool) -> serde_json::Val
                 std::thread::sleep(Duration::from_millis(2));
             }
         });
-        let first = spawn_scene_for(&state, &["DP-1".into()], "42", true, 100, true).unwrap();
+        let first = spawn_scene_for(&state, &["DP-1".into()], "42", true, 100, true, None).unwrap();
         commit_scene_set(&state, vec![first]).unwrap();
-        let second = spawn_scene_for(&state, &["DP-1".into()], "43", true, 100, true).unwrap();
+        let second =
+            spawn_scene_for(&state, &["DP-1".into()], "43", true, 100, true, transition).unwrap();
         assert!(second.renderer.is_none());
         commit_scene_set(&state, vec![second]).unwrap();
         stop.store(true, Ordering::Relaxed);
@@ -479,18 +484,18 @@ fn warm_scene_command(transitions: bool, no_transition: bool) -> serde_json::Val
 
 #[test]
 fn warm_swap_transition_policy() {
-    let disabled = warm_scene_command(false, false);
+    let disabled = warm_scene_command(false, false, None);
     assert!(disabled["to"].as_str().unwrap().ends_with("/we/43"));
     assert_eq!(disabled["mute"], true);
     assert_eq!(disabled["volume"], 100);
     assert!(disabled.get("shader").is_none());
     assert!(disabled.get("duration_ms").is_none());
 
-    let suppressed = warm_scene_command(true, true);
+    let suppressed = warm_scene_command(true, true, None);
     assert!(suppressed.get("shader").is_none());
     assert!(suppressed.get("duration_ms").is_none());
 
-    let enabled = warm_scene_command(true, false);
+    let enabled = warm_scene_command(true, false, None);
     assert!(enabled["to"].as_str().unwrap().ends_with("/we/43"));
     assert_eq!(enabled["mute"], true);
     assert_eq!(enabled["volume"], 100);
@@ -581,18 +586,18 @@ fn rejected_warm_swaps_preserve_incumbent_and_allow_next_scene() {
             }
         });
         let result = (|| -> anyhow::Result<()> {
-            let first = spawn_scene_for(&state, &["DP-1".into()], "42", true, 100, true)?;
+            let first = spawn_scene_for(&state, &["DP-1".into()], "42", true, 100, true, None)?;
             commit_scene_set(&state, vec![first])?;
             let incumbent = state.renderers().video_paper_pid("DP-1").unwrap();
             let started = Instant::now();
             for _ in 0..4 {
-                let error = spawn_scene_for(&state, &["DP-1".into()], "43", true, 100, true)
+                let error = spawn_scene_for(&state, &["DP-1".into()], "43", true, 100, true, None)
                     .err()
                     .expect("broken scene must be rejected");
                 assert_eq!(error.to_string(), "parse scene.pkg: truncated entry");
                 assert_eq!(state.renderers().video_paper_pid("DP-1"), Some(incumbent));
             }
-            let next = spawn_scene_for(&state, &["DP-1".into()], "44", true, 100, true)?;
+            let next = spawn_scene_for(&state, &["DP-1".into()], "44", true, 100, true, None)?;
             assert!(next.renderer.is_none(), "reuse the incumbent after rejection");
             commit_scene_set(&state, vec![next])?;
             assert_eq!(state.renderers().video_paper_pid("DP-1"), Some(incumbent));
@@ -607,4 +612,97 @@ fn rejected_warm_swaps_preserve_incumbent_and_allow_next_scene() {
         state.renderers().kill_all();
         result.unwrap();
     });
+}
+
+#[test]
+fn warm_scene_request_overrides_config_without_persisting() {
+    let request = OutputTransitionRequest { enabled: true, shader: "crossfade", duration_ms: 430 };
+    for configured in [false, true] {
+        let command = warm_scene_command(configured, false, Some(request));
+        assert_eq!(command["shader"], "crossfade");
+        assert_eq!(command["duration_ms"], 430);
+    }
+    for (enabled, no_transition) in [(false, false), (true, true)] {
+        let command = warm_scene_command(
+            true,
+            no_transition,
+            Some(OutputTransitionRequest { enabled, ..request }),
+        );
+        assert!(command.get("shader").is_none());
+        assert!(command.get("duration_ms").is_none());
+    }
+}
+
+#[test]
+fn cold_scene_request_reaches_renderer_arguments() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    for (configured, enabled, suppressed) in
+        [(false, true, false), (true, false, false), (true, true, true)]
+    {
+        let directory = tempfile::tempdir().unwrap();
+        let item = directory.path().join("we/42");
+        std::fs::create_dir_all(&item).unwrap();
+        std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+        let previous = directory.path().join("previous.png");
+        std::fs::write(&previous, b"fixture").unwrap();
+        let binary = directory.path().join("renderer");
+        let captured = directory.path().join("args");
+        std::fs::write(
+            &binary,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexec cat\n", captured.display()),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&binary, permissions).unwrap();
+        let state = WallState::test_new(serde_json::json!({
+            "paths": {"steamWorkshop": directory.path().join("we"), "paperVkBin": binary, "cache": directory.path().join("cache")},
+            "transition": {"enabled": configured, "shader": "sand-globe", "durationMs": 725}
+        }));
+        state.renderers().set_assignment("DP-1", previous.to_str().unwrap());
+        state.apply().set_no_transition(suppressed);
+        let stop = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let ready = scope.spawn(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    for pid in state.renderers().wallpaper_pids() {
+                        state.renderers().signal_ready(pid);
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            });
+            let candidate = spawn_scene_for(
+                &state,
+                &["DP-1".into()],
+                "42",
+                true,
+                100,
+                false,
+                Some(OutputTransitionRequest { enabled, shader: "crossfade", duration_ms: 430 }),
+            )
+            .unwrap();
+            commit_scene_set(&state, vec![candidate]).unwrap();
+            stop.store(true, Ordering::Relaxed);
+            ready.join().unwrap();
+        });
+        let args = std::fs::read_to_string(captured).unwrap();
+        let args: Vec<_> = args.lines().collect();
+        if enabled && !suppressed {
+            assert!(args.windows(2).any(|pair| pair == ["--shader", "crossfade"]));
+            assert!(args.windows(2).any(|pair| pair == ["--duration-ms", "430"]));
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair == ["--transition-from", previous.to_str().unwrap()])
+            );
+        } else {
+            assert!(!args.contains(&"--shader"));
+            assert!(!args.contains(&"--transition-from"));
+        }
+        assert_eq!(state.config().transition().active(), configured);
+        assert_eq!(state.config().transition().shader(), "sand-globe");
+        assert_eq!(state.config().transition().duration_ms(), 725);
+        state.renderers().kill_all();
+    }
 }

@@ -283,9 +283,19 @@ pub(super) fn apply_static_smart_with_outputs(
         .collect();
     let uniform = resolved.iter().all(|(_, assigned)| *assigned == resolved[0].1)
         && fills.iter().all(|fill| *fill == fills[0]);
-    if let Err(error) =
-        spawn_resolved_stills(state, outputs, &resolved, &previous_assignments, uniform, fill_mode)
-    {
+    let reuse = match retention {
+        PaperRetention::Retire => ReusePolicy::WarmAllowed,
+        PaperRetention::PreserveTransition => ReusePolicy::ColdOnly,
+    };
+    if let Err(error) = spawn_resolved_stills(
+        state,
+        outputs,
+        &resolved,
+        &previous_assignments,
+        uniform,
+        fill_mode,
+        reuse,
+    ) {
         state.renderers().replace_assignments(previous_assignments);
         return Err(error);
     }
@@ -323,6 +333,7 @@ fn spawn_resolved_stills(
     previous_assignments: &std::collections::HashMap<String, String>,
     uniform: bool,
     fill_mode: &str,
+    reuse: ReusePolicy,
 ) -> anyhow::Result<()> {
     if uniform {
         let path = resolved[0].1.clone();
@@ -330,21 +341,23 @@ fn spawn_resolved_stills(
             || fill_mode.to_string(),
             |(output, _)| state.config().display().fill_mode_for(output),
         );
-        if !state.renderers().still_swap(&path, &fill) {
+        if !reuse.allows_warm() || !state.renderers().still_swap(&path, &fill) {
             spawn_base_still(state, "*", &path, &fill)?.wait_ready()?.commit()?;
         }
         state.renderers().kill_output_stills();
         return Ok(());
     }
     let mut swapped = Vec::new();
-    let mut all_swapped = true;
-    for (output, path) in resolved {
-        let fill = state.config().display().fill_mode_for(output);
-        if state.renderers().output_still_swap(output, path, &fill) {
-            swapped.push(output.clone());
-        } else {
-            all_swapped = false;
-            break;
+    let mut all_swapped = reuse.allows_warm();
+    if reuse.allows_warm() {
+        for (output, path) in resolved {
+            let fill = state.config().display().fill_mode_for(output);
+            if state.renderers().output_still_swap(output, path, &fill) {
+                swapped.push(output.clone());
+            } else {
+                all_swapped = false;
+                break;
+            }
         }
     }
     if all_swapped {
