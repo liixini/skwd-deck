@@ -180,9 +180,13 @@ impl WallpaperApplication for CoreWallpaperApplication {
         )
     }
 
-    fn apply_we(&self, we_id: &str) -> anyhow::Result<Option<String>> {
+    fn apply_we(
+        &self,
+        we_id: &str,
+        transition: Option<crate::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
         self.stop_paper()?;
-        crate::we::apply_we(&self.state, we_id)
+        crate::we::apply_we(&self.state, we_id, transition)
     }
 
     fn video_engine_is_vk(&self) -> bool {

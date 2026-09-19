@@ -1,3 +1,4 @@
+use crate::backend::wallpaper::OutputTransitionRequest;
 use crate::state::WallState;
 use crate::{apply, outputs};
 use std::path::{Path, PathBuf};
@@ -139,13 +140,24 @@ pub(crate) fn spawn_scene_for<'a>(
     mute: bool,
     volume: u32,
     allow_warm_swap: bool,
+    transition: Option<OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<NativeSceneCandidate<'a>> {
     if !valid_we_id(we_id) {
         anyhow::bail!("invalid WE id: {we_id}");
     }
     let item_dir = state.config().we_dir().join(we_id);
     let properties = scene_overrides(state, we_id);
-    native_scene(state, outputs, &item_dir, we_id, &properties, mute, volume, allow_warm_swap)
+    native_scene(
+        state,
+        outputs,
+        &item_dir,
+        we_id,
+        &properties,
+        mute,
+        volume,
+        allow_warm_swap,
+        transition,
+    )
 }
 
 pub(crate) fn scene_overrides(
@@ -287,15 +299,22 @@ fn native_scene<'a>(
     mute: bool,
     volume: u32,
     allow_warm_swap: bool,
+    transition: Option<OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<NativeSceneCandidate<'a>> {
     if !["scene.pkg", "gifscene.pkg"].iter().any(|name| item_dir.join(name).is_file()) {
         anyhow::bail!("native Wallpaper Engine scene package is missing in {}", item_dir.display());
     }
     let dir = item_dir.display().to_string();
     let fill = state.config().renderer().we_scene_fill_mode();
-    let transitions = state.config().transition().active() && !state.apply().no_transition();
-    let shader = state.config().transition().shader();
-    let duration_ms = state.config().transition().duration_ms();
+    let (transitions, shader, duration_ms) = {
+        let config = state.config();
+        let configured = config.transition();
+        transition.map_or_else(
+            || (configured.active(), configured.shader(), configured.duration_ms()),
+            |request| (request.enabled, request.shader.to_string(), request.duration_ms),
+        )
+    };
+    let transitions = transitions && !state.apply().no_transition();
     let target = scene_renderer_key(outputs);
     let renderer_key = target.clone();
     if allow_warm_swap
@@ -437,7 +456,11 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
     Ok(true)
 }
 
-pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>> {
+pub fn apply_we(
+    state: &WallState,
+    we_id: &str,
+    transition: Option<OutputTransitionRequest<'_>>,
+) -> anyhow::Result<Option<String>> {
     if !state.config().steam_enabled() {
         anyhow::bail!("steam/WE feature is disabled");
     }
@@ -479,7 +502,21 @@ pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>
             volume,
         };
         if apply::independent_playback(state) {
-            apply::apply_independent_video(state, request, None)?;
+            apply::apply_independent_video(state, request, transition)?;
+        } else if let Some(transition) =
+            transition.filter(|request| request.enabled && !state.apply().no_transition())
+            && let Some(from) = previous_media(state, &outputs::names())
+        {
+            apply::apply_video_transition(
+                state,
+                &from,
+                request.path,
+                request.fill_mode,
+                transition.shader,
+                transition.duration_ms,
+                mute,
+                volume,
+            )?;
         } else {
             apply::apply_video(
                 state,
@@ -526,6 +563,7 @@ pub fn apply_we(state: &WallState, we_id: &str) -> anyhow::Result<Option<String>
                 scene_mute || index > 0,
                 scene_volume,
                 true,
+                transition,
             )?);
         }
         commit_scene_set(state, candidates)?;

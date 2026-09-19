@@ -23,8 +23,8 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 46,
-      "coverage": "workspace tests; process cases, including bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
+      "expectedSkips": 48,
+      "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
     },
     {
       "id": "deck.layers",

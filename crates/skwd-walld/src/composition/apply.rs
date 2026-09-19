@@ -439,7 +439,9 @@ fn apply_core_locked(
         wall_proto::kind::VIDEO => {
             apply_video_arm(state, application, &decision, &fill, pick_only, transition_override)
         }
-        wall_proto::kind::WE => apply_we_arm(state, application, &decision, &fill, pick_only),
+        wall_proto::kind::WE => {
+            apply_we_arm(state, application, &decision, &fill, pick_only, transition_override)
+        }
         _ => unreachable!("media decision validates kind"),
     };
     if let Err(error) = &execution {
@@ -660,19 +662,47 @@ fn apply_we_arm(
     decision: &ApplyDecision,
     fill: &str,
     pick_only: bool,
+    transition_override: Option<&TransitionOverride>,
 ) -> anyhow::Result<ExecutionReceipt> {
     let we_id = &decision.we_id;
     let output = &decision.output;
     if !skwd_wall_core::we::valid_we_id(we_id) {
         anyhow::bail!("invalid WE id: {we_id}");
     }
+    let (enabled, shader, duration_ms) = {
+        let config = state.config();
+        let configured = config.transition();
+        (
+            transition_override.and_then(|value| value.enabled).unwrap_or(configured.active()),
+            transition_override
+                .and_then(|value| value.shader.clone())
+                .unwrap_or_else(|| configured.shader()),
+            transition_override
+                .and_then(|value| value.duration_ms)
+                .unwrap_or(configured.duration_ms()),
+        )
+    };
+    let transition = Some(OutputTransitionRequest {
+        enabled: enabled && !state.apply().no_transition(),
+        shader: &shader,
+        duration_ms,
+    });
     let preview = if pick_only {
         let item_directory = state.config().we_dir().join(we_id);
         skwd_wall_core::we::find_preview(&item_directory).map(|path| path.display().to_string())
     } else if output != "*" {
-        we_render_output(state, application, we_id, output, fill, decision.mute, decision.volume)?
+        we_render_output(
+            state,
+            application,
+            we_id,
+            output,
+            fill,
+            decision.mute,
+            decision.volume,
+            transition,
+        )?
     } else {
-        application.apply_we(we_id)?
+        application.apply_we(we_id, transition)?
     };
     let persisted_thumb = preview.clone().unwrap_or_default();
     Ok(ExecutionReceipt::new(decision.clone(), preview, persisted_thumb))
@@ -686,6 +716,7 @@ fn we_render_output(
     fill: &str,
     mute: bool,
     volume: u32,
+    transition: Option<OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<Option<String>> {
     if !state.config().steam_enabled() {
         anyhow::bail!("steam/WE feature is disabled");
@@ -715,7 +746,7 @@ fn we_render_output(
             mute,
             volume,
             frame_rate: None,
-            transition: None,
+            transition,
         })?;
     } else {
         application.apply_output(ApplyOutputRequest {
@@ -727,7 +758,7 @@ fn we_render_output(
             mute,
             volume,
             frame_rate: None,
-            transition: None,
+            transition,
         })?;
     }
     Ok(skwd_wall_core::we::find_preview(&item_directory).map(|path| path.display().to_string()))

@@ -190,7 +190,7 @@ pub(crate) fn reload_current_we(
     if skwd_wall_core::we::read_project_type(&item_dir).0 != "scene" {
         return Ok(false);
     }
-    application.apply_we(we_id)?;
+    application.apply_we(we_id, None)?;
     log::info!("wall.reload_we: re-applied WE scene {we_id} with current settings");
     Ok(true)
 }

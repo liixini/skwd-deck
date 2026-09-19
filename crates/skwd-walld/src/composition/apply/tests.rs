@@ -29,7 +29,11 @@ impl WallpaperApplication for FailingApplication {
         anyhow::bail!("injected transition failure")
     }
 
-    fn apply_we(&self, _: &str) -> anyhow::Result<Option<String>> {
+    fn apply_we(
+        &self,
+        _: &str,
+        _: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
         anyhow::bail!("injected WE failure")
     }
 
@@ -82,7 +86,11 @@ impl WallpaperApplication for FlakyApplication {
     fn apply_video_transition(&self, _: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
         self.attempt()
     }
-    fn apply_we(&self, _: &str) -> anyhow::Result<Option<String>> {
+    fn apply_we(
+        &self,
+        _: &str,
+        _: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
         self.attempt()?;
         Ok(None)
     }
@@ -120,7 +128,11 @@ impl WallpaperApplication for SupersedingApplication {
         Ok(())
     }
 
-    fn apply_we(&self, _: &str) -> anyhow::Result<Option<String>> {
+    fn apply_we(
+        &self,
+        _: &str,
+        _: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
         self.supersede();
         Ok(None)
     }
@@ -371,7 +383,11 @@ impl WallpaperApplication for OneShotSupersedingApplication {
     fn apply_video_transition(&self, _: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
         unreachable!()
     }
-    fn apply_we(&self, _: &str) -> anyhow::Result<Option<String>> {
+    fn apply_we(
+        &self,
+        _: &str,
+        _: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
         unreachable!()
     }
     fn video_engine_is_vk(&self) -> bool {
@@ -544,5 +560,133 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
     .unwrap();
     for output in &outputs {
         assert_eq!(history_json[output]["entries"].as_array().unwrap().len(), 1);
+    }
+}
+
+struct ExpectedWeTransition {
+    output: &'static str,
+    kind: &'static str,
+    enabled: bool,
+    shader: &'static str,
+    duration_ms: u64,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl ExpectedWeTransition {
+    fn check(
+        &self,
+        transition: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) {
+        let transition = transition.expect("resolved Wallpaper Engine transition policy");
+        assert_eq!(transition.enabled, self.enabled);
+        assert_eq!(transition.shader, self.shader);
+        assert_eq!(transition.duration_ms, self.duration_ms);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl WallpaperApplication for ExpectedWeTransition {
+    fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
+        unreachable!()
+    }
+    fn apply_static_smart(&self, _: StaticSmartRequest<'_>) -> anyhow::Result<()> {
+        unreachable!()
+    }
+    fn apply_video(&self, _: ApplyVideoRequest<'_>) -> anyhow::Result<()> {
+        unreachable!()
+    }
+    fn apply_video_transition(&self, _: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
+        unreachable!()
+    }
+    fn apply_output(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+        assert_eq!(request.output, self.output);
+        assert_eq!(request.kind, self.kind);
+        self.check(request.transition);
+        anyhow::bail!("captured transition request")
+    }
+    fn apply_we(
+        &self,
+        we_id: &str,
+        transition: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
+    ) -> anyhow::Result<Option<String>> {
+        assert_eq!(self.output, "*");
+        assert!(matches!(we_id, "42" | "43"));
+        self.check(transition);
+        anyhow::bail!("captured transition request")
+    }
+    fn video_engine_is_vk(&self) -> bool {
+        true
+    }
+    fn reload_we(&self) -> anyhow::Result<()> {
+        unreachable!()
+    }
+}
+
+#[test]
+fn wallpaper_engine_resolves_request_transition_for_scene_and_video_outputs() {
+    let (_guard, root) = testenv::lock();
+    let workshop = root.join("we");
+    for (id, kind) in [("42", "scene"), ("43", "video")] {
+        let item = workshop.join(id);
+        std::fs::create_dir_all(&item).unwrap();
+        std::fs::write(
+            item.join("project.json"),
+            serde_json::json!({"type": kind, "file": "clip.mp4"}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(item.join("clip.mp4"), b"fixture").unwrap();
+    }
+    for configured in [false, true] {
+        testenv::write_config(serde_json::json!({
+            "paths": {"steamWorkshop": workshop}, "features": {"steam": true}, "pickOnlyMode": false,
+            "transition": {"enabled": configured, "shader": "sand-globe", "durationMs": 725}
+        }));
+        let (state, publisher, stats) = testenv::harness();
+        let history =
+            crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
+        for (id, kind) in [("42", "we"), ("43", "video")] {
+            for output in ["*", "DP-1"] {
+                for (enabled, suppressed) in [(true, false), (false, false), (true, true)] {
+                    let application = ExpectedWeTransition {
+                        output,
+                        kind,
+                        enabled: enabled && !suppressed,
+                        shader: "crossfade",
+                        duration_ms: 430,
+                        calls: std::sync::atomic::AtomicUsize::new(0),
+                    };
+                    let request = super::TransitionOverride {
+                        enabled: Some(enabled),
+                        shader: Some("crossfade".into()),
+                        duration_ms: Some(430),
+                    };
+                    let error = apply_core(
+                        &state,
+                        &application,
+                        &history,
+                        publisher.as_ref(),
+                        &stats,
+                        "we",
+                        "",
+                        id,
+                        true,
+                        0,
+                        ApplySource::User,
+                        output,
+                        false,
+                        suppressed,
+                        Some(&request),
+                        None,
+                    )
+                    .unwrap_err();
+                    assert!(error.to_string().contains("captured transition request"));
+                    assert_eq!(application.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+                    assert!(!state.apply().no_transition());
+                    assert_eq!(state.config().transition().active(), configured);
+                    assert_eq!(state.config().transition().shader(), "sand-globe");
+                    assert_eq!(state.config().transition().duration_ms(), 725);
+                }
+            }
+        }
     }
 }
