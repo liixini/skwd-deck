@@ -5,6 +5,36 @@ use serde_json::json;
 use super::*;
 
 #[test]
+fn theme_mode_has_a_canonical_typed_default() {
+    let path = crate::keys::theme::MODE;
+    assert_eq!(find(path).map(|spec| spec.kind), Some(ValueKind::Text));
+    assert_eq!(text_default(path), Some("dark"));
+    for mode in ["dark", "light", "auto"] {
+        assert_eq!(normalize_value(path, &json!(mode)), Some(json!(mode)));
+    }
+    assert_eq!(normalize_value(path, &json!(false)), None);
+}
+
+#[test]
+fn theme_mode_decodes_legacy_values_without_overriding_explicit_choices() {
+    for (root, expected) in [
+        (json!({}), "dark"),
+        (json!({"matugen": {"mode": "light"}}), "light"),
+        (json!({"matugen": {"mode": "dark"}}), "dark"),
+        (json!({"matugen": {"mode": "auto"}}), "auto"),
+        (json!({"theme": {"mode": "dark"}, "matugen": {"mode": "light"}}), "dark"),
+        (json!({"theme": {"mode": "light"}, "matugen": {"mode": "dark"}}), "light"),
+        (json!({"theme": {"mode": "auto"}, "matugen": {"mode": "light"}}), "auto"),
+        (json!({"theme": {"mode": ""}, "matugen": {"mode": "light"}}), "light"),
+        (json!({"theme": {"mode": false}, "matugen": {"mode": "light"}}), "light"),
+    ] {
+        let original = root.clone();
+        assert_eq!(read_text(&root, crate::keys::theme::MODE).as_deref(), Some(expected));
+        assert_eq!(root, original);
+    }
+}
+
+#[test]
 fn typed_settings_defaults() {
     assert_eq!(text_default(crate::keys::selector::START_POSITION), Some("beginning"));
     assert_eq!(text_default(crate::keys::selector::LAST_APPLIED_KEY), Some(""));

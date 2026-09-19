@@ -105,8 +105,7 @@ impl<'a> ThemeConfig<'a> {
     }
 
     pub fn mode(&self) -> String {
-        let mode = self.config.str_at(skwd_config::keys::theme::MODE, "");
-        if mode.is_empty() { self.matugen_mode() } else { mode }
+        skwd_config::theme_mode(self.config.root())
     }
 
     pub fn noctalia_bin(&self) -> String {

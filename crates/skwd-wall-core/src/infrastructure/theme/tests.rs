@@ -86,13 +86,18 @@ fn picker_palette_bridge() {
 
 #[test]
 fn theme_mode_fallback() {
-    let inherit = Config::from_root(json!({ "matugen": { "mode": "light" } }));
-    assert_eq!(inherit.theme().mode(), "light");
-    let explicit =
-        Config::from_root(json!({ "theme": { "mode": "dark" }, "matugen": { "mode": "light" } }));
-    assert_eq!(explicit.theme().mode(), "dark");
-    let dflt = Config::from_root(json!({}));
-    assert_eq!(dflt.theme().mode(), "dark");
+    for (root, expected) in [
+        (json!({}), "dark"),
+        (json!({ "matugen": { "mode": "light" } }), "light"),
+        (json!({ "matugen": { "mode": "dark" } }), "dark"),
+        (json!({ "theme": { "mode": "dark" }, "matugen": { "mode": "light" } }), "dark"),
+        (json!({ "theme": { "mode": "light" }, "matugen": { "mode": "dark" } }), "light"),
+        (json!({ "theme": { "mode": "auto" }, "matugen": { "mode": "light" } }), "auto"),
+        (json!({ "theme": { "mode": "" }, "matugen": { "mode": "light" } }), "light"),
+    ] {
+        let config = Config::from_root(root.clone());
+        assert_eq!(config.theme().mode(), expected, "{root}");
+    }
 }
 
 #[test]

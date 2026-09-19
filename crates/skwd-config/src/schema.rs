@@ -585,6 +585,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::theme::POLICY, ""),
     SettingSpec::text(crate::keys::theme::AUTHORITY, ""),
     SettingSpec::text(crate::keys::theme::ENGINE, ""),
+    SettingSpec::text(crate::keys::theme::MODE, "dark"),
     SettingSpec::text(crate::keys::theme::SCHEME, "tonal-spot"),
     SettingSpec::text(crate::keys::theme::STYLE, "natural"),
     SettingSpec::text(crate::keys::transition::FAMILY, "random"),
@@ -911,6 +912,9 @@ pub fn text_default(path: &str) -> Option<&'static str> {
 }
 
 pub fn read_text(root: &Value, path: &str) -> Option<String> {
+    if path == crate::keys::theme::MODE {
+        return Some(crate::theme_mode(root));
+    }
     text_default(path).map(|default| crate::str_at(root, path, default))
 }
 

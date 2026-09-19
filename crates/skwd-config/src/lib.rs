@@ -22,8 +22,8 @@ pub use power::{
 };
 pub use settings::{
     cache_dir_of, canonicalize_paper_engine, canonicalize_we_renderer, locale, paper_engine,
-    pexels_api_key, steam_enabled, theme_authority, theme_backend, theme_engine, theme_policy,
-    unsplash_access_key, video_dir, video_preview_delay_ms, video_preview_enabled,
+    pexels_api_key, steam_enabled, theme_authority, theme_backend, theme_engine, theme_mode,
+    theme_policy, unsplash_access_key, video_dir, video_preview_delay_ms, video_preview_enabled,
     wallhaven_enabled, wallpaper_dir, wallpaper_mute, wallpaper_volume,
 };
 pub use value::{

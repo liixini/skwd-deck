@@ -164,6 +164,11 @@ pub fn theme_backend(root: &Value) -> String {
     }
 }
 
+pub fn theme_mode(root: &Value) -> String {
+    let mode = str_at(root, crate::keys::theme::MODE, "");
+    if mode.is_empty() { str_at(root, crate::keys::matugen::MODE, "dark") } else { mode }
+}
+
 #[cfg(test)]
 #[path = "settings_tests.rs"]
 mod tests;
