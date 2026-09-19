@@ -1,0 +1,12 @@
+[
+  {
+    "corked": false,
+    "mute": false,
+    "properties": {
+      "application.name": "mpv",
+      "application.process.binary": "mpv",
+      "media.name": "skwd-demo.mp4 - mpv",
+      "node.name": "mpv"
+    }
+  }
+]

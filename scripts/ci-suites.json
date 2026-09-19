@@ -23,8 +23,8 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 43,
-      "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks and a live compositor check excluded"
+      "expectedSkips": 44,
+      "coverage": "workspace tests; process cases, including bug report collection, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
     },
     {
       "id": "deck.layers",
@@ -50,6 +50,11 @@
       "id": "deck.process-e2e",
       "expectedSkips": 0,
       "coverage": "RPC, schedule, lifecycle, apply, restore, WE, concurrency, hotplug, library, playback, fake Plasma sessions, and desktop-theme provider processes"
+    },
+    {
+      "id": "deck.audio-live",
+      "expectedSkips": 1,
+      "coverage": "manual real-daemon detection using a private Pulse server, null sink, mpv and captured steady-tone audio"
     },
     {
       "id": "deck.vm",

@@ -1,0 +1,11 @@
+[
+  {
+    "corked": false,
+    "mute": false,
+    "properties": {
+      "application.name": "PipeWire ALSA [skwd-wall-vk]",
+      "node.name": "alsa_playback.skwd-wall-vk",
+      "media.name": "ALSA Playback"
+    }
+  }
+]

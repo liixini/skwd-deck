@@ -56,6 +56,31 @@ fn renderer_streams_through_the_alsa_plugin_do_not_count() {
 }
 
 #[test]
+fn captured_mpv_media_title_is_not_renderer_identity() {
+    let inputs = serde_json::from_str(include_str!("tests/mpv-skwd-title.json")).unwrap();
+    assert!(other_stream_playing(&inputs, &HashSet::new()));
+}
+
+#[test]
+fn captured_paper_alsa_identity_does_not_need_a_process_id() {
+    let inputs = serde_json::from_str(include_str!("tests/paper-alsa.json")).unwrap();
+    assert!(!other_stream_playing(&inputs, &HashSet::new()));
+}
+
+#[test]
+fn renderer_names_must_identify_the_renderer() {
+    for (key, value) in [
+        ("application.name", "Watching skwd-wall-vk"),
+        ("node.name", "mpv.skwd-wall-vk-demo"),
+        ("media.name", "skwd-wall-vk"),
+        ("application.process.binary", "skwd-demo-player"),
+    ] {
+        let inputs = json!([{"corked": false, "properties": {key: value}}]);
+        assert!(other_stream_playing(&inputs, &HashSet::new()), "{key}: {value}");
+    }
+}
+
+#[test]
 fn muted_streams_and_missing_fields_do_not_count() {
     let own = HashSet::new();
     let mut muted = input(1, false, "firefox", 100);

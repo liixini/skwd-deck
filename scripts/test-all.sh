@@ -26,8 +26,7 @@ cargo build --release --workspace
 cargo test --release --workspace
 cargo test --release -p skwd-wall-core --test layer_guard
 cargo test --release -p skwd-walld --test layer_guard
-python3 scripts/tests/test_package_stage.py
-python3 scripts/tests/test_fedora_steamworks.py
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
 
 if [ "$e2e" -eq 1 ]; then
     for suite in app_themes rpc schedule lifecycle apply apply_model restore we concurrent hotplug library playback plasma theme; do

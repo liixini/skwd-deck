@@ -30,11 +30,13 @@ pub(crate) fn other_stream_playing(inputs: &Value, own_pids: &HashSet<u32>) -> b
             let muted = input.get("mute").and_then(Value::as_bool).unwrap_or(false);
             let properties = input.get("properties");
             let property = |key: &str| properties.and_then(|props| props.get(key)?.as_str());
-            let own_binary = property("application.process.binary")
-                .is_some_and(|binary| binary.starts_with("skwd-"));
-            let own_name = ["application.name", "node.name", "media.name"]
-                .iter()
-                .any(|key| property(key).is_some_and(|name| name.contains("skwd-")));
+            let own_binary = property("application.process.binary") == Some("skwd-wall-vk");
+            let own_name = matches!(
+                property("application.name"),
+                Some(
+                    "skwd-wall-vk" | "PipeWire ALSA [skwd-wall-vk]" | "ALSA plug-in [skwd-wall-vk]"
+                )
+            ) || property("node.name") == Some("alsa_playback.skwd-wall-vk");
             let own_pid = property("application.process.id")
                 .and_then(|pid| pid.parse::<u32>().ok())
                 .is_some_and(|pid| own_pids.contains(&pid));

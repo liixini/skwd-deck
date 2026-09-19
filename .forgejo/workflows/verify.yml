@@ -95,10 +95,6 @@ jobs:
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.format --out ci-artifacts/results/deck-format.json -- cargo fmt --check
 
-      - name: Packaging and workflow tests
-        continue-on-error: true
-        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.packaging --out ci-artifacts/results/deck-packaging.json -- env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
-
       - name: Clippy
         id: clippy
         continue-on-error: true
@@ -109,6 +105,11 @@ jobs:
         if: steps.clippy.outcome == 'success'
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.release --out ci-artifacts/results/deck-release.json -- cargo build --locked --release --workspace
+
+      - name: Packaging and workflow tests
+        if: steps.release.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.packaging --out ci-artifacts/results/deck-packaging.json -- env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
 
       - name: Workspace tests
         id: tests
@@ -139,6 +140,10 @@ jobs:
       - name: Record deliberate VM coverage
         if: always()
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.vm --reason 'requires KVM and the declared distribution/compositor image matrix' --out ci-artifacts/results/deck-vm.json
+
+      - name: Record deliberate private audio coverage
+        if: always()
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" skip --suite deck.audio-live --reason 'requires a private Pulse server and sink plus a steady tone; run other_audio_live with SKWD_TEST_PULSE_SERVER, SKWD_TEST_PULSE_SINK and SKWD_TEST_AUDIO_CLIP' --out ci-artifacts/results/deck-audio-live.json
 
       - name: Record deliberate theme provider VM coverage
         if: always()
