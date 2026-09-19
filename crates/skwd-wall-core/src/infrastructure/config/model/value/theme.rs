@@ -22,6 +22,10 @@ impl<'a> ThemeConfig<'a> {
         self.config.root()
     }
 
+    pub fn settings_snapshot(&self) -> serde_json::Map<String, Value> {
+        skwd_config::theme_profile::snapshot(self.config.root())
+    }
+
     skwd_config::getters! {
         dms_hover_preview: bool(skwd_config::keys::dms::HOVER_PREVIEW, true);
         matugen_enabled: on_unless_off(skwd_config::keys::features::MATUGEN);

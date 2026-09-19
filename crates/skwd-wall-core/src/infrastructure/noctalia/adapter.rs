@@ -296,7 +296,7 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     if state.theme().shell_preview_generation() != generation {
         return Ok(());
     }
-    let config = state.config().clone();
+    let config = crate::theme::profiles::configuration(state, image);
     let stored = state.theme().noctalia_preview_orig();
     let scheme = active_gen_scheme(&config, stored.as_ref());
     let key = format!("{scheme}\u{0}{image}");

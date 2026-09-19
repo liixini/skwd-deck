@@ -838,3 +838,23 @@ fn niri_column_pause_is_opt_in_and_enables_display_policy() {
     assert!(!config.playback().fullscreen_pause());
     assert!(!config.playback().maximized_pause());
 }
+
+#[test]
+fn wallpaper_load_timeout_defaults_and_bounds() {
+    for (value, seconds) in [
+        (json!(null), 3.0),
+        (json!("bad"), 3.0),
+        (json!(-1), 3.0),
+        (json!(0), 3.0),
+        (json!(10), 10.0),
+        (json!(60), 60.0),
+        (json!(1000), 60.0),
+    ] {
+        let config = Config::from_root(json!({"paper": {"loadTimeoutSeconds": value}}));
+        assert_eq!(config.renderer().load_timeout(), std::time::Duration::from_secs_f64(seconds));
+    }
+    assert_eq!(
+        Config::from_root(json!({})).renderer().load_timeout(),
+        std::time::Duration::from_secs(3)
+    );
+}

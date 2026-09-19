@@ -18,6 +18,15 @@ impl<'a> RendererConfig<'a> {
         self.config.root()
     }
 
+    pub fn load_timeout(&self) -> std::time::Duration {
+        let seconds = skwd_config::schema::read_number(
+            self.root(),
+            skwd_config::keys::paper::LOAD_TIMEOUT_SECONDS,
+        )
+        .unwrap_or(3.0);
+        std::time::Duration::from_secs_f64(seconds)
+    }
+
     pub fn gpu_device(&self) -> String {
         skwd_config::configured_gpu_device(self.root())
     }

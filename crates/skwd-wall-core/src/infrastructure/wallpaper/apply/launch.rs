@@ -8,6 +8,7 @@ use crate::domain::wallpaper::still_args;
 use crate::infrastructure::renderers::{HeldRenderer, kill_held_renderer};
 use crate::state::WallState;
 
+#[cfg(test)]
 pub(crate) const READY_TIMEOUT: Duration = Duration::from_millis(3000);
 pub(crate) const NATIVE_SCENE_READY_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const PERF_SCENE_FPS: u32 = 30;
@@ -169,8 +170,8 @@ impl RendererLaunchKind {
         matches!(self, Self::StandaloneTransition { .. })
     }
 
-    fn timeout(&self) -> Duration {
-        if self.is_native_scene() { NATIVE_SCENE_READY_TIMEOUT } else { READY_TIMEOUT }
+    fn timeout(&self, configured: Duration) -> Duration {
+        if self.is_native_scene() { configured.max(NATIVE_SCENE_READY_TIMEOUT) } else { configured }
     }
 
     fn target(&self) -> RendererTarget {
@@ -290,6 +291,10 @@ impl RendererLaunchSpec {
             .stdin(if self.control_stdin() { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::null())
             .stderr(if self.kind.is_native_scene() { Stdio::inherit() } else { Stdio::null() });
+        command.env(
+            "SKWD_PAPER_LOAD_TIMEOUT_MS",
+            config.renderer().load_timeout().as_millis().to_string(),
+        );
         let gpu = config.renderer().gpu_device();
         if gpu != "auto" {
             command.env("SKWD_VK_DEVICE", gpu);
@@ -354,7 +359,7 @@ impl RendererLaunchSpec {
                 displaced,
                 detached,
                 pid,
-                timeout: self.kind.timeout(),
+                timeout: self.kind.timeout(state.config().renderer().load_timeout()),
                 label: self.kind.label(),
                 committed: false,
             },
@@ -753,8 +758,11 @@ mod tests {
             RendererLaunchSpec::staged_transition("DP-1", vec!["DP-1".into(), "/w/c.png".into()]);
         assert_eq!(still.command(&state).get_program(), OsStr::new("/bin/still"));
         assert_eq!(scene.command(&state).get_program(), OsStr::new("/bin/vk"));
-        assert_eq!(scene.kind.timeout(), NATIVE_SCENE_READY_TIMEOUT);
-        assert_eq!(still.kind.timeout(), READY_TIMEOUT);
+        assert_eq!(scene.kind.timeout(READY_TIMEOUT), NATIVE_SCENE_READY_TIMEOUT);
+        assert_eq!(still.kind.timeout(READY_TIMEOUT), READY_TIMEOUT);
+        let extended = Duration::from_secs(60);
+        assert_eq!(still.kind.timeout(extended), extended);
+        assert_eq!(scene.kind.timeout(extended), extended);
         assert!(standalone.arguments.iter().any(|argument| argument == "--standalone"));
         assert!(staged.arguments.iter().any(|argument| argument == "--transition-hold"));
         assert!(staged.control_stdin());

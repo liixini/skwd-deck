@@ -252,8 +252,8 @@ pub(super) fn theme_preview(state: &Arc<WallState>, req: &Request) -> Response {
     if image.is_empty() {
         return Response::err(req.id, 1, "no image to preview");
     }
-    let cfg = state.config();
-    let palette = skwd_wall_core::bridge_preview::cached_palette(state, image);
+    let cfg = preview_config(state, req);
+    let palette = skwd_wall_core::bridge_preview::cached_palette_for_config(state, &cfg, image);
     let colors =
         palette.as_ref().map(skwd_wall_core::theme::swatch_from_palette).unwrap_or_default();
     Response::ok(
@@ -264,6 +264,18 @@ pub(super) fn theme_preview(state: &Arc<WallState>, req: &Request) -> Response {
             "palette": palette,
         }),
     )
+}
+
+fn preview_config(state: &Arc<WallState>, req: &Request) -> skwd_wall_core::config::Config {
+    let mut config =
+        skwd_wall_core::theme::profiles::configuration(state, req.str_param("image", ""));
+    let Some(settings) = req.params.get("settings").and_then(serde_json::Value::as_object) else {
+        return config;
+    };
+    for (path, value) in skwd_config::theme_profile::validated(settings) {
+        config = config.with_override(&path, value);
+    }
+    config
 }
 
 pub(super) fn theme_previews(state: &Arc<WallState>, req: &Request) -> Response {
@@ -606,7 +618,7 @@ pub(super) fn set_audio(
 pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<Stats>) -> Response {
     state.reload_config();
     let path = req.str_param("path", "").to_string();
-    let cfg = state.config();
+    let cfg = skwd_wall_core::theme::profiles::configuration(state, &path);
     if path.is_empty() || !std::path::Path::new(&path).is_file() {
         return crate::infrastructure::rpc::fail_msg(
             stats,
@@ -619,7 +631,14 @@ pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<S
     let armed = match backend.as_str() {
         "noctalia" => cfg.theme().noctalia_hover_preview(),
         "dms" => cfg.theme().dms_hover_preview(),
-        "static" | "off" => false,
+        "off" => false,
+        "static" => {
+            let identity = skwd_wall_core::theme::profiles::identity(state, &path);
+            identity["key"].as_str().is_some_and(|key| {
+                skwd_config::theme_profile::settings(&cfg.theme().wallpaper_profiles(), key)
+                    .is_some()
+            })
+        }
         _ => true,
     };
     if !armed {

@@ -34,6 +34,20 @@ pub fn identity(state: &WallState, source: &str) -> Value {
     ).optional()).ok().flatten().unwrap_or_else(|| json!({"key": source, "name": source, "thumb": source}))
 }
 
+pub fn configuration(state: &WallState, source: &str) -> Config {
+    let mut config = state.config().clone();
+    let identity = identity(state, source);
+    if let Some(settings) = skwd_config::theme_profile::settings(
+        &config.theme().wallpaper_profiles(),
+        identity["key"].as_str().unwrap_or(source),
+    ) {
+        for (path, value) in settings {
+            config = config.with_override(&path, value);
+        }
+    }
+    config
+}
+
 pub fn selected(config: &Config, key: &str, dark: bool) -> Option<Value> {
     if config.theme().policy() != "wallpaper" {
         return None;
@@ -51,7 +65,7 @@ pub fn selected(config: &Config, key: &str, dark: bool) -> Option<Value> {
 }
 
 pub fn palette(state: &WallState, source: &str) -> Option<Value> {
-    let config = state.config().clone();
+    let config = configuration(state, source);
     if config.theme().policy() != "wallpaper" || config.theme().wallpaper_profiles().is_empty() {
         return None;
     }
@@ -67,7 +81,7 @@ pub fn current(state: &WallState) -> anyhow::Result<Value> {
 }
 
 pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
-    let config = state.config().clone();
+    let config = configuration(state, source);
     if config.theme().policy() == "off" {
         return Ok(());
     }
@@ -112,7 +126,7 @@ pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
 }
 
 pub fn apply(state: &WallState, source: &str) -> bool {
-    let config = state.config().clone();
+    let config = configuration(state, source);
     let Some(palette) = palette(state, source) else {
         return super::apply(&config, source);
     };

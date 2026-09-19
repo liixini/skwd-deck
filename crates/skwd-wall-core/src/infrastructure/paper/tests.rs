@@ -101,6 +101,7 @@ fn transition_policy_golden() {
         duration_ms: Some(700),
     });
     let policy = RendererPolicy {
+        load_timeout_ms: None,
         surface: None,
         idle_seconds: Some(45),
         transitions_enabled: Some(true),

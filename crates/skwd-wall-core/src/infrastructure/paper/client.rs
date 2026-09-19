@@ -33,7 +33,9 @@ pub struct PaperClient {
 
 impl PaperClient {
     pub fn configured(config: &Config) -> Self {
-        Self::new(config.renderer().paper_bin(), paper_socket_path())
+        let mut client = Self::new(config.renderer().paper_bin(), paper_socket_path());
+        client.io_timeout = IO_TIMEOUT.max(config.renderer().load_timeout() + IO_TIMEOUT);
+        client
     }
 
     pub fn new(binary: impl Into<PathBuf>, socket: impl Into<PathBuf>) -> Self {

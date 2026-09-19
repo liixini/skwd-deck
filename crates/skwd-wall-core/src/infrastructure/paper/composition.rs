@@ -133,6 +133,7 @@ pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolic
         .map(|output| (output.name.clone(), output_policy_fps(configured_fps, output.refresh_mhz)))
         .collect();
     RendererPolicy {
+        load_timeout_ms: Some(config.renderer().load_timeout().as_millis() as u64),
         surface: None,
         idle_seconds: Some(config.renderer().idle_pause_seconds()),
         transitions_enabled: Some(config.transition().active()),
