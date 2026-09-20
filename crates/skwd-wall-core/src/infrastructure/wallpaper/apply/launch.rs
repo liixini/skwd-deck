@@ -201,6 +201,7 @@ impl RendererLaunchKind {
 pub(crate) struct RendererLaunchSpec {
     kind: RendererLaunchKind,
     arguments: Vec<String>,
+    prepare_hidden: bool,
 }
 
 impl RendererLaunchSpec {
@@ -219,7 +220,12 @@ impl RendererLaunchSpec {
         };
         let mut arguments = still_args(output, path, fill_mode);
         arguments.push("--persist".to_string());
-        Self { kind, arguments }
+        Self { kind, arguments, prepare_hidden: false }
+    }
+
+    pub(crate) fn prepare_hidden(mut self, hidden: bool) -> Self {
+        self.prepare_hidden = hidden;
+        self
     }
 
     pub(crate) fn video_for(output: &str, arguments: Vec<String>) -> Self {
@@ -230,25 +236,23 @@ impl RendererLaunchSpec {
         } else {
             RendererLaunchKind::PerOutputVideo { output: output.to_string() }
         };
-        Self { kind, arguments }
+        Self { kind, arguments, prepare_hidden: false }
     }
 
     pub(crate) fn native_scene(outputs: &str, arguments: Vec<String>) -> Self {
-        Self { kind: RendererLaunchKind::NativeScene { outputs: outputs.to_string() }, arguments }
+        Self {
+            kind: RendererLaunchKind::NativeScene { outputs: outputs.to_string() },
+            arguments,
+            prepare_hidden: false,
+        }
     }
 
     pub(crate) fn managed_transition(arguments: Vec<String>) -> Self {
         let output = arguments.first().cloned().unwrap_or_else(|| "*".to_string());
-        Self { kind: RendererLaunchKind::ManagedTransition { output }, arguments }
-    }
-
-    pub(crate) fn standalone_transition(output: &str, mut arguments: Vec<String>) -> Self {
-        if !arguments.iter().any(|argument| argument == "--standalone") {
-            arguments.push("--standalone".to_string());
-        }
         Self {
-            kind: RendererLaunchKind::StandaloneTransition { output: output.to_string() },
+            kind: RendererLaunchKind::ManagedTransition { output },
             arguments,
+            prepare_hidden: false,
         }
     }
 
@@ -257,6 +261,7 @@ impl RendererLaunchSpec {
         Self {
             kind: RendererLaunchKind::StandaloneTransition { output: output.to_string() },
             arguments,
+            prepare_hidden: false,
         }
     }
 
@@ -277,9 +282,14 @@ impl RendererLaunchSpec {
             String::from("all")
         };
         let mut command = crate::proc::renderer(&executable);
+        command.env_remove("SKWD_PAPER_PREPARE_HIDDEN");
+        if self.prepare_hidden {
+            command.env("SKWD_PAPER_PREPARE_HIDDEN", "1");
+        }
         command
             .args(&self.arguments)
             .env("SKWD_PAPER_READY_SOCKET", wall_proto::resolve_socket())
+            .env("SKWD_PAPER_TRANSITION_FPS", config.transition().fps().to_string())
             .env("SKWD_PAPER_SAND_QUALITY", config.transition().sand_quality())
             .env("SKWD_PAPER_SAND_SCOPE", sand_scope)
             .env("SKWD_PAPER_SAND_PRIMARY", config.transition().sand_primary())
@@ -307,6 +317,13 @@ impl RendererLaunchSpec {
                 | RendererLaunchKind::NativeScene { .. }
         ) {
             command.env("SKWD_VK_LAYER", config.renderer().wallpaper_layer());
+        }
+        if matches!(
+            self.kind,
+            RendererLaunchKind::ManagedTransition { .. }
+                | RendererLaunchKind::StandaloneTransition { .. }
+        ) {
+            command.env("SKWD_VK_LAYER", "background");
         }
         if self.kind.is_steady() {
             command
@@ -362,6 +379,7 @@ impl RendererLaunchSpec {
                 timeout: self.kind.timeout(state.config().renderer().load_timeout()),
                 label: self.kind.label(),
                 committed: false,
+                hidden: self.prepare_hidden,
             },
         })
     }
@@ -590,6 +608,7 @@ struct RendererTransaction<'a> {
     timeout: Duration,
     label: &'static str,
     committed: bool,
+    hidden: bool,
 }
 
 impl RendererTransaction<'_> {
@@ -603,6 +622,30 @@ impl RendererTransaction<'_> {
             Some(_) => false,
             None => self.target.candidate_alive(self.state, self.pid),
         }
+    }
+
+    fn send_line(&mut self, line: &str) -> anyhow::Result<()> {
+        if let Some((_, stdin)) = self.detached.as_mut() {
+            let stdin = stdin.as_mut().context("renderer has no control stdin")?;
+            return stdin
+                .write_all(line.as_bytes())
+                .and_then(|()| stdin.flush())
+                .context("write renderer command");
+        }
+        let (child, mut stdin) =
+            self.target.take_candidate(self.state).context("renderer candidate disappeared")?;
+        let result = if child.id() == self.pid {
+            stdin.as_mut().context("renderer has no control stdin").and_then(|stdin| {
+                stdin
+                    .write_all(line.as_bytes())
+                    .and_then(|()| stdin.flush())
+                    .context("write renderer command")
+            })
+        } else {
+            Err(anyhow::anyhow!("renderer candidate was replaced"))
+        };
+        self.target.restore_unrelated(self.state, (child, stdin));
+        result
     }
 
     fn retire_displaced(&mut self) {
@@ -676,6 +719,15 @@ impl<'a> ReadyRenderer<'a> {
         self.transaction.pid
     }
 
+    pub(crate) fn reveal_still(mut self) -> anyhow::Result<Self> {
+        if !std::mem::take(&mut self.transaction.hidden) {
+            return Ok(self);
+        }
+        self.transaction.state.renderers().arm_ready_gate(self.transaction.pid);
+        self.transaction.send_line(&paper_control::StillCommand::reveal().line())?;
+        RendererStartup { transaction: self.transaction }.wait_ready()
+    }
+
     pub(crate) fn prepare_commit(mut self) -> anyhow::Result<PreparedRenderer<'a>> {
         if !self.transaction.candidate_alive() {
             anyhow::bail!("{} exited before commit", self.transaction.label);
@@ -695,16 +747,7 @@ pub(crate) struct PreparedRenderer<'a> {
 
 impl PreparedRenderer<'_> {
     pub(crate) fn start_transition(&mut self) -> anyhow::Result<()> {
-        let stdin = self
-            .transaction
-            .detached
-            .as_mut()
-            .and_then(|(_, stdin)| stdin.as_mut())
-            .context("staged transition has no control stdin")?;
-        stdin
-            .write_all(paper_control::PaperCommand::pause(false).line().as_bytes())
-            .and_then(|()| stdin.flush())
-            .context("release staged transition")
+        self.transaction.send_line(&paper_control::PaperCommand::pause(false).line())
     }
 
     pub(crate) fn finalize(mut self) -> u32 {
@@ -750,10 +793,6 @@ mod tests {
             "DP-1,DP-2",
             vec!["DP-1,DP-2".into(), "/we/42".into(), "--scene".into(), "/we/42".into()],
         );
-        let standalone = RendererLaunchSpec::standalone_transition(
-            "DP-1",
-            vec!["DP-1".into(), "/w/b.png".into()],
-        );
         let staged =
             RendererLaunchSpec::staged_transition("DP-1", vec!["DP-1".into(), "/w/c.png".into()]);
         assert_eq!(still.command(&state).get_program(), OsStr::new("/bin/still"));
@@ -763,11 +802,57 @@ mod tests {
         let extended = Duration::from_secs(60);
         assert_eq!(still.kind.timeout(extended), extended);
         assert_eq!(scene.kind.timeout(extended), extended);
-        assert!(standalone.arguments.iter().any(|argument| argument == "--standalone"));
         assert!(staged.arguments.iter().any(|argument| argument == "--transition-hold"));
         assert!(staged.control_stdin());
-        assert!(!standalone.control_stdin());
-        assert!(matches!(standalone.kind, RendererLaunchKind::StandaloneTransition { .. }));
+        assert!(matches!(staged.kind, RendererLaunchKind::StandaloneTransition { .. }));
+    }
+
+    #[test]
+    fn static_transition_layer_matches_still_without_changing_dynamic_layers() {
+        for layer in ["background", "bottom", "top", "overlay"] {
+            let state =
+                WallState::test_new(serde_json::json!({"paper": {"wallpaperLayer": layer}}));
+            for spec in [
+                RendererLaunchSpec::managed_transition(vec![]),
+                RendererLaunchSpec::staged_transition("DP-1", vec![]),
+            ] {
+                assert_eq!(
+                    command_env(&spec.command(&state), "SKWD_VK_LAYER").as_deref(),
+                    Some("background")
+                );
+            }
+            for spec in [
+                RendererLaunchSpec::video_for("*", vec![]),
+                RendererLaunchSpec::native_scene("DP-1", vec![]),
+            ] {
+                assert_eq!(
+                    command_env(&spec.command(&state), "SKWD_VK_LAYER").as_deref(),
+                    Some(layer)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hidden_preparation_is_explicit_and_cleared_for_other_launches() {
+        let state = WallState::test_new(serde_json::json!({}));
+        let hidden = RendererLaunchSpec::static_for("*", "/new.png", "fill")
+            .prepare_hidden(true)
+            .command(&state);
+        assert_eq!(command_env(&hidden, "SKWD_PAPER_PREPARE_HIDDEN").as_deref(), Some("1"));
+        for spec in [
+            RendererLaunchSpec::static_for("*", "/new.png", "fill"),
+            RendererLaunchSpec::video_for("*", vec![]),
+            RendererLaunchSpec::native_scene("DP-1", vec![]),
+            RendererLaunchSpec::staged_transition("DP-1", vec![]),
+        ] {
+            let command = spec.command(&state);
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == "SKWD_PAPER_PREPARE_HIDDEN" && value.is_none())
+            );
+        }
     }
 
     #[test]

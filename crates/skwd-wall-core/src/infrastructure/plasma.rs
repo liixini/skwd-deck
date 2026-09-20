@@ -290,7 +290,10 @@ fn assignments(
         }
         let (width, height) = output.logical_size();
         let mut assignment = paper_assignment(state, &output.name, entry)?;
-        assignment.transition = transitions.get(&output.name).cloned();
+        assignment.transition = transitions.get(&output.name).cloned().map(|mut transition| {
+            transition.fps = Some(state.config().transition().output_fps(output.refresh_mhz));
+            transition
+        });
         assignments.insert(
             output.name.clone(),
             serde_json::json!({

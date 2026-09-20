@@ -137,6 +137,7 @@ pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolic
         surface: None,
         idle_seconds: Some(config.renderer().idle_pause_seconds()),
         transitions_enabled: Some(config.transition().active()),
+        transition_fps: Some(config.transition().fps() as u16),
         sand: Some(SandPolicy {
             quality: Some(quality),
             scope: Some(scope),

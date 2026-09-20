@@ -9,7 +9,9 @@ fn ppid() -> Option<u32> {
 }
 
 fn is_long_lived(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--persist" || arg == "-o" || arg == "--scene")
+    args.iter().any(|arg| {
+        arg == "--persist" || arg == "-o" || arg == "--scene" || arg == "--transition-hold"
+    })
 }
 
 fn signal_ready(pid: u32) {
@@ -31,7 +33,7 @@ fn is_swap_command(line: &str) -> bool {
     })
 }
 
-fn acknowledge_swaps(pid: u32) {
+fn acknowledge_swaps(pid: u32, held: bool) {
     let delay = std::env::var("SKWD_FAKE_SWAP_DELAY_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -40,6 +42,15 @@ fn acknowledge_swaps(pid: u32) {
         .and_then(|path| std::fs::File::options().create(true).append(true).open(path).ok());
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { return };
+        let value: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+        if value["reveal"] == true {
+            signal_ready(pid);
+            continue;
+        }
+        if held && value["pause"] == false {
+            std::thread::sleep(Duration::from_millis(400));
+            std::process::exit(0);
+        }
         if is_swap_command(&line) {
             if let Some(trace) = trace.as_mut() {
                 let command: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -74,7 +85,9 @@ fn main() {
         std::thread::sleep(Duration::from_millis(400));
         return;
     }
-    std::thread::spawn(move || acknowledge_swaps(pid));
+    let held = args.iter().any(|arg| arg == "--transition-hold")
+        && !args.iter().any(|arg| arg == "--persist");
+    std::thread::spawn(move || acknowledge_swaps(pid, held));
     let parent = ppid();
     let deadline = Instant::now() + Duration::from_secs(240);
     loop {

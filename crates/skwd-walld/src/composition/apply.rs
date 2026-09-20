@@ -595,7 +595,7 @@ fn video_render(
     }
     let render_path = tinier.as_ref().map_or_else(|| path.to_string(), |video| video.path.clone());
     let frame_rate = tinier.as_ref().map(|video| video.frame_rate.as_str());
-    if output != "*" {
+    if output != "*" || skwd_wall_core::plasma::available() {
         return application.apply_output(ApplyOutputRequest {
             output,
             kind: wall_proto::kind::VIDEO,

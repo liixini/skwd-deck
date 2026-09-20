@@ -133,6 +133,7 @@ fn assignment_carries_only_the_requested_transition() {
     let transitions = std::collections::BTreeMap::from([(
         "DP-2".to_string(),
         crate::infrastructure::paper::TransitionPolicy {
+            fps: None,
             from: Some("/wall/old.png".into()),
             effect: Some("inkwell-drop".into()),
             duration_ms: Some(700),
@@ -188,4 +189,44 @@ fn plasma_without_its_plugin_reports_the_missing_package() {
     std::fs::create_dir_all(metadata.parent().unwrap()).unwrap();
     std::fs::write(metadata, "{}").unwrap();
     assert!(super::require_backend_for(true, &roots, false).is_ok());
+}
+
+#[test]
+fn transition_fps_follows_each_display_without_changing_playback() {
+    for (cap, expected) in [(0, [60, 144]), (30, [30, 30]), (120, [60, 120])] {
+        let state = crate::state::WallState::test_new(serde_json::json!({
+            "transition":{"fps":cap}, "weRender":{"fps":24}
+        }));
+        let outputs = [("DP-1", 60_000), ("DP-2", 144_000)].map(|(name, refresh_mhz)| {
+            crate::outputs::OutputInfo {
+                name: name.to_string(),
+                width: 1920,
+                height: 1080,
+                refresh_mhz,
+                ..Default::default()
+            }
+        });
+        let map = serde_json::json!({
+            "DP-1":{"type":"video","path":"/wall/b.mp4"},
+            "DP-2":{"type":"video","path":"/wall/b.mp4"}
+        });
+        let transitions = outputs
+            .iter()
+            .map(|output| {
+                (
+                    output.name.clone(),
+                    crate::infrastructure::paper::TransitionPolicy {
+                        from: Some("/wall/a.png".into()),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        let payload =
+            assignments(&state, &outputs, map.as_object().unwrap(), &transitions).unwrap();
+        for (index, output) in outputs.iter().enumerate() {
+            assert_eq!(payload[&output.name]["fps"], 24);
+            assert_eq!(payload[&output.name]["assignment"]["transition"]["fps"], expected[index]);
+        }
+    }
 }

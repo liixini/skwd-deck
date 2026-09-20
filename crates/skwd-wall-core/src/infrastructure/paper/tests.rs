@@ -96,11 +96,13 @@ fn transition_policy_golden() {
         },
     );
     configured.transition = Some(TransitionPolicy {
+        fps: None,
         from: Some("/wall/a.png".into()),
         effect: Some("sand-bloom".into()),
         duration_ms: Some(700),
     });
     let policy = RendererPolicy {
+        transition_fps: None,
         load_timeout_ms: None,
         surface: None,
         idle_seconds: Some(45),

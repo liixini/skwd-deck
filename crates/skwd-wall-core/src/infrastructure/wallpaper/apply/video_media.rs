@@ -36,6 +36,7 @@ pub fn apply_video_transition(
             state,
             "*",
             Some(crate::infrastructure::paper::TransitionPolicy {
+                fps: None,
                 from: Some(from.to_string()),
                 effect: Some(shader.to_string()),
                 duration_ms: Some(duration_ms),

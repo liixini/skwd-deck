@@ -48,7 +48,7 @@ pub fn transition_args_for(
         "--fill-mode".to_string(),
         fill_mode.to_string(),
         "--layer".to_string(),
-        "bottom".to_string(),
+        "background".to_string(),
     ]
 }
 

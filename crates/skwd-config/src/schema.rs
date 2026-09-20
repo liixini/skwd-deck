@@ -381,6 +381,8 @@ pub mod setting {
 
         pub const DURATION_MS: Setting<f64> =
             Setting::bounded_number(keys::transition::DURATION_MS, 600.0, 50.0, 10_000.0);
+        pub const FPS: Setting<f64> =
+            Setting::bounded_number(keys::transition::FPS, 0.0, 0.0, 1_000.0);
         pub const ENABLED: Setting<bool> = Setting::boolean(keys::transition::ENABLED, true);
         pub const PREVIEW_FPS: Setting<f64> =
             Setting::bounded_number(keys::transition::PREVIEW_FPS, 30.0, 1.0, 1_000.0);
@@ -478,6 +480,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::selector::SLICE_STAGE_X.spec(),
     setting::selector::SLICE_STAGE_Y.spec(),
     setting::transition::DURATION_MS.spec(),
+    setting::transition::FPS.spec(),
     setting::transition::ENABLED.spec(),
     setting::transition::PREVIEW_FPS.spec(),
     setting::transition::SHADER.spec(),
@@ -901,6 +904,11 @@ pub fn read_number_with(root: &Value, path: &str, compact: bool) -> Option<f64> 
             }
         }
         _ => return None,
+    };
+    let default = if path == crate::keys::transition::FPS {
+        crate::num_at(root, crate::keys::transition::SAND_FPS, default)
+    } else {
+        default
     };
     let value = crate::num_at(root, path, default);
     Some(spec.number_bounds.map_or(value, |bounds| value.clamp(bounds.min, bounds.max)))

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::domain::wallpaper::{is_safe_positional, managed_transition_args};
+use crate::domain::wallpaper::is_safe_positional;
 use crate::state::WallState;
 
 use super::engine::apply_static_override;
@@ -10,126 +10,22 @@ use super::resolver::resolve_current_image;
 use super::transaction::{ReadyHandoff, ReusePolicy};
 use super::transition::TransitionPlan;
 
-const STATIC_TRANSITION_HANDOFF_GRACE: std::time::Duration = std::time::Duration::from_millis(120);
+mod transitions;
 
-pub fn apply_static_transition(
-    state: &WallState,
-    from: &str,
-    to: &str,
-    fill_mode: &str,
-    shader: &str,
-    duration_ms: u64,
-) -> anyhow::Result<()> {
-    validate_source(from)?;
-    validate_source(to)?;
-    if crate::plasma::available() {
-        let outputs = crate::outputs::names();
-        let transition = crate::infrastructure::paper::TransitionPolicy {
-            from: Some(from.to_string()),
-            effect: Some(shader.to_string()),
-            duration_ms: Some(duration_ms),
-        };
-        return apply_static_smart_with_outputs(
-            state,
-            StaticSteadyRequest::new("*", to, fill_mode, &outputs),
-            Some(transition),
-        );
-    }
-    if let Some(result) = apply_static_override(state, "*", to, fill_mode) {
-        return result;
-    }
-    let args = managed_transition_args(from, to, fill_mode, shader, duration_ms);
-    let overlay = super::RendererLaunchSpec::managed_transition(args).spawn(state)?.wait_ready()?;
-    let overlay_pid = overlay.pid();
-    let transition_ready_at = std::time::Instant::now();
-    let outputs = crate::outputs::names();
-    apply_static_smart_with_outputs(
-        state,
-        StaticSteadyRequest::preserving_transition("*", to, fill_mode, &outputs),
-        None,
-    )?;
-    overlay.commit()?;
-    let animation_done_at = transition_ready_at + std::time::Duration::from_millis(duration_ms);
-    let retire_at =
-        animation_done_at.max(std::time::Instant::now()) + STATIC_TRANSITION_HANDOFF_GRACE;
-    let retire_delay = retire_at.saturating_duration_since(std::time::Instant::now());
-    state.renderers_shared().allow_session_rendering_for(overlay_pid, retire_delay);
-    state.renderers_shared().retire_paper_after(overlay_pid, retire_delay);
-    Ok(())
-}
+pub(super) use transitions::apply_static_per_output_transition;
+pub use transitions::apply_static_transition;
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn apply_static_per_output_transition(
-    state: &WallState,
-    outputs: &[String],
-    from: &str,
-    to: &str,
-    fill_mode: &str,
-    shader: &str,
-    duration_ms: u64,
-    transition_primary: Option<&str>,
-) -> anyhow::Result<()> {
-    validate_source(from)?;
-    validate_source(to)?;
-    let mut overlays = Vec::with_capacity(outputs.len());
-    for output in outputs {
-        if transition_primary.is_some_and(|primary| output != primary) {
-            continue;
-        }
-        let output_fill = state.config().display().fill_mode_for(output);
-        let args = crate::domain::wallpaper::transition_args_for(
-            output,
-            from,
-            to,
-            &output_fill,
-            shader,
-            duration_ms,
-        );
-        overlays.push(super::RendererLaunchSpec::standalone_transition(output, args).spawn(state)?);
-    }
-    let mut ready = Vec::with_capacity(overlays.len());
-    for overlay in overlays {
-        ready.push(overlay.wait_ready()?);
-    }
-    let prepared = ready
-        .into_iter()
-        .map(super::launch::ReadyRenderer::prepare_commit)
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    for overlay in prepared {
-        overlay.finalize();
-    }
-    apply_static_smart_with_outputs(
-        state,
-        StaticSteadyRequest::new("*", to, fill_mode, outputs),
-        None,
-    )
-}
-
-enum PaperRetention {
-    Retire,
-    PreserveTransition,
-}
-
+#[derive(Clone, Copy)]
 pub(super) struct StaticSteadyRequest<'a> {
     output: &'a str,
     path: &'a str,
     fill_mode: &'a str,
     outputs: &'a [String],
-    retention: PaperRetention,
 }
 
 impl<'a> StaticSteadyRequest<'a> {
     fn new(output: &'a str, path: &'a str, fill_mode: &'a str, outputs: &'a [String]) -> Self {
-        Self { output, path, fill_mode, outputs, retention: PaperRetention::Retire }
-    }
-
-    fn preserving_transition(
-        output: &'a str,
-        path: &'a str,
-        fill_mode: &'a str,
-        outputs: &'a [String],
-    ) -> Self {
-        Self { output, path, fill_mode, outputs, retention: PaperRetention::PreserveTransition }
+        Self { output, path, fill_mode, outputs }
     }
 }
 
@@ -179,6 +75,7 @@ pub(super) fn apply_static_owned(
         let plasma_transition = (transition.enabled()
             && from.is_some_and(|previous| previous != path))
         .then(|| crate::infrastructure::paper::TransitionPolicy {
+            fps: None,
             from: from.map(str::to_string),
             effect: Some(transition.shader().to_string()),
             duration_ms: Some(transition.duration_ms()),
@@ -253,7 +150,7 @@ pub(super) fn apply_static_smart_with_outputs(
     request: StaticSteadyRequest<'_>,
     plasma_transition: Option<crate::infrastructure::paper::TransitionPolicy>,
 ) -> anyhow::Result<()> {
-    let StaticSteadyRequest { output, path, fill_mode, outputs, retention } = request;
+    let StaticSteadyRequest { output, path, fill_mode, outputs } = request;
     let path_owned = resolve_current_image(path);
     let path = path_owned.as_str();
     validate_source(path)?;
@@ -283,10 +180,7 @@ pub(super) fn apply_static_smart_with_outputs(
         .collect();
     let uniform = resolved.iter().all(|(_, assigned)| *assigned == resolved[0].1)
         && fills.iter().all(|fill| *fill == fills[0]);
-    let reuse = match retention {
-        PaperRetention::Retire => ReusePolicy::WarmAllowed,
-        PaperRetention::PreserveTransition => ReusePolicy::ColdOnly,
-    };
+    let reuse = ReusePolicy::WarmAllowed;
     if let Err(error) = spawn_resolved_stills(
         state,
         outputs,
@@ -299,9 +193,7 @@ pub(super) fn apply_static_smart_with_outputs(
         state.renderers().replace_assignments(previous_assignments);
         return Err(error);
     }
-    if matches!(retention, PaperRetention::Retire) {
-        state.renderers().kill_paper();
-    }
+    state.renderers().kill_paper();
     state.renderers().kill_video_papers();
     state.renderers().kill_holders();
     record_paper_policy(state);
@@ -435,7 +327,10 @@ pub(super) fn reconcile_static_multi<'a>(
                 state.renderers().kill_output_still(output);
             }
         } else {
-            let renderer = match spawn_base_still(state, &key, &path, &fill) {
+            let renderer = match super::RendererLaunchSpec::static_for(&key, &path, &fill)
+                .prepare_hidden(reuse.prepares_hidden())
+                .spawn(state)
+            {
                 Ok(renderer) => renderer,
                 Err(error) => {
                     log::warn!("shared still for {key} failed to spawn ({error:#}), per-output");
@@ -496,7 +391,11 @@ pub(super) fn reconcile_static<'a>(
         state.renderers().kill_video_paper(output);
         None
     } else {
-        let renderer = spawn_base_still(state, output, path, &output_fill)?.wait_ready()?;
+        validate_source(path)?;
+        let renderer = super::RendererLaunchSpec::static_for(output, path, &output_fill)
+            .prepare_hidden(reuse.prepares_hidden())
+            .spawn(state)?
+            .wait_ready()?;
         Some(super::transaction::ReadyHandoff {
             renderer,
             assignments: vec![(output.to_string(), path.to_string())],

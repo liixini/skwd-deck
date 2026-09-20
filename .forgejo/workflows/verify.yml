@@ -26,6 +26,8 @@ jobs:
       RUST_BACKTRACE: "1"
       SKWD_RUNNER_IMAGE: sha256:66058d5c15a5011188ee634bb909d730c279ab0d65408581b5d70e99a6970edb
       SKWD_VERIFY_ROOT: ../skwd-verify
+      SKWD_VERIFY_TEST_ENV: /var/tmp/skwd-verify-venv-${{ github.run_id }}-${{ github.run_attempt }}
+      TMPDIR: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: skwd-deck
@@ -40,7 +42,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-paper
-          ref: c1e4c76f63fad3734255428dd5708432cd97a2d5
+          ref: 6007a048f685496dd22e0495f8949b0094e916fa
           path: skwd-paper
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -58,7 +60,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-verify
-          ref: 6f7ec2f89007fc29fd350bb9a496b203676985c0
+          ref: d72dbeb599fd884c13f0b55e59f3df2b42d28d80
           path: skwd-verify
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -81,7 +83,12 @@ jobs:
             deck-cargo-${{ github.event_name }}-rust-1.94.1-
 
       - name: Create result directory
-        run: mkdir -p ci-artifacts/results
+        run: mkdir -p ci-artifacts/results "$TMPDIR"
+
+      - name: Prepare Python test environment
+        run: |
+          python3 -m venv "$SKWD_VERIFY_TEST_ENV"
+          "$SKWD_VERIFY_TEST_ENV/bin/python" -m pip install --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: -r "$SKWD_VERIFY_ROOT/scripts/requirements-ci.txt"
 
       - name: Verify system-test repository
         working-directory: skwd-verify
@@ -89,7 +96,7 @@ jobs:
         run: >-
           python3 scripts/ci-report.py wrap
           --suite verify.repository --out ../skwd-deck/ci-artifacts/results/verify-repository.json
-          -- scripts/test-all.sh
+          -- env "PATH=$SKWD_VERIFY_TEST_ENV/bin:$PATH" scripts/test-all.sh
 
       - name: Format
         continue-on-error: true

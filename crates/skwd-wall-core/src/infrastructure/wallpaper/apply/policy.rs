@@ -27,6 +27,7 @@ pub(super) struct PaperPolicy {
     pub(super) sand_primary: String,
     pub(super) sand_sharp: bool,
     pub(super) sand_fps: String,
+    pub(super) transition_fps: u32,
     pub(super) output_refresh: String,
     pub(super) transitions_active: bool,
 }
@@ -52,6 +53,7 @@ impl PaperPolicy {
             self.sand_primary,
             self.sand_sharp,
             self.sand_fps,
+            self.transition_fps,
             self.output_refresh,
             self.transitions_active,
         ])
@@ -105,6 +107,7 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         sand_primary: config.transition().sand_primary(),
         sand_sharp: config.transition().sand_sharp(),
         sand_fps: config.transition().sand_fps(),
+        transition_fps: config.transition().fps(),
         output_refresh: crate::outputs::refresh_signature(&crate::outputs::enumerate()),
         transitions_active: config.transition().active(),
     }

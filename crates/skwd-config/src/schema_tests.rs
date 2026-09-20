@@ -200,3 +200,14 @@ fn picker_monitor_apply_is_opt_in_and_boolean() {
     assert_eq!(read_boolean(&json!({"general":{"applyOnPickerMonitor":true}}), path), Some(true));
     assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
 }
+
+#[test]
+fn transition_fps_is_independent_and_preserves_legacy_caps() {
+    let key = crate::keys::transition::FPS;
+    assert_eq!(read_number(&json!({"weRender":{"fps":24}}), key), Some(0.0));
+    assert_eq!(read_number(&json!({"transition":{"sandFps":45}}), key), Some(45.0));
+    assert_eq!(read_number(&json!({"transition":{"fps":0,"sandFps":45}}), key), Some(0.0));
+    assert_eq!(read_number(&json!({"transition":{"fps":120}}), key), Some(120.0));
+    assert_eq!(normalize_value(key, &json!(-5)), Some(json!(0)));
+    assert_eq!(normalize_value(key, &json!(2000)), Some(json!(1000)));
+}

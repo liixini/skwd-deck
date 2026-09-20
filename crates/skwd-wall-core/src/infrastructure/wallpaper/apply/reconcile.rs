@@ -81,12 +81,7 @@ pub fn apply_independent_video(
     crate::audio::expand_wildcard(&cache, &outputs);
     let intent =
         transition.map_or(ReconcileIntent::PolicyRefresh, |request| ReconcileIntent::Apply {
-            transition: super::transition::TransitionSelection::Explicit {
-                enabled: request.enabled,
-                shader: request.shader,
-                duration_ms: request.duration_ms,
-            }
-            .resolve(state),
+            transition: super::transition::TransitionSelection::from(request).resolve(state),
         });
     let result = reconcile_outputs(state, &outputs, &intent);
     if result.is_err() {
@@ -158,6 +153,7 @@ fn reconcile_outputs_inner(
                 Some((
                     output.name.clone(),
                     crate::infrastructure::paper::TransitionPolicy {
+                        fps: None,
                         from: Some(from),
                         effect: Some(plan.shader().to_string()),
                         duration_ms: Some(plan.duration_ms()),
@@ -217,14 +213,7 @@ fn reconcile_outputs_inner(
         transition,
         transition_primary.as_deref(),
     );
-    let overlay_startups = overlay_plans
-        .into_iter()
-        .map(|plan| RendererLaunchSpec::staged_transition(&plan.output, plan.args).spawn(state))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let mut overlays = Vec::with_capacity(overlay_startups.len());
-    for overlay in overlay_startups {
-        overlays.push(overlay.wait_ready()?);
-    }
+    let static_reuse = if overlay_plans.is_empty() { reuse } else { ReusePolicy::PrepareHidden };
 
     let static_handled = reconcile_static_multi(
         state,
@@ -233,7 +222,7 @@ fn reconcile_outputs_inner(
             targets: &targets,
             keep_still: &mut keep_still,
             pending: &mut pending,
-            reuse,
+            reuse: static_reuse,
         },
     );
     let multi_video_handled = reconcile_video_multi(
@@ -297,7 +286,7 @@ fn reconcile_outputs_inner(
                 }
                 if let Some(handoff) = reconcile_static(
                     state,
-                    StaticReconcileRequest { output, path, previous, reuse },
+                    StaticReconcileRequest { output, path, previous, reuse: static_reuse },
                 )? {
                     pending.push(handoff);
                 }
@@ -334,6 +323,15 @@ fn reconcile_outputs_inner(
             we_assignments
                 .push((output.clone(), if path.is_empty() { we_id } else { path }.to_string()));
         }
+    }
+
+    let overlay_startups = overlay_plans
+        .into_iter()
+        .map(|plan| RendererLaunchSpec::staged_transition(&plan.output, plan.args).spawn(state))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut overlays = Vec::with_capacity(overlay_startups.len());
+    for overlay in overlay_startups {
+        overlays.push(overlay.wait_ready()?);
     }
 
     let mut prepared_batch = prepare_batch(pending, prepared_we, overlays)?;

@@ -23,7 +23,7 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 52,
+      "expectedSkips": 54,
       "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
     },
     {

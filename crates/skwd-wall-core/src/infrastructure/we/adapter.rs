@@ -501,7 +501,19 @@ pub fn apply_we(
             mute,
             volume,
         };
-        if apply::independent_playback(state) {
+        if crate::plasma::available() {
+            apply::apply_output_with_transition(
+                state,
+                "*",
+                wall_proto::kind::VIDEO,
+                request.path,
+                "",
+                request.fill_mode,
+                mute,
+                volume,
+                transition,
+            )?;
+        } else if apply::independent_playback(state) {
             apply::apply_independent_video(state, request, transition)?;
         } else if let Some(transition) =
             transition.filter(|request| request.enabled && !state.apply().no_transition())
@@ -528,6 +540,20 @@ pub fn apply_we(
             )?;
         }
     } else {
+        if crate::plasma::available() {
+            apply::apply_output_with_transition(
+                state,
+                "*",
+                wall_proto::kind::WE,
+                "",
+                we_id,
+                &state.config().display().fill_mode(),
+                mute,
+                volume,
+                transition,
+            )?;
+            return Ok(preview);
+        }
         let outs = outputs::names();
         let cache = state.config().cache_dir();
         let prev = crate::audio::read_state(&cache);
@@ -541,15 +567,6 @@ pub fn apply_we(
             );
         }
         let (groups, we_audio) = apply::resolve_we_from_state(&map);
-        if crate::plasma::available() {
-            crate::audio::write_state(&cache, &serde_json::Value::Object(map));
-            crate::plasma::apply_current(state)?;
-            crate::plasma::retire_native(state);
-            for out in &keys {
-                state.renderers().set_assignment(out, &item_dir.display().to_string());
-            }
-            return Ok(preview);
-        }
         let (scene_mute, scene_volume) = we_audio.get(we_id).copied().unwrap_or((true, 100));
         let size = if apply::independent_playback(state) { 1 } else { keys.len().max(1) };
         let mut candidates = Vec::new();

@@ -7,9 +7,14 @@ use super::lifecycle::allow_transition_to_finish;
 pub(super) enum ReusePolicy {
     WarmAllowed,
     ColdOnly,
+    PrepareHidden,
 }
 
 impl ReusePolicy {
+    pub(super) fn prepares_hidden(self) -> bool {
+        matches!(self, Self::PrepareHidden)
+    }
+
     pub(super) fn allows_warm(self) -> bool {
         matches!(self, Self::WarmAllowed)
     }
@@ -26,7 +31,7 @@ pub(super) struct ReadyHandoff<'a> {
 impl<'a> ReadyHandoff<'a> {
     pub(super) fn prepare_commit(self) -> anyhow::Result<PreparedHandoff<'a>> {
         Ok(PreparedHandoff {
-            renderer: self.renderer.prepare_commit()?,
+            renderer: self.renderer.reveal_still()?.prepare_commit()?,
             assignments: self.assignments,
             transition_duration: self.transition_duration,
         })

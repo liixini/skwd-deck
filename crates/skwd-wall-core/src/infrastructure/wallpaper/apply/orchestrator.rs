@@ -17,8 +17,8 @@
 
 use crate::state::WallState;
 
+use super::static_media::native_still_override;
 use super::transition::TransitionSelection;
-use super::{lifecycle::validate_source, static_media::native_still_override};
 
 pub use super::engine::{VideoEngine, video_engine_is_vk};
 pub use super::policy::{
@@ -44,8 +44,8 @@ pub fn apply_static(
     duration_ms: u64,
 ) -> anyhow::Result<()> {
     let resolved = super::resolver::resolve_current_image(path);
-    if output != "*" {
-        let plasma = crate::plasma::available();
+    let plasma = crate::plasma::available();
+    if output != "*" || plasma {
         if let Some(result) = native_still_override(state, plasma, output, &resolved, fill_mode) {
             return result;
         }
@@ -107,7 +107,7 @@ pub fn apply_output_with_transition(
     volume: u32,
     transition_request: Option<crate::backend::wallpaper::OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<()> {
-    validate_source(path)?;
+    super::lifecycle::validate_source(path)?;
     crate::awww::stop();
     let cache = state.config().cache_dir();
     let monitors = crate::outputs::names();
@@ -118,16 +118,14 @@ pub fn apply_output_with_transition(
     );
     let previous = crate::audio::read_state(&cache);
     crate::audio::expand_wildcard(&cache, &monitors);
-    crate::audio::set_entry(&cache, output, ty, path, we_id, mute, volume);
-    let transition = match transition_request {
-        Some(request) => TransitionSelection::Explicit {
-            enabled: request.enabled,
-            shader: request.shader,
-            duration_ms: request.duration_ms,
-        },
-        None => TransitionSelection::Configured,
+    if output == "*" {
+        super::lifecycle::record_all_with_audio(state, &monitors, ty, path, we_id, mute, volume);
+    } else {
+        crate::audio::set_entry(&cache, output, ty, path, we_id, mute, volume);
     }
-    .resolve(state);
+    let transition = transition_request
+        .map_or(TransitionSelection::Configured, TransitionSelection::from)
+        .resolve(state);
     let result = super::reconcile::reconcile_outputs(
         state,
         &monitors,

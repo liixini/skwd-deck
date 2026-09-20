@@ -459,6 +459,7 @@ pub mod keys {
     }
     pub mod transition {
         pub const DURATION_MS: &str = "transition.durationMs";
+        pub const FPS: &str = "transition.fps";
         pub const ENABLED: &str = "transition.enabled";
         pub const FAMILY: &str = "transition.family";
         pub const PREVIEW: &str = "transition.preview";

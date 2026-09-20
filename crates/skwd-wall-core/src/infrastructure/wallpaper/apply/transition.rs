@@ -9,6 +9,16 @@ pub(super) enum TransitionSelection<'a> {
     Explicit { enabled: bool, shader: &'a str, duration_ms: u64 },
 }
 
+impl<'a> From<crate::backend::wallpaper::OutputTransitionRequest<'a>> for TransitionSelection<'a> {
+    fn from(request: crate::backend::wallpaper::OutputTransitionRequest<'a>) -> Self {
+        Self::Explicit {
+            enabled: request.enabled,
+            shader: request.shader,
+            duration_ms: request.duration_ms,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct TransitionPlan {
     enabled: bool,

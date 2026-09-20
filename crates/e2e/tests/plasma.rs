@@ -8,6 +8,9 @@ use std::time::Duration;
 
 const STUB: &str = "fake_renderer";
 
+#[path = "plasma/transitions.rs"]
+mod transitions;
+
 fn plasma_session(name: &str) -> (Sandbox, FakePlasma) {
     let mut sandbox = Sandbox::new(name);
     let plasma = FakePlasma::install(

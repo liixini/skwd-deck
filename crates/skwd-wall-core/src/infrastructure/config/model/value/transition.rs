@@ -50,6 +50,17 @@ impl<'a> TransitionConfig<'a> {
         self.config.str_at(skwd_config::keys::transition::SAND_PRIMARY, "")
     }
 
+    pub fn fps(&self) -> u32 {
+        skwd_config::schema::read_number(self.root(), skwd_config::keys::transition::FPS)
+            .unwrap_or(0.0) as u32
+    }
+
+    pub fn output_fps(&self, refresh_mhz: i32) -> u32 {
+        let fps = self.fps();
+        let limit = if fps == 0 { if refresh_mhz > 0 { 1000 } else { 60 } } else { fps };
+        crate::outputs::effective_fps(limit, refresh_mhz)
+    }
+
     pub fn sand_fps(&self) -> String {
         let fps = self
             .config

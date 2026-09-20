@@ -81,6 +81,26 @@ pub(super) fn record_and_dedup(
     crate::audio::mute_dedup_losers(state, &cache);
 }
 
+pub(super) fn record_all_with_audio(
+    state: &WallState,
+    outputs: &[String],
+    ty: &str,
+    path: &str,
+    we_id: &str,
+    default_mute: bool,
+    default_volume: u32,
+) {
+    let cache = state.config().cache_dir();
+    let previous = crate::audio::read_state(&cache);
+    let mut map = serde_json::Map::new();
+    for output in outputs {
+        let (mute, volume) =
+            crate::audio::carried_audio(&previous, output, default_mute, default_volume);
+        map.insert(output.clone(), crate::audio::entry(ty, path, we_id, mute, volume));
+    }
+    crate::audio::write_state(&cache, &serde_json::Value::Object(map));
+}
+
 pub(super) fn record_static(state: &WallState, resolved: &[(String, String)]) {
     let (cache, default_mute, default_volume) = {
         let config = state.config();

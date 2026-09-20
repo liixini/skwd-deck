@@ -185,7 +185,7 @@ fn transition_args_named() {
     assert_eq!(args[1], "/new.png");
     assert!(args.windows(2).any(|pair| pair == ["--transition-from", "/old.png"]));
     assert!(args.windows(2).any(|pair| pair == ["--duration-ms", "600"]));
-    assert!(args.windows(2).any(|pair| pair == ["--layer", "bottom"]));
+    assert!(args.windows(2).any(|pair| pair == ["--layer", "background"]));
     assert!(!args.contains(&"--persist".to_string()));
 }
 
@@ -258,7 +258,7 @@ fn transition_args_flags() {
     assert!(args.windows(2).any(|pair| pair == ["--transition-from", "/old.png"]));
     assert!(args.windows(2).any(|pair| pair == ["--shader", "fade"]));
     assert!(args.windows(2).any(|pair| pair == ["--duration-ms", "800"]));
-    assert!(args.windows(2).any(|pair| pair == ["--layer", "bottom"]));
+    assert!(args.windows(2).any(|pair| pair == ["--layer", "background"]));
     assert!(!args.contains(&"--persist".to_string()));
 }
 
@@ -864,20 +864,23 @@ fn reconcile_static_overlay() {
     st.renderers().set_assignment("DP-1", old);
     seed(&st, "DP-1", "static", "/w/new.png", "", true, 0);
     reconcile_ready(&st, "fill", &["DP-1".to_string()], true, "fade", 600).unwrap();
+    let launches = launch_order(st.path());
+    assert_eq!(launches.len(), 2);
+    assert_eq!(launches[0].1, vec!["DP-1", "/w/new.png", "--fill-mode", "fit", "--persist"]);
     assert_eq!(
-        wait_spawns(st.path(), 1),
-        vec![staged(transition_args_for("DP-1", old, "/w/new.png", "fit", "fade", 600,))]
+        launches[1].1,
+        staged(transition_args_for("DP-1", old, "/w/new.png", "fit", "fade", 600))
     );
-    let overlay = launch_order(st.path()).into_iter().next().unwrap();
     assert_eq!(
-        wait_stdin_lines(&st.path().join(format!("{}.stdin", overlay.0)), 1)[0]["pause"],
+        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[0].0)), 1)[0],
+        serde_json::json!({"path":"", "reveal":true})
+    );
+    assert_eq!(
+        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[1].0)), 1)[0]["pause"],
         false
     );
     assert!(st.renderers().has_output_still("DP-1"));
-    assert_eq!(
-        wait_stdin_lines(&out, 1),
-        vec![serde_json::json!({"path": "/w/new.png", "fill": "fit"})]
-    );
+    assert_eq!(std::fs::read_to_string(out).unwrap_or_default(), "");
 }
 
 #[test]
@@ -919,10 +922,10 @@ fn shared_still_transitions_changed() {
     );
     assert!(st.renderers().has_output_still("DP-1,DP-2"));
     let launches = launch_order(st.path());
-    assert!(launches[0].1.contains(&"--transition-hold".to_string()));
-    assert!(launches[1].1.contains(&"--persist".to_string()));
+    assert!(launches[1].1.contains(&"--transition-hold".to_string()));
+    assert!(launches[0].1.contains(&"--persist".to_string()));
     assert_eq!(
-        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[0].0)), 1)[0]["pause"],
+        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[1].0)), 1)[0]["pause"],
         false
     );
     assert_eq!(st.renderers().assignments().get("DP-1").map(String::as_str), Some(shared));
@@ -930,7 +933,7 @@ fn shared_still_transitions_changed() {
 }
 
 #[test]
-fn video_to_static_stages_overlay_before_background() {
+fn video_to_static_prepares_background_before_held_overlay() {
     let st = Stub::new();
     let old = st.path().join("old.mp4");
     std::fs::write(&old, b"video").unwrap();
@@ -945,12 +948,12 @@ fn video_to_static_stages_overlay_before_background() {
     let launches = launch_order(st.path());
     assert_eq!(launches.len(), 2);
     assert_eq!(
-        launches[0].1,
+        launches[1].1,
         staged(transition_args_for("DP-1", old, "/w/new.png", "fill", "fade", 600))
     );
-    assert_eq!(launches[1].1, vec!["DP-1", "/w/new.png", "--fill-mode", "fill", "--persist"]);
+    assert_eq!(launches[0].1, vec!["DP-1", "/w/new.png", "--fill-mode", "fill", "--persist"]);
     assert_eq!(
-        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[0].0)), 1)[0]["pause"],
+        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[1].0)), 1)[0]["pause"],
         false
     );
     assert!(st.renderers().has_output_still("DP-1"));
@@ -997,8 +1000,8 @@ fn mixed_fill_per_output_overlays() {
         ready.join().unwrap();
     });
 
-    let spawns = wait_spawns(st.path(), 2);
-    assert!(spawns.contains(&standalone(transition_args_for(
+    let spawns = wait_spawns(st.path(), 4);
+    assert!(spawns.contains(&staged(transition_args_for(
         "DP-1",
         "/w/old.png",
         "/w/new.png",
@@ -1006,7 +1009,7 @@ fn mixed_fill_per_output_overlays() {
         "fade",
         600,
     ))));
-    assert!(spawns.contains(&standalone(transition_args_for(
+    assert!(spawns.contains(&staged(transition_args_for(
         "DP-2",
         "/w/old.png",
         "/w/new.png",
@@ -1014,14 +1017,16 @@ fn mixed_fill_per_output_overlays() {
         "fade",
         600,
     ))));
-    assert_eq!(
-        wait_stdin_lines(&dp1_out, 1),
-        vec![serde_json::json!({"path": "/w/new.png", "fill": "fill"})]
-    );
-    assert_eq!(
-        wait_stdin_lines(&dp2_out, 1),
-        vec![serde_json::json!({"path": "/w/new.png", "fill": "fit"})]
-    );
+    for (pid, args) in launch_order(st.path()) {
+        let line = &wait_stdin_lines(&st.path().join(format!("{pid}.stdin")), 1)[0];
+        if args.contains(&"--transition-hold".to_string()) {
+            assert_eq!(line["pause"], false);
+        } else {
+            assert_eq!(line["reveal"], true);
+        }
+    }
+    assert_eq!(std::fs::read_to_string(dp1_out).unwrap_or_default(), "");
+    assert_eq!(std::fs::read_to_string(dp2_out).unwrap_or_default(), "");
     assert_eq!(recorded(&st)["DP-1"]["path"], "/w/new.png");
     assert_eq!(recorded(&st)["DP-2"]["path"], "/w/new.png");
 }
@@ -1992,13 +1997,13 @@ fn static_fade_overlay() {
     let _ready = st.readiness();
     apply_static_transition(&st, "/w/old.png", "/w/new.png", "fill", "fade", 600).unwrap();
     let launches = wait_spawns(st.path(), 2);
-    assert!(launches.contains(&managed_transition_args(
+    assert!(launches.contains(&staged(managed_transition_args(
         "/w/old.png",
         "/w/new.png",
         "fill",
         "fade",
         600
-    )));
+    ))));
     assert!(launches.contains(&vec![
         "*".into(),
         "/w/new.png".into(),
@@ -2031,20 +2036,13 @@ fn delayed_static_destination(fail: bool) {
             apply_static_transition(&st, "/w/old.png", "/w/new.png", "fill", "crossfade", 100)
         });
         wait_spawns(st.path(), 1);
-        let overlay_pid = launch_order(st.path())[0].0;
+        let destination_pid = launch_order(st.path())[0].0;
+        st.renderers().signal_ready(destination_pid);
+        wait_spawns(st.path(), 2);
+        let overlay_pid = launch_order(st.path())[1].0;
         st.renderers().signal_ready(overlay_pid);
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while launch_order(st.path()).len() < 2
-            && !action.is_finished()
-            && Instant::now() < deadline
-        {
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        let launches = launch_order(st.path());
-        let Some((destination_pid, _)) = launches.get(1) else {
-            return (action.join().unwrap(), false, overlay_pid, 0, false);
-        };
-        let destination_pid = *destination_pid;
+        let reveal = wait_stdin_lines(&st.path().join(format!("{destination_pid}.stdin")), 1);
+        assert_eq!(reveal[0]["reveal"], true);
         std::thread::sleep(Duration::from_millis(350));
         let held = !action.is_finished()
             && Path::new(&format!("/proc/{overlay_pid}")).exists()
@@ -2106,10 +2104,9 @@ fn session_keeps_transition_running() {
     let pid = st.renderers().paper_pid().unwrap();
     st.renderers().end_apply();
     std::thread::sleep(Duration::from_millis(30));
-    assert_eq!(
-        std::fs::read_to_string(st.path().join(format!("{pid}.stdin"))).unwrap_or_default(),
-        ""
-    );
+    let lines = wait_stdin_lines(&st.path().join(format!("{pid}.stdin")), 1);
+    assert!(lines.iter().any(|line| line["pause"] == false));
+    assert!(!lines.iter().any(|line| line["pause"] == true));
     st.renderers().set_session_paused(11, false);
 }
 
