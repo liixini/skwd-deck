@@ -51,6 +51,31 @@ fn profile_identity_survives_a_thumbnail_replacement() {
 }
 
 #[test]
+fn pinned_variant_reaches_apply_and_preview_without_mutating_global_settings() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut light = palette();
+    light["primary"] = json!("#abcdef");
+    let state = WallState::test_new(json!({
+        "paths": {"cache": directory.path()},
+        "theme": {"policy": "wallpaper", "mode": "dark", "wallpaperProfiles": [{
+            "key": "wallpaper-x", "enabled": true, "dark": palette(), "light": light,
+            "settingsPinned": true, "settings": {"theme.mode": "light"}
+        }]}
+    }));
+    state.with_db(|db| db.execute(
+        "INSERT INTO meta (key, name, type, thumb) VALUES ('wallpaper-x', 'X', 'static', '/x.jpg')", []
+    )).unwrap();
+    assert_eq!(super::palette(&state, "/x.jpg"), Some(light.clone()));
+    assert_eq!(crate::bridge_preview::cached_palette(&state, "/x.jpg"), Some(light));
+    assert!(apply(&state, "/x.jpg"));
+    remember_applied(&state, "/x.jpg").unwrap();
+    let applied = current(&state).unwrap();
+    assert_eq!(applied["palette"]["primary"], "#abcdef");
+    assert_eq!(applied["dark"], false);
+    assert_eq!(state.config().theme().mode(), "dark");
+}
+
+#[test]
 fn current_snapshot_ignores_hover_and_pending_wallpaper() {
     let directory = tempfile::tempdir().unwrap();
     let state = WallState::test_new(

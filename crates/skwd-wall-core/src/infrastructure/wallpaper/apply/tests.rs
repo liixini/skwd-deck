@@ -395,6 +395,9 @@ fn paper_policy_signature_fields() {
     let st = Stub::new();
     let base = current_paper_policy(&st);
     let mut changed = base.clone();
+    changed.load_timeout_ms = 60_000;
+    assert_ne!(base.signature(), changed.signature());
+    changed = base.clone();
     changed.idle_pause_seconds = base.idle_pause_seconds.saturating_add(1);
     assert_ne!(base.signature(), changed.signature());
     changed = base.clone();

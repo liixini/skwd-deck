@@ -443,3 +443,41 @@ fn saved_scheme_reaches_current_theme_and_templates() {
     }
     drop(walld);
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn wallpaper_load_timeout_controls_delayed_transition_readiness() {
+    let stub = skwd_e2e::stub_renderer!();
+    for seconds in [3, 6] {
+        let mut sandbox = Sandbox::new("load-timeout");
+        sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+        sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+        sandbox.set_env("SKWD_E2E_TRANSITION_DELAY_MS", "3800");
+        let first = sandbox.library().join("first.png");
+        let second = sandbox.library().join("second.png");
+        assert!(ffmpeg_still(&first, "color=c=red:s=320x180"));
+        assert!(ffmpeg_still(&second, "color=c=blue:s=320x180"));
+        sandbox.write_config(&json!({
+            "paths": {"wallpaper": sandbox.library()},
+            "pickOnlyMode": false, "restoreOnStartup": false,
+            "general": {"randomInterval": 0},
+            "theme": {"backend": "off"},
+            "paper": {"loadTimeoutSeconds": seconds},
+            "transition": {"enabled": false}
+        }));
+        let walld = Walld::start(&sandbox);
+        let mut client = walld.client();
+        let initial = client.call(
+            "wall.apply",
+            json!({"type":"static", "path":first,"no_transition":true,"notify":false}),
+            1,
+        );
+        let initial = initial.expect("initial apply reply");
+        assert!(initial.get("result").is_some(), "{initial}");
+        let reply = client.call("wall.apply", json!({"type":"static", "path":second,"transition":true,"transition_shader":"crossfade","transition_duration_ms":100,"notify":false}), 2);
+        let reply = reply.expect("transition apply reply");
+        assert_eq!(reply.get("result").is_some(), seconds == 6, "{reply}");
+        let expected = if seconds == 6 { &second } else { &first };
+        assert_eq!(star(&sandbox, "path"), json!(expected));
+    }
+}

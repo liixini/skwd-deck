@@ -162,7 +162,7 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     if state.theme().shell_preview_generation() != generation {
         return Ok(());
     }
-    let config = state.config().clone();
+    let config = crate::theme::profiles::configuration(state, image);
     let shell_colors = colors_path();
     if !shell_colors.is_file() {
         anyhow::bail!(

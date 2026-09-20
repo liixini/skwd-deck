@@ -937,6 +937,41 @@ fn theme_preview_profiles() {
 }
 
 #[test]
+fn pinned_preview_and_transient_overrides_leave_global_configuration_unchanged() {
+    let (_guard, _root) = testenv::lock();
+    testenv::write_config(json!({"theme": {
+        "policy": "fixed", "staticTheme": "nord", "mode": "dark", "style": "natural",
+        "wallpaperProfiles": [{"key": "pinned", "settingsPinned": true,
+            "settings": {"theme.policy": "fixed", "theme.staticTheme": "dracula"}}]
+    }}));
+    let (state, subs, stats) = harness();
+    state.with_db(|db| db.execute(
+        "INSERT INTO meta (key, name, type, thumb) VALUES ('pinned', 'Pinned', 'static', '/pinned.jpg')", []
+    )).unwrap();
+    let base = rr(call(&state, &subs, &stats, "theme.preview", json!({"image": "/other.jpg"})));
+    let pinned = rr(call(&state, &subs, &stats, "theme.preview", json!({"image": "/pinned.jpg"})));
+    assert!(!pinned["palette"].is_null());
+    assert_ne!(pinned["palette"], base["palette"]);
+    let overridden = rr(call(
+        &state,
+        &subs,
+        &stats,
+        "theme.preview",
+        json!({
+            "image": "/pinned.jpg", "settings": {"theme.staticTheme": "nord"}
+        }),
+    ));
+    assert_eq!(overridden["palette"], base["palette"]);
+    let restored =
+        rr(call(&state, &subs, &stats, "theme.preview", json!({"image": "/pinned.jpg"})));
+    assert_eq!(restored["palette"], pinned["palette"]);
+    assert_eq!(
+        state.config().theme().settings_snapshot().get("theme.staticTheme"),
+        Some(&json!("nord"))
+    );
+}
+
+#[test]
 fn theme_backends_detected() {
     let (_guard, _root) = testenv::lock();
     let (state, subs, stats) = harness();

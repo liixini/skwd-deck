@@ -1,7 +1,6 @@
 use crate::domain::wallpaper::{is_safe_positional, video_transition_args, vk_video_args};
 use crate::state::WallState;
 
-use super::launch::READY_TIMEOUT;
 use super::lifecycle::{
     allow_transition_to_finish, defer_kill_after_swap, record_and_dedup, set_all_video_assignments,
     spawn_video_paper, validate_source,
@@ -67,7 +66,9 @@ pub fn apply_video_transition(
             mute,
             volume,
         ) {
-            if !swap_pid.is_some_and(|pid| state.renderers().wait_ready(pid, READY_TIMEOUT)) {
+            if !swap_pid.is_some_and(|pid| {
+                state.renderers().wait_ready(pid, state.config().renderer().load_timeout())
+            }) {
                 anyhow::bail!(
                     "Vulkan video renderer rejected or timed out during transition warm swap"
                 );
@@ -205,7 +206,9 @@ pub(super) fn apply_video_vk(
         && !state.renderers().is_scene_paper("*")
         && state.renderers().video_swap("*", path, mute, volume)
     {
-        if !swap_pid.is_some_and(|pid| state.renderers().wait_ready(pid, READY_TIMEOUT)) {
+        if !swap_pid.is_some_and(|pid| {
+            state.renderers().wait_ready(pid, state.config().renderer().load_timeout())
+        }) {
             anyhow::bail!("Vulkan video renderer rejected or timed out during warm swap");
         }
         if let (Some(pid), Some(duration_ms)) = (swap_pid, transition_duration_ms) {

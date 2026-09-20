@@ -7,6 +7,7 @@ mod key_catalog;
 mod power;
 pub mod schema;
 mod settings;
+pub mod theme_profile;
 mod value;
 
 pub use atomic::{atomic_write, atomic_write_mode, follow_links};

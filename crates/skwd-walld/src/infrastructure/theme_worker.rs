@@ -72,7 +72,7 @@ async fn worker(
 
 fn apply_theme(state: &skwd_wall_core::WallState, events: &dyn EventPublisher, path: &str) {
     state.theme().bump_shell_preview();
-    let cfg = state.config().clone();
+    let cfg = skwd_wall_core::theme::profiles::configuration(state, path);
     for sink in &skwd_wall_core::theme_sink::SINKS {
         (sink.forget)(state);
     }

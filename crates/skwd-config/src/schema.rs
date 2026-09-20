@@ -389,6 +389,7 @@ pub mod setting {
 }
 
 const STATIC_SPECS: &[SettingSpec] = &[
+    SettingSpec::bounded_number(crate::keys::paper::LOAD_TIMEOUT_SECONDS, 3.0, 3.0, 60.0),
     SettingSpec::text(crate::keys::selector::START_POSITION, "beginning"),
     SettingSpec::text(crate::keys::selector::LAST_APPLIED_KEY, ""),
     setting::filter_bar::DEFAULT_FOLDER.spec(),
@@ -643,6 +644,10 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::theme::CUSTOM_COLORS, ""),
     SettingSpec::text(crate::keys::theme::STATIC_THEME, "nord"),
     SettingSpec::text(crate::keys::theme::WALLUST_PALETTE, ""),
+    SettingSpec::text(crate::keys::theme::WALLUST_COLORSPACE, ""),
+    SettingSpec::text(crate::keys::theme::PYWAL_SATURATE, ""),
+    SettingSpec::text(crate::keys::theme::NOCTALIA_SCHEME, ""),
+    SettingSpec::boolean(crate::keys::theme::NOCTALIA_PURE_BLACK, false),
     SettingSpec::text(crate::keys::transition::SAND_PRIMARY, ""),
     SettingSpec::text(crate::keys::transition::SAND_QUALITY, "auto"),
     SettingSpec::text(crate::keys::transition::SAND_SCOPE, "all"),

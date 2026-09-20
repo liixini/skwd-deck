@@ -63,6 +63,12 @@ fn main() {
     let pid = std::process::id();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let persist = is_long_lived(&args);
+    if args.iter().any(|arg| arg == "--transition-from")
+        && let Ok(ms) = std::env::var("SKWD_E2E_TRANSITION_DELAY_MS")
+        && let Ok(ms) = ms.parse::<u64>()
+    {
+        std::thread::sleep(Duration::from_millis(ms));
+    }
     signal_ready(pid);
     if !persist {
         std::thread::sleep(Duration::from_millis(400));

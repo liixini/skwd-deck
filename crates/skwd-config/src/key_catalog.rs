@@ -133,6 +133,7 @@ pub mod keys {
         pub const LOCK_SCREEN_MODE: &str = "plasma.lockScreen.mode";
     }
     pub mod paper {
+        pub const LOAD_TIMEOUT_SECONDS: &str = "paper.loadTimeoutSeconds";
         pub const WALLPAPER_LAYER: &str = "paper.wallpaperLayer";
         pub const AWWW_INVERT_Y: &str = "paper.awww.invertY";
         pub const AWWW_TRANSITION_ANGLE: &str = "paper.awww.transitionAngle";
