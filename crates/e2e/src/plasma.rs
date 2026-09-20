@@ -12,6 +12,7 @@ pub fn script_assignments(script: &str) -> Option<Map<String, Value>> {
 
 pub struct FakePlasma {
     dir: PathBuf,
+    _wayland: crate::FakeWayland,
 }
 
 impl FakePlasma {
@@ -35,7 +36,8 @@ impl FakePlasma {
         sandbox.set_env("PATH", &path);
         sandbox.set_env("XDG_CURRENT_DESKTOP", "KDE");
         sandbox.set_env("SKWD_E2E_PLASMA", &dir.to_string_lossy());
-        Self { dir }
+        let wayland = crate::FakeWayland::start(sandbox, &["org_kde_plasma_shell"]);
+        Self { dir, _wayland: wayland }
     }
 
     pub fn calls(&self) -> Vec<Vec<String>> {

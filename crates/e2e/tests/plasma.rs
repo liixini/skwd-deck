@@ -385,3 +385,85 @@ fn plasma_lock_screen_off_gives_the_lock_screen_back() {
     );
     assert!(walld.responsive());
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn compositor_protocol_overrides_stale_desktop_names() {
+    for (index, desktop) in ["KDE", "niri:KDE", "GNOME:Plasma", ""].into_iter().enumerate() {
+        let mut sandbox = Sandbox::new(&format!("desktop-stale-{index}"));
+        sandbox.set_env("XDG_CURRENT_DESKTOP", desktop);
+        sandbox.set_env("KDE_FULL_SESSION", "true");
+        sandbox.set_env("XDG_DATA_DIRS", &sandbox.root.join("empty").to_string_lossy());
+        sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080");
+        let stub = skwd_e2e::stub_renderer!();
+        sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+        sandbox.write_config(&json!({
+            "paths": {"wallpaper": sandbox.library()},
+            "restoreOnStartup": false,
+            "general": {"randomInterval": 0},
+            "theme": {"policy": "off"},
+            "transition": {"enabled": false},
+            "plasma": {"lockScreen": {"mode": "follow"}},
+        }));
+        if index % 2 == 1 {
+            let plugin = sandbox.root.join("data/plasma/wallpapers/org.skwd.wall.plasma");
+            std::fs::create_dir_all(&plugin).unwrap();
+            std::fs::write(plugin.join("metadata.json"), "{}").unwrap();
+        }
+        let image = still(&sandbox, "stale.png", "red");
+        let _wayland = skwd_e2e::FakeWayland::start(
+            &mut sandbox,
+            &["zwlr_layer_shell_v1", "org_kde_kwin_server_decoration_manager"],
+        );
+        let walld = Walld::start(&sandbox);
+        call(&walld, &mut walld.client(), "wall.apply", json!({"type": "static", "path": image}));
+        assert!(
+            wait_until(|| !child_pids(walld.pid(), STUB).is_empty(), Duration::from_secs(5)),
+            "desktop={desktop}: {}",
+            walld.log_contents()
+        );
+        assert!(!walld.log_contents().contains("skwd-paper-plasma"), "{}", walld.log_contents());
+    }
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_protocol_requires_plugin_despite_non_plasma_desktop_name() {
+    let (mut sandbox, _plasma) = plasma_session("plasma-stale-niri");
+    sandbox.set_env("XDG_CURRENT_DESKTOP", "niri");
+    sandbox.set_env("XDG_DATA_DIRS", &sandbox.root.join("empty").to_string_lossy());
+    std::fs::remove_file(
+        sandbox.root.join("data/plasma/wallpapers/org.skwd.wall.plasma/metadata.json"),
+    )
+    .unwrap();
+    let image = still(&sandbox, "missing.png", "red");
+    let walld = Walld::start(&sandbox);
+    let reply =
+        walld.client().call("wall.apply", json!({"type": "static", "path": image}), 1).unwrap();
+    assert!(err_message(Some(&reply)).contains("skwd-paper-plasma"), "{reply}");
+    assert!(child_pids(walld.pid(), STUB).is_empty());
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_protocol_selects_plugin_without_desktop_hint() {
+    let (mut sandbox, plasma) = plasma_session("plasma-no-hint");
+    sandbox.set_env("XDG_CURRENT_DESKTOP", "");
+    let image = still(&sandbox, "actual.png", "blue");
+    let walld = Walld::start(&sandbox);
+    call(&walld, &mut walld.client(), "wall.apply", json!({"type": "static", "path": image}));
+    assert_eq!(plasma.scripts().len(), 1);
+    assert!(child_pids(walld.pid(), STUB).is_empty());
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn explicit_plasma_backend_disable_still_uses_native_renderer() {
+    let (mut sandbox, plasma) = plasma_session("plasma-disabled");
+    sandbox.set_env("SKWD_PLASMA_BACKEND", "0");
+    let image = still(&sandbox, "disabled.png", "blue");
+    let walld = Walld::start(&sandbox);
+    call(&walld, &mut walld.client(), "wall.apply", json!({"type": "static", "path": image}));
+    assert!(wait_until(|| !child_pids(walld.pid(), STUB).is_empty(), Duration::from_secs(5)));
+    assert!(plasma.scripts().is_empty());
+}

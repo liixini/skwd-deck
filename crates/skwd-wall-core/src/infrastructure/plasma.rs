@@ -11,6 +11,7 @@ use crate::state::WallState;
 
 pub mod channel;
 mod presentation;
+mod session;
 
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
 const LOCK_SCREEN_GROUPS: [&str; 4] = ["Greeter", "Wallpaper", PLUGIN_ID, "General"];
@@ -21,13 +22,6 @@ pub struct LockScreenCurrent<'a> {
     pub path: &'a str,
     pub we_id: &'a str,
     pub poster: &'a str,
-}
-
-fn desktop_is_plasma(value: &str) -> bool {
-    value
-        .split([':', ';', ','])
-        .map(str::trim)
-        .any(|part| part.eq_ignore_ascii_case("kde") || part.eq_ignore_ascii_case("plasma"))
 }
 
 fn data_roots() -> Vec<PathBuf> {
@@ -54,18 +48,21 @@ fn plugin_installed_in(roots: &[PathBuf]) -> bool {
         .any(|root| root.join("plasma/wallpapers").join(PLUGIN_ID).join("metadata.json").is_file())
 }
 
-fn enabled_for(desktop: &str, roots: &[PathBuf], disabled: bool) -> bool {
-    !disabled && desktop_is_plasma(desktop) && plugin_installed_in(roots)
+fn enabled_for(plasma: bool, roots: &[PathBuf], disabled: bool) -> bool {
+    !disabled && plasma && plugin_installed_in(roots)
 }
 
 pub fn available() -> bool {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    enabled_for(&desktop, &data_roots(), std::env::var("SKWD_PLASMA_BACKEND").as_deref() == Ok("0"))
+    enabled_for(
+        running_on_plasma(),
+        &data_roots(),
+        std::env::var("SKWD_PLASMA_BACKEND").as_deref() == Ok("0"),
+    )
 }
 
-fn require_backend_for(desktop: &str, roots: &[PathBuf], disabled: bool) -> anyhow::Result<()> {
+fn require_backend_for(plasma: bool, roots: &[PathBuf], disabled: bool) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !desktop_is_plasma(desktop) || disabled || plugin_installed_in(roots),
+        !plasma || disabled || plugin_installed_in(roots),
         "Plasma wallpaper support needs skwd-paper-plasma. Install the plugin and restart Plasma before applying a wallpaper."
     );
     Ok(())
@@ -73,14 +70,14 @@ fn require_backend_for(desktop: &str, roots: &[PathBuf], disabled: bool) -> anyh
 
 pub(crate) fn require_backend() -> anyhow::Result<()> {
     require_backend_for(
-        &std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        running_on_plasma(),
         &data_roots(),
         std::env::var("SKWD_PLASMA_BACKEND").as_deref() == Ok("0"),
     )
 }
 
 fn running_on_plasma() -> bool {
-    desktop_is_plasma(&std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default())
+    session::running_on_plasma()
 }
 
 fn qdbus_program_in(search_path: Option<&OsStr>) -> Option<PathBuf> {

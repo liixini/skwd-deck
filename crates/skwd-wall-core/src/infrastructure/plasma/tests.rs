@@ -1,15 +1,4 @@
-use super::{
-    PLUGIN_ID, assignments, desktop_is_plasma, enabled_for, plugin_installed_in, qdbus_program_in,
-    script,
-};
-
-#[test]
-fn desktop_tokens() {
-    assert!(desktop_is_plasma("KDE"));
-    assert!(desktop_is_plasma("GNOME:Plasma"));
-    assert!(!desktop_is_plasma("niri"));
-    assert!(!desktop_is_plasma("ukdesktop"));
-}
+use super::{PLUGIN_ID, assignments, enabled_for, plugin_installed_in, qdbus_program_in, script};
 
 #[test]
 fn plugin_data_roots() {
@@ -19,9 +8,9 @@ fn plugin_data_roots() {
     std::fs::create_dir_all(metadata.parent().unwrap()).unwrap();
     std::fs::write(metadata, "{}").unwrap();
     assert!(plugin_installed_in(&[directory.path().to_path_buf()]));
-    assert!(enabled_for("KDE", &[directory.path().to_path_buf()], false));
-    assert!(!enabled_for("niri", &[directory.path().to_path_buf()], false));
-    assert!(!enabled_for("KDE", &[directory.path().to_path_buf()], true));
+    assert!(enabled_for(true, &[directory.path().to_path_buf()], false));
+    assert!(!enabled_for(false, &[directory.path().to_path_buf()], false));
+    assert!(!enabled_for(true, &[directory.path().to_path_buf()], true));
 }
 
 #[test]
@@ -188,15 +177,15 @@ fn plasma_without_its_plugin_reports_the_missing_package() {
     let root = tempfile::tempdir().unwrap();
     let roots = [root.path().to_path_buf()];
     assert!(
-        super::require_backend_for("KDE", &roots, false)
+        super::require_backend_for(true, &roots, false)
             .unwrap_err()
             .to_string()
             .contains("skwd-paper-plasma")
     );
-    assert!(super::require_backend_for("niri", &roots, false).is_ok());
-    assert!(super::require_backend_for("KDE", &roots, true).is_ok());
+    assert!(super::require_backend_for(false, &roots, false).is_ok());
+    assert!(super::require_backend_for(true, &roots, true).is_ok());
     let metadata = root.path().join("plasma/wallpapers").join(PLUGIN_ID).join("metadata.json");
     std::fs::create_dir_all(metadata.parent().unwrap()).unwrap();
     std::fs::write(metadata, "{}").unwrap();
-    assert!(super::require_backend_for("KDE", &roots, false).is_ok());
+    assert!(super::require_backend_for(true, &roots, false).is_ok());
 }
