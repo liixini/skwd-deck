@@ -215,11 +215,17 @@ pub(super) fn scan_done(ctx: &Ctx, request: &Request) -> Response {
     Response::ok(request.id, json!({"ok": true}))
 }
 
-pub(super) fn effects_preview_rpc(request: &Request) -> Response {
+pub(super) fn effects_preview_rpc(state: &Arc<WallState>, request: &Request) -> Response {
     let input = request.opt_str("input").unwrap_or_default().to_string();
     let effect = request.opt_str("effect").unwrap_or_default().to_string();
     let params = request.params.get("params").cloned().unwrap_or_else(|| json!({}));
-    let effects = requested_effects(&effect, &params, request.params.get("effects"));
+    state.reload_config();
+    let mut effects = requested_effects(&effect, &params, request.params.get("effects"));
+    if let Err(error) =
+        crate::infrastructure::effects_preview::resolve_palettes(&mut effects, &state.config())
+    {
+        return Response::err(request.id, -32602, error.to_string());
+    }
     match effects_preview(&input, &effects) {
         Ok(output) => Response::ok(request.id, json!({"output": output})),
         Err(error) => Response::err(request.id, -32603, format!("effects.preview: {error}")),

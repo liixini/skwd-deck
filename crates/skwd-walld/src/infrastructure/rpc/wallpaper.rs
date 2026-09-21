@@ -90,7 +90,13 @@ pub(super) fn effects_commit_rpc(state: &Arc<WallState>, req: &Request) -> Respo
     let input = req.opt_str("input").unwrap_or_default().to_string();
     let effect = req.opt_str("effect").unwrap_or_default().to_string();
     let params = req.params.get("params").cloned().unwrap_or_else(|| json!({}));
-    let effects = requested_effects(&effect, &params, req.params.get("effects"));
+    state.reload_config();
+    let mut effects = requested_effects(&effect, &params, req.params.get("effects"));
+    if let Err(error) =
+        crate::infrastructure::effects_preview::resolve_palettes(&mut effects, &state.config())
+    {
+        return Response::err(req.id, -32602, error.to_string());
+    }
     let (wp_dir, vid_dir) = {
         let cfg = state.config();
         (cfg.wallpaper_dir(), cfg.video_dir())

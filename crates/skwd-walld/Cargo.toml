@@ -12,6 +12,7 @@ tempfile = { workspace = true }
 skwd-lens-proto = { path = "../../../skwd-lens/crates/skwd-lens-proto" }
 wall-rules = { path = "../wall-rules" }
 skwd-config = { path = "../skwd-config" }
+skwd-palette = { path = "../skwd-palette" }
 skwd-log = { path = "../skwd-log" }
 skwd-wall-core = { path = "../skwd-wall-core", features = ["daemon"] }
 anyhow = "1"

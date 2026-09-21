@@ -317,3 +317,31 @@ fn webp_lossless_detection() {
         assert!(!webp_is_lossless(junk), "{junk:?}");
     }
 }
+
+#[test]
+fn custom_palette_recolours_pixels_and_preserves_alpha() {
+    let input = DynamicImage::ImageRgba8(RgbaImage::from_pixel(3, 2, Rgba([44, 88, 132, 71])));
+    for effect in ["theme", "gradientmap"] {
+        let out =
+            render(effect, input.clone(), &json!({"theme": "saved:Mine", "palette": ["#204060"]}))
+                .unwrap()
+                .into_rgba8();
+        for pixel in out.pixels() {
+            for (actual, expected) in pixel.0[..3].iter().zip([32u8, 64, 96]) {
+                assert!(actual.abs_diff(expected) <= 1, "{effect}: {pixel:?}");
+            }
+            assert_eq!(pixel[3], 71);
+        }
+        for palette in [
+            json!([]),
+            json!(["#gggggg"]),
+            json!(["#12345678"]),
+            json!([42]),
+            json!("#123456"),
+            json!(vec!["#123456"; 257]),
+        ] {
+            assert!(render(effect, input.clone(), &json!({"palette": palette})).is_err());
+        }
+        assert!(render(effect, input.clone(), &json!({"theme": "saved:Deleted"})).is_err());
+    }
+}

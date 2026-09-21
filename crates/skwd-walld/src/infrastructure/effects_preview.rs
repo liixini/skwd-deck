@@ -1,3 +1,6 @@
+mod palettes;
+pub(crate) use palettes::resolve as resolve_palettes;
+
 fn effects_bin() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
@@ -10,17 +13,22 @@ fn effects_bin() -> std::path::PathBuf {
     std::path::PathBuf::from("skwd-wall-effects")
 }
 
-pub(crate) fn effects_list() -> anyhow::Result<serde_json::Value> {
+pub(crate) fn effects_list(
+    config: &skwd_wall_core::config::Config,
+) -> anyhow::Result<serde_json::Value> {
     let out = crate::infrastructure::proc::tool(effects_bin()).arg("list").output()?;
     if !out.status.success() {
         anyhow::bail!("{}", String::from_utf8_lossy(&out.stderr));
     }
-    Ok(serde_json::from_slice(&out.stdout)?)
+    let mut list = serde_json::from_slice(&out.stdout)?;
+    palettes::extend(&mut list, config);
+    Ok(list)
 }
 
 pub(crate) fn effect_ids() -> std::collections::HashSet<String> {
     let mut ids = std::collections::HashSet::new();
-    if let Ok(list) = effects_list()
+    if let Ok(list) =
+        effects_list(&skwd_wall_core::config::Config::from_root(serde_json::json!({})))
         && let Some(arr) = list.as_array()
     {
         for item in arr {
@@ -84,7 +92,14 @@ fn effects_suffix(effect: &str, params: &serde_json::Value) -> String {
     if effect == "theme"
         && let Some(theme) = params.get("theme").and_then(serde_json::Value::as_str)
     {
-        return format!("theme-{}", theme.to_lowercase().replace(' ', "-"));
+        return format!(
+            "theme-{}",
+            theme
+                .to_lowercase()
+                .chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                .collect::<String>()
+        );
     }
     effect.to_string()
 }
@@ -119,7 +134,11 @@ fn effect_chain_suffix(effects: &serde_json::Value) -> String {
     let hash = suffix.bytes().fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3)
     });
-    let prefix: String = suffix.chars().take(120).collect();
+    let prefix: String = suffix
+        .char_indices()
+        .take_while(|(offset, _)| *offset < 120)
+        .map(|(_, character)| character)
+        .collect();
     format!("{prefix}-stack-{hash:016x}")
 }
 
@@ -127,7 +146,11 @@ pub(crate) fn effect_tag_label(effect: &str, params: &serde_json::Value) -> Stri
     if effect == "theme"
         && let Some(theme) = params.get("theme").and_then(serde_json::Value::as_str)
     {
-        return theme.to_lowercase().replace(' ', "-");
+        return theme
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+            .collect::<String>();
     }
     effect.to_lowercase().replace(' ', "-")
 }

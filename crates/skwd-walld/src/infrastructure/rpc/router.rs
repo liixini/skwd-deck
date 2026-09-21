@@ -170,11 +170,14 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             events.publish(ev::RECOMPUTE_COMPLETE, req.params.clone());
             Response::ok(req.id, json!({"ok": true}))
         }
-        rpc::EFFECTS_LIST => match effects_list() {
-            Ok(list) => Response::ok(req.id, json!({"effects": list})),
-            Err(err) => Response::err(req.id, -32603, format!("effects.list: {err}")),
-        },
-        rpc::EFFECTS_PREVIEW => effects_preview_rpc(req),
+        rpc::EFFECTS_LIST => {
+            state.reload_config();
+            match effects_list(&state.config()) {
+                Ok(list) => Response::ok(req.id, json!({"effects": list})),
+                Err(err) => Response::err(req.id, -32603, format!("effects.list: {err}")),
+            }
+        }
+        rpc::EFFECTS_PREVIEW => effects_preview_rpc(state, req),
         rpc::EFFECTS_COMMIT => effects_commit_rpc(state, req),
         rpc::EFFECTS_DISCARD => {
             if let Some(preview) = req.opt_str("preview") {

@@ -5,13 +5,9 @@ use serde_json::Value;
 use skwd_palette::gowall as themes;
 
 pub(crate) fn apply(image: DynamicImage, params: &Value) -> anyhow::Result<DynamicImage> {
-    let name = params.get("theme").and_then(Value::as_str).unwrap_or("Catppuccin");
-    let palette = themes::lookup(name).ok_or_else(|| anyhow::anyhow!("unknown theme: {name}"))?;
-    if palette.is_empty() {
-        anyhow::bail!("theme {name} has no colours");
-    }
+    let palette = palette(params)?;
 
-    let lookup = build_palette_lut(palette, 50.0);
+    let lookup = build_palette_lut(&palette, 50.0);
     let rgba = image.into_rgba8();
     let (width, height) = (rgba.width(), rgba.height());
     let mut raw = rgba.into_raw();
@@ -75,4 +71,28 @@ fn build_palette_lut(palette: &[(u8, u8, u8)], sigma: f32) -> Vec<[u8; 3]> {
             ]
         })
         .collect()
+}
+
+pub(crate) fn palette(params: &Value) -> anyhow::Result<Vec<(u8, u8, u8)>> {
+    if let Some(value) = params.get("palette") {
+        let values = value.as_array().ok_or_else(|| anyhow::anyhow!("palette must be an array"))?;
+        anyhow::ensure!(
+            !values.is_empty() && values.len() <= 256,
+            "palette needs 1 to 256 colours"
+        );
+        return values
+            .iter()
+            .map(|value| {
+                let hex = value
+                    .as_str()
+                    .filter(|hex| hex.starts_with('#') && hex.len() == 7)
+                    .ok_or_else(|| anyhow::anyhow!("invalid palette colour: {value}"))?;
+                let rgb = skwd_palette::parse_hex(hex)
+                    .ok_or_else(|| anyhow::anyhow!("invalid palette colour: {hex}"))?;
+                Ok((rgb.0, rgb.1, rgb.2))
+            })
+            .collect();
+    }
+    let name = params.get("theme").and_then(Value::as_str).unwrap_or("Catppuccin");
+    themes::lookup(name).map(<[_]>::to_vec).ok_or_else(|| anyhow::anyhow!("unknown theme: {name}"))
 }

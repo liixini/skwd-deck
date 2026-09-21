@@ -78,3 +78,22 @@ fn long_stack_suffix() {
     assert!(suffix.len() < 180);
     assert!(suffix.contains("-stack-"));
 }
+
+#[test]
+fn saved_theme_names_cannot_add_output_path_components() {
+    let suffix = super::effect_chain_suffix(
+        &json!([{"effect": "theme", "params": {"theme": "saved:../../Mine/blue\\light"}}]),
+    );
+    assert!(!suffix.contains('/'));
+    assert!(!suffix.contains('\\'));
+    assert!(!suffix.contains(".."));
+}
+
+#[test]
+fn long_saved_theme_names_fit_output_filename_bytes() {
+    let suffix = super::effect_chain_suffix(
+        &json!([{"effect": "theme", "params": {"theme": format!("saved:{}", "森林".repeat(100))}}]),
+    );
+    assert!(suffix.len() < 180);
+    assert!(suffix.contains("-stack-"));
+}

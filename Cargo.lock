@@ -2393,6 +2393,7 @@ dependencies = [
  "skwd-config",
  "skwd-lens-proto",
  "skwd-log",
+ "skwd-palette",
  "skwd-wall-core",
  "tempfile",
  "tokio",

@@ -4,7 +4,7 @@ mod builtin;
 mod catalog;
 mod render;
 mod storage;
-mod theme;
+pub(crate) mod theme;
 
 pub(crate) use catalog::list;
 pub(crate) use render::render_effects_to_file;

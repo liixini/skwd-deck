@@ -10,8 +10,7 @@ use rayon::prelude::*;
 use serde_json::{Value, json};
 
 use super::imgutil::{
-    clampu8, color_param, f64_param, gradient_sample, hsl_to_rgb, i64_param, lerp, luma,
-    rgb_to_hsl, str_param,
+    clampu8, color_param, f64_param, gradient_sample, hsl_to_rgb, i64_param, lerp, luma, rgb_to_hsl,
 };
 use super::registry::EffectDef;
 use skwd_palette::gowall as themes;
@@ -89,12 +88,7 @@ fn gradientmap_schema() -> Value {
 }
 
 fn apply_gradientmap(img: DynamicImage, params: &Value) -> anyhow::Result<DynamicImage> {
-    let name = str_param(params, "theme", "Catppuccin");
-    let mut palette =
-        themes::lookup(name).ok_or_else(|| anyhow::anyhow!("unknown theme: {name}"))?.to_vec();
-    if palette.is_empty() {
-        anyhow::bail!("theme {name} has no colours");
-    }
+    let mut palette = crate::native::theme::palette(params)?;
     palette.sort_by(|a, b| luma(a.0, a.1, a.2).total_cmp(&luma(b.0, b.1, b.2)));
     let mut rgba = img.into_rgba8();
     rgba.par_chunks_exact_mut(4).for_each(|px| {
