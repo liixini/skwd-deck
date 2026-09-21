@@ -698,7 +698,10 @@ pub(super) fn wall_we_properties(ctx: &Ctx, req: &Request) -> Response {
         return Response::ok(req.id, json!({"we_id": we_id, "properties": []}));
     }
     let rows = skwd_wall_core::we::scene_properties(&ctx.state, we_id);
-    Response::ok(req.id, json!({"we_id": we_id, "properties": rows}))
+    Response::ok(
+        req.id,
+        json!({"we_id": we_id, "properties": rows, "fps": skwd_wall_core::we::scene_fps_override(&ctx.state, we_id), "global_fps": ctx.state.config().renderer().we_fps()}),
+    )
 }
 
 pub(super) fn wall_reset_thumbnail(ctx: &Ctx, req: &Request) -> Response {
@@ -718,11 +721,34 @@ pub(super) fn wall_set_we_property(ctx: &Ctx, req: &Request) -> Response {
         return fail(stats, req.id, anyhow::anyhow!("invalid Wallpaper Engine id"));
     }
     let reset = req.bool_param("reset", false);
-    if reset {
-        if let Err(err) = state.with_db(|conn| db::clear_we_properties(conn, &we_id)) {
+    let fps_request = req.params.get("fps");
+    let fps_changed = (reset && skwd_wall_core::we::scene_fps_override(state, &we_id).is_some())
+        || fps_request.is_some();
+    let _fps_apply = fps_changed.then(|| state.apply().lock());
+    if let Some(value) = fps_request {
+        let fps = if value.is_null() {
+            None
+        } else if let Some(fps) = value.as_u64().filter(|fps| (1..=240).contains(fps)) {
+            Some(fps as u32)
+        } else {
+            return fail(
+                stats,
+                req.id,
+                anyhow::anyhow!("scene FPS must be null or an integer from 1 to 240"),
+            );
+        };
+        if let Err(err) = state.with_db(|conn| db::set_we_scene_fps(conn, &we_id, fps)) {
             return fail(stats, req.id, err);
         }
-    } else {
+    }
+    if reset {
+        if let Err(err) = state.with_db(|conn| {
+            db::clear_we_properties(conn, &we_id)?;
+            db::set_we_scene_fps(conn, &we_id, None)
+        }) {
+            return fail(stats, req.id, err);
+        }
+    } else if fps_request.is_none() {
         if !db::valid_property_name(&name) {
             return fail(stats, req.id, anyhow::anyhow!("invalid scene property name"));
         }
@@ -753,8 +779,27 @@ pub(super) fn wall_set_we_property(ctx: &Ctx, req: &Request) -> Response {
         }
     }
     let rows = skwd_wall_core::we::scene_properties(state, &we_id);
-    let applied = reapply_scene_if_current(ctx, &we_id);
-    Response::ok(req.id, json!({"we_id": we_id, "properties": rows, "reapplied": applied}))
+    let applied = if fps_changed {
+        let current = skwd_wall_core::audio::read_state(&state.config().cache_dir());
+        let active = current.as_object().is_some_and(|outputs| {
+            outputs.values().any(|entry| {
+                entry.get("type").and_then(serde_json::Value::as_str) == Some(wall_proto::kind::WE)
+                    && entry.get("we_id").and_then(serde_json::Value::as_str) == Some(&we_id)
+            })
+        });
+        if active && let Err(error) = ctx.wallpaper.reload_we() {
+            return fail(stats, req.id, error);
+        }
+        active
+    } else {
+        reapply_scene_if_current(ctx, &we_id)
+    };
+    Response::ok(
+        req.id,
+        json!({"we_id": we_id, "properties": rows, "reapplied": applied,
+        "fps": skwd_wall_core::we::scene_fps_override(state, &we_id),
+        "global_fps": state.config().renderer().we_fps()}),
+    )
 }
 
 fn reapply_scene_if_current(ctx: &Ctx, we_id: &str) -> bool {

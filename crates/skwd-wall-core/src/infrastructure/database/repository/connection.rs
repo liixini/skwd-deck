@@ -173,6 +173,11 @@ pub(super) fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             DELETE FROM analysis_candidates WHERE key = OLD.key;
         END;
 
+        CREATE TABLE IF NOT EXISTS we_scene_fps(
+            we_id TEXT PRIMARY KEY,
+            fps INTEGER NOT NULL CHECK(fps BETWEEN 1 AND 240)
+        ) WITHOUT ROWID;
+
         CREATE TABLE IF NOT EXISTS we_properties(
             we_id TEXT NOT NULL,
             name TEXT NOT NULL,

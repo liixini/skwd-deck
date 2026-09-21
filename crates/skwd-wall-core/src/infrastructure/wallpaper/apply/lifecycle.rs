@@ -131,8 +131,9 @@ pub(crate) fn spawn_native_scene<'a>(
     state: &'a WallState,
     output: &str,
     args: &[String],
+    fps: u32,
 ) -> anyhow::Result<RendererStartup<'a>> {
-    RendererLaunchSpec::native_scene(output, args.to_vec()).spawn(state)
+    RendererLaunchSpec::native_scene(output, args.to_vec()).scene_fps(fps).spawn(state)
 }
 
 pub(crate) fn spawn_base_still<'a>(

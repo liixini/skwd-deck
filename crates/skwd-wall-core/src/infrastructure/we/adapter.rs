@@ -53,10 +53,20 @@ pub(crate) fn finalize_scene_set(state: &WallState, native: Vec<PreparedNativeSc
     let signature = apply::scene_properties_signature(
         &native.iter().map(|candidate| candidate.properties.clone()).collect::<Vec<_>>(),
     );
+    let fps: std::collections::BTreeMap<_, _> = native
+        .iter()
+        .map(|candidate| {
+            (candidate.properties.0.clone(), scene_fps(state, &candidate.properties.0))
+        })
+        .collect();
     for candidate in native {
         if let Some(renderer) = candidate.renderer {
             renderer.finalize();
         }
+        state.renderers().set_policy(
+            &format!("scene-fps:{}", candidate.key),
+            &scene_fps(state, &candidate.properties.0).to_string(),
+        );
         super::thumbnail::schedule(
             state,
             &candidate.key,
@@ -67,6 +77,7 @@ pub(crate) fn finalize_scene_set(state: &WallState, native: Vec<PreparedNativeSc
     state.renderers().replace_holders(Vec::new());
     state.renderers().retain_scene_papers(&native_keys);
     if has_native {
+        state.renderers().set_policy("scene-fps", &serde_json::to_string(&fps).unwrap_or_default());
         apply::record_native_scene_policies(state);
         apply::record_scene_properties(state, &signature);
     }
@@ -168,6 +179,24 @@ pub(crate) fn scene_overrides(
         .database()
         .with_connection(|connection| Ok(crate::db::we_properties(connection, we_id)))
         .unwrap_or_default()
+}
+
+pub fn scene_fps_override(state: &WallState, we_id: &str) -> Option<u32> {
+    state
+        .database()
+        .with_connection(|connection| crate::db::we_scene_fps(connection, we_id))
+        .unwrap_or_default()
+}
+
+pub fn scene_fps(state: &WallState, we_id: &str) -> u32 {
+    scene_fps_override(state, we_id).unwrap_or_else(|| state.config().renderer().we_fps())
+}
+
+pub(crate) fn scene_fps_matches(state: &WallState, key: &str, we_id: &str) -> bool {
+    state
+        .renderers()
+        .policy(&format!("scene-fps:{key}"))
+        .is_some_and(|fps| fps == scene_fps(state, we_id).to_string())
 }
 
 pub(crate) fn scene_renderer_key(outputs: &[String]) -> String {
@@ -319,6 +348,7 @@ fn native_scene<'a>(
     let renderer_key = target.clone();
     if allow_warm_swap
         && apply::native_scene_policy_matches(state)
+        && scene_fps_matches(state, &renderer_key, we_id)
         && state.renderers().is_scene_paper(&renderer_key)
         && state.renderers().has_video_paper(&renderer_key)
     {
@@ -380,7 +410,8 @@ fn native_scene<'a>(
         args.push("--duration-ms".to_string());
         args.push(duration_ms.to_string());
     }
-    let renderer = apply::spawn_native_scene(state, &renderer_key, &args)?.wait_ready()?;
+    let renderer = apply::spawn_native_scene(state, &renderer_key, &args, scene_fps(state, we_id))?
+        .wait_ready()?;
     Ok(NativeSceneCandidate {
         key: renderer_key,
         renderer: Some(renderer),

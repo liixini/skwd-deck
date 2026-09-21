@@ -179,7 +179,7 @@ fn use_lock_screen_paper(state: &WallState, current: &LockScreenCurrent<'_>) -> 
     }
     let outputs = crate::outputs::enumerate();
     let (width, height) = lock_screen_stream_size(&outputs);
-    let fps = state.config().renderer().we_fps().max(1);
+    let fps = crate::we::scene_fps(state, current.we_id).max(1);
     let groups = LOCK_SCREEN_GROUPS;
     let entry = serde_json::json!({
         "type": current.kind,
@@ -301,7 +301,7 @@ fn assignments(
                 "paper": state.config().renderer().paper_bin(),
                 "width": width.max(16),
                 "height": height.max(16),
-                "fps": crate::outputs::effective_fps(state.config().renderer().we_fps(), output.refresh_mhz),
+                "fps": crate::outputs::effective_fps(crate::we::scene_fps(state, entry.get("we_id").and_then(serde_json::Value::as_str).unwrap_or("")), output.refresh_mhz),
                 "paused": state.renderers().paused_for(&output.name),
                 "manualPaused": state.renderers().manual_paused_for(&output.name),
             }),

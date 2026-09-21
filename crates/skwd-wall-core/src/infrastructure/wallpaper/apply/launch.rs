@@ -102,7 +102,7 @@ enum RendererLaunchKind {
     SharedVideo,
     PerOutputVideo { output: String },
     MultiOutputVideo,
-    NativeScene { outputs: String },
+    NativeScene { outputs: String, fps: Option<u32> },
     ManagedTransition { output: String },
     StandaloneTransition { output: String },
 }
@@ -114,7 +114,7 @@ impl RendererLaunchKind {
             Self::PerOutputStatic { output }
             | Self::MultiOutputStatic { outputs: output }
             | Self::PerOutputVideo { output }
-            | Self::NativeScene { outputs: output }
+            | Self::NativeScene { outputs: output, .. }
             | Self::ManagedTransition { output }
             | Self::StandaloneTransition { output } => output,
             Self::MultiOutputVideo => "multi",
@@ -188,7 +188,7 @@ impl RendererLaunchKind {
                 output: "multi".to_string(),
                 role: VideoPaperRole::Video,
             },
-            Self::NativeScene { outputs } => RendererTarget::VideoPaper {
+            Self::NativeScene { outputs, .. } => RendererTarget::VideoPaper {
                 output: outputs.clone(),
                 role: VideoPaperRole::NativeScene,
             },
@@ -241,10 +241,17 @@ impl RendererLaunchSpec {
 
     pub(crate) fn native_scene(outputs: &str, arguments: Vec<String>) -> Self {
         Self {
-            kind: RendererLaunchKind::NativeScene { outputs: outputs.to_string() },
+            kind: RendererLaunchKind::NativeScene { outputs: outputs.to_string(), fps: None },
             arguments,
             prepare_hidden: false,
         }
+    }
+
+    pub(crate) fn scene_fps(mut self, value: u32) -> Self {
+        if let RendererLaunchKind::NativeScene { fps, .. } = &mut self.kind {
+            *fps = Some(value);
+        }
+        self
     }
 
     pub(crate) fn managed_transition(arguments: Vec<String>) -> Self {
@@ -333,17 +340,21 @@ impl RendererLaunchSpec {
                     if config.transition().active() { "1" } else { "0" },
                 );
         }
-        if self.kind.is_native_scene() {
+        if let RendererLaunchKind::NativeScene { fps, .. } = self.kind {
+            let configured_fps = fps.unwrap_or_else(|| config.renderer().we_fps());
             let mut policy = current_native_scene_policy(state);
+            policy.fps = native_scene_policy(
+                configured_fps,
+                config.renderer().performance_mode(),
+                policy.disable_particles,
+            )
+            .fps;
             policy.fps = policy.fps.min(crate::outputs::target_fps(
-                config.renderer().we_fps(),
+                configured_fps,
                 self.kind.output(),
                 &outputs,
             ));
-            command.env(
-                "SKWD_PAPER_OUTPUT_FPS",
-                crate::outputs::fps_map(config.renderer().we_fps(), &outputs),
-            );
+            command.env("SKWD_PAPER_OUTPUT_FPS", crate::outputs::fps_map(policy.fps, &outputs));
             apply_native_scene_policy(&mut command, &policy);
         }
         command

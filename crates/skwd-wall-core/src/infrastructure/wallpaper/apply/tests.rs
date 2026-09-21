@@ -2143,3 +2143,24 @@ fn still_for_one_output_carries_that_outputs_audio_memory() {
     assert_eq!(super::static_media::carried_still_audio(&st, "DP-1"), (true, 40));
     assert_eq!(super::static_media::carried_still_audio(&st, "DP-3"), (false, 70));
 }
+
+#[test]
+fn scene_fps_policy_detects_active_override_changes_and_default_restoration() {
+    let st = Stub::new();
+    record_native_scene_policies(&st);
+    let global = st.config().renderer().we_fps();
+    st.renderers().set_policy("scene-fps", &serde_json::json!({"a": global}).to_string());
+    assert!(native_scene_policy_matches(&st));
+    st.database().with_connection(|conn| crate::db::set_we_scene_fps(conn, "b", Some(15))).unwrap();
+    assert!(native_scene_policy_matches(&st));
+    st.database().with_connection(|conn| crate::db::set_we_scene_fps(conn, "a", Some(10))).unwrap();
+    assert!(!native_scene_policy_matches(&st));
+    st.renderers().set_policy("scene-fps", r#"{"a":10}"#);
+    assert!(native_scene_policy_matches(&st));
+    st.renderers().set_policy("scene-fps:DP-1", "10");
+    assert!(crate::we::scene_fps_matches(&st, "DP-1", "a"));
+    assert!(!crate::we::scene_fps_matches(&st, "DP-1", "b"));
+    st.database().with_connection(|conn| crate::db::set_we_scene_fps(conn, "a", None)).unwrap();
+    assert!(!native_scene_policy_matches(&st));
+    assert_eq!(crate::we::scene_fps(&st, "a"), global);
+}

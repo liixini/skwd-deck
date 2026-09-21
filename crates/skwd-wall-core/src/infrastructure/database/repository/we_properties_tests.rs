@@ -39,3 +39,21 @@ fn property_name_bounds() {
     assert!(!valid_property_name(&"n".repeat(MAX_WE_PROPERTY_NAME + 1)));
     assert!(valid_property_name(&"n".repeat(MAX_WE_PROPERTY_NAME)));
 }
+
+#[test]
+fn fps_override_is_separate_from_authored_properties_and_validated() {
+    let conn = open_in_memory().unwrap();
+    set_we_property(&conn, "a", "fps", Some(&serde_json::json!(7))).unwrap();
+    assert_eq!(we_scene_fps(&conn, "a").unwrap(), None);
+    set_we_scene_fps(&conn, "a", Some(15)).unwrap();
+    set_we_scene_fps(&conn, "b", Some(60)).unwrap();
+    for invalid in [0, 241, u32::MAX] {
+        assert!(set_we_scene_fps(&conn, "a", Some(invalid)).is_err());
+    }
+    assert_eq!(we_scene_fps(&conn, "a").unwrap(), Some(15));
+    clear_we_properties(&conn, "a").unwrap();
+    assert_eq!(we_scene_fps(&conn, "a").unwrap(), Some(15));
+    set_we_scene_fps(&conn, "a", None).unwrap();
+    assert_eq!(we_scene_fps(&conn, "a").unwrap(), None);
+    assert_eq!(we_scene_fps(&conn, "b").unwrap(), Some(60));
+}

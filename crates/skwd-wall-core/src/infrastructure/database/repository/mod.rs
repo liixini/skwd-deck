@@ -35,7 +35,7 @@ pub use wallpapers::{
 };
 pub use we_properties::{
     MAX_WE_PROPERTIES, MAX_WE_PROPERTY_NAME, clear_we_properties, set_we_property,
-    valid_property_name, we_properties,
+    set_we_scene_fps, valid_property_name, we_properties, we_scene_fps,
 };
 
 #[cfg(test)]

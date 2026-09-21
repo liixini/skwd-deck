@@ -230,3 +230,29 @@ fn transition_fps_follows_each_display_without_changing_playback() {
         }
     }
 }
+
+#[test]
+fn scene_fps_overrides_are_resolved_per_plasma_output() {
+    let state = crate::state::WallState::test_new(serde_json::json!({"weRender":{"fps":30}}));
+    let outputs = ["DP-1", "DP-2"].map(|name| crate::outputs::OutputInfo {
+        name: name.into(),
+        refresh_mhz: 60_000,
+        ..Default::default()
+    });
+    let map = serde_json::json!({
+        "DP-1":{"type":"we","we_id":"a","path":"/we/a"},
+        "DP-2":{"type":"we","we_id":"b","path":"/we/b"}
+    });
+    for fps in [Some(15), Some(120), None] {
+        state.with_db(|conn| crate::db::set_we_scene_fps(conn, "a", fps)).unwrap();
+        let payload = assignments(
+            &state,
+            &outputs,
+            map.as_object().unwrap(),
+            &std::collections::BTreeMap::default(),
+        )
+        .unwrap();
+        assert_eq!(payload["DP-1"]["fps"], fps.unwrap_or(30).min(60));
+        assert_eq!(payload["DP-2"]["fps"], 30);
+    }
+}

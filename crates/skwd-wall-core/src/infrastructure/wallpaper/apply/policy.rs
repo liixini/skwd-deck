@@ -133,6 +133,15 @@ pub(crate) fn native_scene_policy_matches(state: &WallState) -> bool {
     if !paper_policy_matches(state) {
         return false;
     }
+    if let Some(previous) = state.renderers().policy("scene-fps") {
+        let Ok(fps) = serde_json::from_str::<std::collections::BTreeMap<String, u32>>(&previous)
+        else {
+            return false;
+        };
+        if fps.iter().any(|(we_id, fps)| crate::we::scene_fps(state, we_id) != *fps) {
+            return false;
+        }
+    }
     let current = current_native_scene_policy(state).signature();
     state.renderers().policy(NATIVE_SCENE_POLICY_KEY).is_some_and(|previous| previous == current)
 }

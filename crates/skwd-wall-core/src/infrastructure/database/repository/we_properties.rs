@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
 
 pub const MAX_WE_PROPERTIES: usize = 512;
@@ -44,6 +44,24 @@ pub fn set_we_property(
 
 pub fn clear_we_properties(conn: &Connection, we_id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM we_properties WHERE we_id=?1", params![we_id])?;
+    Ok(())
+}
+
+pub fn we_scene_fps(conn: &Connection, we_id: &str) -> rusqlite::Result<Option<u32>> {
+    conn.query_row("SELECT fps FROM we_scene_fps WHERE we_id=?1", [we_id], |row| row.get(0))
+        .optional()
+}
+
+pub fn set_we_scene_fps(conn: &Connection, we_id: &str, fps: Option<u32>) -> rusqlite::Result<()> {
+    if let Some(fps) = fps {
+        conn.execute(
+            "INSERT INTO we_scene_fps(we_id, fps) VALUES(?1, ?2)
+             ON CONFLICT(we_id) DO UPDATE SET fps=excluded.fps",
+            params![we_id, fps],
+        )?;
+    } else {
+        conn.execute("DELETE FROM we_scene_fps WHERE we_id=?1", [we_id])?;
+    }
     Ok(())
 }
 

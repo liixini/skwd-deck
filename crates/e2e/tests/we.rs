@@ -611,3 +611,84 @@ fn scene_request_transitions_reach_warm_swaps() {
         }
     }
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn scene_fps_override_persists_and_controls_each_renderer() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("we-fps");
+    for id in ["scene-a", "scene-b"] {
+        scene_dir(&sandbox, id);
+    }
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    sandbox.write_config(&json!({
+        "paths": {"wallpaper":sandbox.library(), "steamWorkshop":sandbox.root.join("we")},
+        "restoreOnStartup":false, "general":{"randomInterval":0},
+        "effects":{"autoRecolor":false,"autoTheme":""},
+        "transition":{"enabled":false}, "weRender":{"fps":30}
+    }));
+    let call = |client: &mut Client, method: &str, params: Value| {
+        let response = client.call(method, params, 900).expect("RPC reply");
+        assert!(response.get("error").is_none(), "{response}");
+        response["result"].clone()
+    };
+    let renderer_fps = |pid: u32, output: &str| -> Option<u32> {
+        child_pids(pid, STUB).into_iter().find_map(|child| {
+            let args = std::fs::read(format!("/proc/{child}/cmdline")).ok()?;
+            if !args.split(|byte| *byte == 0).any(|arg| arg == output.as_bytes()) {
+                return None;
+            }
+            let env = std::fs::read(format!("/proc/{child}/environ")).ok()?;
+            env.split(|byte| *byte == 0).find_map(|entry| {
+                std::str::from_utf8(entry).ok()?.strip_prefix("SKWD_PAPER_WE_FPS=")?.parse().ok()
+            })
+        })
+    };
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let initial = call(&mut client, "wall.we_properties", json!({"we_id":"scene-a"}));
+    assert_eq!(initial["fps"], Value::Null);
+    assert_eq!(initial["global_fps"], 30);
+    assert_eq!(initial["properties"], json!([]));
+    for invalid in [json!(0), json!(241), json!(-1), json!(15.5), json!("15"), json!(true)] {
+        let response = client
+            .call("wall.set_we_property", json!({"we_id":"scene-a","fps":invalid}), 901)
+            .unwrap();
+        assert!(response.get("error").is_some(), "{response}");
+    }
+    let saved = call(&mut client, "wall.set_we_property", json!({"we_id":"scene-a","fps":15}));
+    assert_eq!(saved["fps"], 15);
+    assert_eq!(saved["reapplied"], false);
+    call(&mut client, "wall.apply", json!({"type":"we","we_id":"scene-a","output":"DP-1"}));
+    call(&mut client, "wall.apply", json!({"type":"we","we_id":"scene-b","output":"DP-2"}));
+    assert_eq!(renderer_fps(walld.pid(), "DP-1"), Some(15));
+    assert_eq!(renderer_fps(walld.pid(), "DP-2"), Some(30));
+    let changed = call(&mut client, "wall.set_we_property", json!({"we_id":"scene-a","fps":24}));
+    assert_eq!(changed["reapplied"], true);
+    assert_eq!(renderer_fps(walld.pid(), "DP-1"), Some(24));
+    assert_eq!(renderer_fps(walld.pid(), "DP-2"), Some(30));
+    assert_eq!(output_id(&mut client, "DP-1").1, "scene-a");
+    assert_eq!(output_id(&mut client, "DP-2").1, "scene-b");
+    drop(client);
+    drop(walld);
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(sandbox.config_path()).unwrap()).unwrap();
+    config["weRender"]["fps"] = json!(20);
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let persisted = call(&mut client, "wall.we_properties", json!({"we_id":"scene-a"}));
+    assert_eq!(persisted["fps"], 24);
+    assert_eq!(persisted["global_fps"], 20);
+    call(&mut client, "wall.apply", json!({"type":"we","we_id":"scene-a","output":"*"}));
+    let cleared = call(&mut client, "wall.set_we_property", json!({"we_id":"scene-a","fps":null}));
+    assert_eq!(cleared["fps"], Value::Null);
+    assert_eq!(cleared["global_fps"], 20);
+    let pids = child_pids(walld.pid(), STUB);
+    assert!(!pids.is_empty());
+    for pid in pids {
+        let env = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
+        assert!(env.split(|byte| *byte == 0).any(|entry| entry == b"SKWD_PAPER_WE_FPS=20"));
+    }
+}
