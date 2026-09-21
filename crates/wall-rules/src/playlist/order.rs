@@ -15,6 +15,10 @@ fn xorshift64(seed: &mut u64) -> u64 {
     *seed
 }
 
+pub fn initial_index(order: Order, len: usize, rng: &mut u64) -> usize {
+    if order == Order::Shuffle && len > 1 { (xorshift64(rng) as usize) % len } else { 0 }
+}
+
 pub fn step(order: Order, cursor: usize, len: usize, forward: bool, rng: &mut u64) -> usize {
     if len <= 1 {
         return 0;

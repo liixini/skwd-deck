@@ -216,3 +216,64 @@ fn smart_source_keys() {
         })
         .unwrap();
 }
+
+#[test]
+fn shuffled_first_selection_covers_all_members_and_survives_reload() {
+    let (_g, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({}));
+    let state = Arc::new(WallState::open().unwrap());
+    let id = state.with_db(|conn| db::playlist_create(conn, "shuffle first")).unwrap();
+    let keys: Vec<String> = (0..5).map(|i| format!("static:shuffle-first/{i}.png")).collect();
+    for key in &keys {
+        state.with_db(|conn| db::playlist_add_member(conn, id, key)).unwrap();
+    }
+    state.with_db(|conn| db::playlist_assign_set(conn, "*", Some(id))).unwrap();
+    let mut firsts = std::collections::HashSet::new();
+    for seed in 1..=128 {
+        let mut rt = Runtime { outputs: HashMap::new(), rng: seed };
+        reconcile(&mut rt, &state);
+        let cursor = rt.outputs["*"].cursor;
+        let rng = rt.rng;
+        reconcile(&mut rt, &state);
+        assert_eq!(rt.outputs["*"].cursor, cursor);
+        assert_eq!(rt.rng, rng);
+        let now = rt.outputs["*"].next_fire;
+        if seed % 2 == 0 {
+            assert!(command_runtime(&mut rt, &state, "*", true, now));
+        }
+        let first = tick(&mut rt, now, Duration::from_secs(3600)).0[0].1.clone();
+        firsts.insert(first.clone());
+        assert!(command_runtime(&mut rt, &state, "*", true, now));
+        let second = tick(&mut rt, now, Duration::from_secs(3600)).0[0].1.clone();
+        assert_ne!(first, second);
+    }
+    state.with_db(|conn| db::playlist_delete(conn, id)).unwrap();
+    assert_eq!(firsts, keys.into_iter().collect());
+}
+
+#[test]
+fn shuffled_empty_playlist_randomizes_when_members_arrive() {
+    let (_g, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({}));
+    let state = Arc::new(WallState::open().unwrap());
+    let id = state.with_db(|conn| db::playlist_create(conn, "shuffle empty")).unwrap();
+    state.with_db(|conn| db::playlist_assign_set(conn, "*", Some(id))).unwrap();
+    let keys = ["static:shuffle-empty/a.png", "static:shuffle-empty/b.png"];
+    let mut firsts = std::collections::HashSet::new();
+    for seed in 1..=32 {
+        let mut rt = Runtime { outputs: HashMap::new(), rng: seed };
+        reconcile(&mut rt, &state);
+        let now = rt.outputs["*"].next_fire;
+        assert!(tick(&mut rt, now, Duration::from_secs(3600)).0.is_empty());
+        for key in keys {
+            state.with_db(|conn| db::playlist_add_member(conn, id, key)).unwrap();
+        }
+        assert!(command_runtime(&mut rt, &state, "*", true, now));
+        firsts.insert(tick(&mut rt, now, Duration::from_secs(3600)).0[0].1.clone());
+        for key in keys {
+            state.with_db(|conn| db::playlist_remove_member(conn, id, key)).unwrap();
+        }
+    }
+    state.with_db(|conn| db::playlist_delete(conn, id)).unwrap();
+    assert_eq!(firsts, keys.into_iter().map(str::to_string).collect());
+}

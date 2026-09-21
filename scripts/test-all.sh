@@ -29,7 +29,7 @@ cargo test --release -p skwd-walld --test layer_guard
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_*.py
 
 if [ "$e2e" -eq 1 ]; then
-    for suite in app_themes rpc schedule lifecycle apply apply_model restore we concurrent hotplug library playback plasma theme; do
+    for suite in app_themes rpc schedule playlist lifecycle apply apply_model restore we concurrent hotplug library playback plasma theme; do
         cargo test --release -p skwd-e2e --test "$suite" -- --ignored --nocapture
     done
 fi

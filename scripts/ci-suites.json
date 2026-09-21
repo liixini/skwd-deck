@@ -23,7 +23,7 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 55,
+      "expectedSkips": 56,
       "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check and the private-audio check excluded"
     },
     {
@@ -49,7 +49,7 @@
     {
       "id": "deck.process-e2e",
       "expectedSkips": 0,
-      "coverage": "RPC, schedule, lifecycle, apply, restore, WE, concurrency, hotplug, library, playback, fake Plasma sessions, live Wayland backend detection, and desktop-theme provider processes"
+      "coverage": "RPC, schedule, playlist activation, lifecycle, apply, restore, WE, concurrency, hotplug, library, playback, fake Plasma sessions, live Wayland backend detection, and desktop-theme provider processes"
     },
     {
       "id": "deck.audio-live",

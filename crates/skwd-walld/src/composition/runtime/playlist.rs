@@ -9,7 +9,9 @@ use tokio::sync::Notify;
 
 use crate::backend::history::ApplySource;
 use crate::infrastructure::wake::wake_or_timeout;
-use wall_rules::playlist::{Order, matches_item, parse_order, source_wants_favourites, step};
+use wall_rules::playlist::{
+    Order, initial_index, matches_item, parse_order, source_wants_favourites, step,
+};
 
 const MIN_DWELL: Duration = Duration::from_secs(60);
 const MIN_TICK_WAIT: Duration = Duration::from_millis(50);
@@ -211,7 +213,9 @@ fn reconcile(rt: &mut Runtime, state: &Arc<WallState>) {
             Some(st) if st.playlist_id == id => {
                 st.order = def.order;
                 st.dwell = def.dwell;
-                if !keys.is_empty() {
+                if st.keys.is_empty() {
+                    st.cursor = initial_index(def.order, keys.len(), &mut rt.rng);
+                } else if !keys.is_empty() {
                     st.cursor = st.cursor.min(keys.len() - 1);
                 }
                 st.keys = keys;
@@ -226,10 +230,10 @@ fn reconcile(rt: &mut Runtime, state: &Arc<WallState>) {
                     out,
                     OutputState {
                         playlist_id: id,
+                        cursor: initial_index(def.order, keys.len(), &mut rt.rng),
                         keys,
                         order: def.order,
                         dwell: def.dwell,
-                        cursor: 0,
                         next_fire: now + def.dwell,
                     },
                 );
