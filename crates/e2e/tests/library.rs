@@ -336,3 +336,6 @@ fn localized_pictures_default_imports_without_configured_path() {
 
 #[path = "library/source_switch.rs"]
 mod source_switch;
+
+#[path = "library/workshop.rs"]
+mod workshop;

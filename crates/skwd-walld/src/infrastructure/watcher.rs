@@ -202,6 +202,9 @@ fn flush_watch_batch(
     request_id: Option<&str>,
     force_full_scan: bool,
 ) -> bool {
+    let workshop = state.config().we_dir();
+    let force_full_scan =
+        force_full_scan || pending.iter().chain(&removed).any(|path| path.starts_with(&workshop));
     let (changed, to_remove) = plan_watch_flush(pending, removed);
     let mut removals_ok = true;
     for path in &to_remove {
@@ -218,7 +221,7 @@ fn flush_watch_batch(
     stats.set_task("scanning");
     if force_full_scan || changed.len() >= WATCH_BATCH_CAP || !removals_ok {
         if removals_ok {
-            log::info!("mass change settled ({} paths), full rescan", changed.len());
+            log::info!("library changes settled ({} paths), full rescan", changed.len());
         } else {
             log::warn!("delta removal did not reach the database; requesting a full rescan");
         }
@@ -266,11 +269,10 @@ impl RootWatcher for notify::RecommendedWatcher {
 fn media_roots(state: &Arc<WallState>) -> Vec<std::path::PathBuf> {
     let configured = {
         let config = state.config();
-        [config.wallpaper_dir(), config.video_dir()]
+        [config.wallpaper_dir().into(), config.video_dir().into(), config.we_dir()]
     };
     let mut roots: Vec<std::path::PathBuf> = Vec::new();
-    for directory in configured {
-        let path = std::path::PathBuf::from(directory);
+    for path in configured {
         if !path.is_dir() || roots.iter().any(|root| path.starts_with(root)) {
             continue;
         }

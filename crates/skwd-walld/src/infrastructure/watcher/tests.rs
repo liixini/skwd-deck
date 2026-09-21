@@ -112,15 +112,28 @@ fn nested_media_roots_are_watched_once() {
     let (_guard, root) = crate::testenv::lock();
     let parent = root.join("walls");
     let child = parent.join("videos");
-    std::fs::create_dir_all(&child).unwrap();
+    let workshop = child.join("workshop");
+    std::fs::create_dir_all(&workshop).unwrap();
     crate::testenv::write_config(json!({
         "paths": {
             "wallpaper": child.to_string_lossy(),
             "videoWallpaper": parent.to_string_lossy(),
+            "steamWorkshop": workshop,
         }
     }));
     let state = std::sync::Arc::new(skwd_wall_core::WallState::open().unwrap());
     assert_eq!(super::media_roots(&state), vec![parent]);
+}
+
+#[test]
+fn workshop_root_is_watched_alongside_media_roots() {
+    let (_guard, root) = crate::testenv::lock();
+    let workshop = root.join("steam/steamapps/workshop/content/431960");
+    std::fs::create_dir_all(&workshop).unwrap();
+    crate::testenv::write_config(json!({"paths":{"steam":root.join("steam")}}));
+    let state = std::sync::Arc::new(skwd_wall_core::WallState::open().unwrap());
+    assert!(super::media_roots(&state).contains(&workshop));
+    std::fs::remove_dir_all(root.join("steam")).unwrap();
 }
 
 #[test]
