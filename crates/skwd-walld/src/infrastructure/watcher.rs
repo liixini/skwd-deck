@@ -680,7 +680,11 @@ fn absorb_and_hold(
                     config.plasma_lock_screen_image(),
                     config.plasma_lock_screen_live(),
                 ),
-                (config.semantic_manifest(), config.semantic_index_profile()),
+                (
+                    config.semantic_enabled(),
+                    config.semantic_manifest(),
+                    config.semantic_index_profile(),
+                ),
             )
         };
         state.reload_config();
@@ -700,14 +704,18 @@ fn absorb_and_hold(
                     config.plasma_lock_screen_image(),
                     config.plasma_lock_screen_live(),
                 ),
-                (config.semantic_manifest(), config.semantic_index_profile()),
+                (
+                    config.semantic_enabled(),
+                    config.semantic_manifest(),
+                    config.semantic_index_profile(),
+                ),
             )
         };
         if lock_screen_before != lock_screen_after {
             crate::infrastructure::lock_screen::request_sync(state);
         }
         if semantic_before != semantic_after {
-            crate::infrastructure::semantic_index::request_refresh();
+            crate::infrastructure::semantic_index::settings_changed();
         }
         publisher.publish(ev::CONFIG_CHANGED, json!({}));
         crate::infrastructure::power::request_refresh();

@@ -403,6 +403,7 @@ pub mod keys {
         pub const DEFAULT_SEARCH_MODE: &str = "tagging.defaultSearchMode";
     }
     pub mod semantic {
+        pub const ENABLED: &str = "semantic.enabled";
         pub const INDEX_PROFILE: &str = "semantic.indexProfile";
         pub const MANIFEST: &str = "semantic.manifest";
         pub const MODELS: &str = "semantic.models";

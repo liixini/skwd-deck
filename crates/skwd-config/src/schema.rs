@@ -583,6 +583,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::selector::FLIP_EFFECT, "Ignite"),
     SettingSpec::text(crate::keys::paper::VIDEO_ENGINE, "vulkan"),
     SettingSpec::text(crate::keys::tagging::DEFAULT_SEARCH_MODE, "tags"),
+    SettingSpec::boolean(crate::keys::semantic::ENABLED, true),
     SettingSpec::text(crate::keys::semantic::INDEX_PROFILE, "full"),
     SettingSpec::text(crate::keys::semantic::MANIFEST, ""),
     SettingSpec::text(crate::keys::theme::BACKEND, "skwd-iris"),
