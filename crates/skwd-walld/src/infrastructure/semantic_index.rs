@@ -22,6 +22,8 @@ use skwd_lens_proto::{
 };
 
 static REFRESH: OnceLock<Sender<()>> = OnceLock::new();
+static SETTINGS_CHANGED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
 static CONTROL: OnceLock<Sender<TaskControl>> = OnceLock::new();
 
 struct SemanticPaths {
@@ -47,6 +49,11 @@ pub(crate) fn start(
     }
     let _ = CONTROL.set(control_tx);
     tokio::spawn(refresh_loop(rx, control_rx, config, database, events, tasks));
+}
+
+pub(crate) fn settings_changed() {
+    SETTINGS_CHANGED.notify_one();
+    request_refresh();
 }
 
 pub(crate) fn request_refresh() {
@@ -84,7 +91,15 @@ async fn refresh_loop(
 ) {
     while refreshes.recv().await.is_some() {
         loop {
-            if let Err(error) = refresh(&config, &database, &events, &tasks, &mut controls).await {
+            let result = tokio::select! {
+                biased;
+                () = SETTINGS_CHANGED.notified() => {
+                    tasks.finish_if_active("semantic-index", TaskState::Cancelled, "Search settings changed");
+                    continue;
+                }
+                result = refresh(&config, &database, &events, &tasks, &mut controls) => result,
+            };
+            if let Err(error) = result {
                 log::warn!("semantic index refresh failed: {error}");
                 if error.to_string() != "semantic index cancelled" {
                     tasks.finish("semantic-index", TaskState::Failed, error.to_string());
@@ -106,6 +121,9 @@ async fn refresh(
     tasks: &Arc<TaskRegistry>,
     controls: &mut Receiver<TaskControl>,
 ) -> anyhow::Result<()> {
+    if !config.read().semantic_enabled() {
+        return Ok(());
+    }
     let snapshot_config = Arc::clone(config);
     let snapshot_database = Arc::clone(database);
     let snapshot = tokio::task::spawn_blocking(move || -> anyhow::Result<RefreshSnapshot> {
@@ -169,6 +187,7 @@ async fn build_index(
     log::info!("semantic index refresh: {} items with {threads} threads", request.entries.len());
     let mut command = crate::infrastructure::proc::tool_async(&paths.helper);
     command
+        .kill_on_drop(true)
         .arg("--build-index")
         .arg("--manifest")
         .arg(&paths.manifest)

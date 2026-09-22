@@ -97,6 +97,7 @@ impl Config {
         schedule_apply_on_start: on_unless_off(skwd_config::keys::schedule::APPLY_ON_START);
         schedule_enabled: off_unless_on(skwd_config::keys::schedule::ENABLED);
         schedule_migrated: off_unless_on(skwd_config::keys::schedule::MIGRATED);
+        semantic_enabled: on_unless_off(skwd_config::keys::semantic::ENABLED);
         semantic_index_profile: str(skwd_config::keys::semantic::INDEX_PROFILE, "full");
         semantic_manifest: str(skwd_config::keys::semantic::MANIFEST, "");
         steam_api_key: str(skwd_config::keys::steam::API_KEY, "");
