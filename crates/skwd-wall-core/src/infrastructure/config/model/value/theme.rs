@@ -72,15 +72,15 @@ impl<'a> ThemeConfig<'a> {
         targets
     }
 
-    fn array(self, key: &str) -> Vec<Value> {
-        self.config.get(key).and_then(Value::as_array).cloned().unwrap_or_default()
+    fn array(self, key: &str) -> &'a [Value] {
+        self.config.get(key).and_then(Value::as_array).map_or(&[], Vec::as_slice)
     }
 
-    pub fn wallpaper_profiles(&self) -> Vec<Value> {
+    pub fn wallpaper_profiles(&self) -> &'a [Value] {
         self.array(skwd_config::keys::theme::WALLPAPER_PROFILES)
     }
 
-    pub fn saved_themes(&self) -> Vec<Value> {
+    pub fn saved_themes(&self) -> &'a [Value] {
         self.array(skwd_config::keys::theme::SAVED_THEMES)
     }
 

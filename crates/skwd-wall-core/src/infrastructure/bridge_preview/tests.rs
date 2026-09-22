@@ -99,3 +99,77 @@ fn end_without_preview_noop() {
     preview_end(&st);
     assert_eq!(std::fs::read_to_string(tmp.path().join("colors.json")).unwrap(), "applied");
 }
+
+#[test]
+fn preview_cache_key_ignores_unrelated_profiles_and_saved_themes() {
+    use serde_json::json;
+
+    let base = json!({"theme": {"policy": "fixed", "staticTheme": "chosen", "savedThemes": [
+        {"name": "chosen", "primary": "#123456"}
+    ]}});
+    let key = cache_key(&Config::from_root(base.clone()), "/image.png");
+    let mut large = base;
+    large["theme"]["wallpaperProfiles"] = json!(
+        (0..78)
+            .map(|index| json!({
+                "key": format!("wallpaper-{index}"), "dark": {"_scheme": vec!["#123456"; 1500]}
+            }))
+            .collect::<Vec<_>>()
+    );
+    large["theme"]["savedThemes"].as_array_mut().unwrap().push(json!({
+        "name": "unrelated", "_scheme": vec!["#abcdef"; 1500]
+    }));
+    assert_eq!(cache_key(&Config::from_root(large.clone()), "/image.png"), key);
+    assert!(key.len() < 1024);
+    large["theme"]["savedThemes"][0]["primary"] = json!("#abcdef");
+    assert_ne!(cache_key(&Config::from_root(large.clone()), "/image.png"), key);
+    assert_ne!(cache_key(&Config::from_root(large), "/other.png"), key);
+}
+
+#[test]
+fn preview_cache_key_tracks_custom_colours_and_settings() {
+    use serde_json::json;
+
+    let base = Config::from_root(
+        json!({"theme": {"policy": "fixed", "staticTheme": "custom", "customColors": ["#123456"]}}),
+    );
+    let key = cache_key(&base, "/image.png");
+    for (path, value) in [
+        ("theme.customColors", json!(["#abcdef"])),
+        ("theme.mode", json!("light")),
+        ("theme.staticTheme", json!("nord")),
+        ("theme.style", json!("pastel")),
+    ] {
+        assert_ne!(cache_key(&base.with_override(path, value), "/image.png"), key, "{path}");
+    }
+}
+
+#[test]
+fn edited_profiles_override_cached_palettes_without_stale_results() {
+    use serde_json::json;
+
+    let state = WallState::test_new(json!({}));
+    let base = Config::from_root(json!({"theme": {"policy": "wallpaper", "mode": "dark"}}));
+    let cached = json!({"primary": "#987654"});
+    state
+        .theme()
+        .cache_shell_palette(cache_key(&base, "/image.png"), cached.to_string().into_bytes());
+    let palette = serde_json::Value::Object(
+        crate::theme::profiles::ROLE_KEYS
+            .into_iter()
+            .map(|key| (key.into(), json!("#123456")))
+            .collect(),
+    );
+    let mut profile = json!({"key": "/image.png", "enabled": true, "dark": palette});
+    for colour in ["#123456", "#abcdef"] {
+        profile["dark"]["primary"] = json!(colour);
+        let config = base.with_override("theme.wallpaperProfiles", json!([profile]));
+        assert_eq!(
+            super::cached_palette_for_config(&state, &config, "/image.png").unwrap()["primary"],
+            colour
+        );
+    }
+    profile["enabled"] = json!(false);
+    let config = base.with_override("theme.wallpaperProfiles", json!([profile]));
+    assert_eq!(super::cached_palette_for_config(&state, &config, "/image.png"), Some(cached));
+}

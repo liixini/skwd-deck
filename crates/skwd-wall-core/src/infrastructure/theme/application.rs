@@ -522,11 +522,11 @@ pub fn static_palette_value(config: &Config, dark: bool) -> Option<serde_json::V
         return Some(skwd_palette::derive(&seeds, dark).to_value());
     }
     if let Some(saved) =
-        config.theme().saved_themes().into_iter().find(|theme| {
+        config.theme().saved_themes().iter().find(|theme| {
             theme.get("name").and_then(serde_json::Value::as_str) == Some(name.as_str())
         })
     {
-        let mut val = saved;
+        let mut val = saved.clone();
         if val.get("_schemeVersion").and_then(serde_json::Value::as_u64) == Some(1)
             && let Some(doc) = crate::material::from_palette(&val, dark, &config.theme().scheme())
             && let Some(palette) = crate::material::ui_palette(&doc)

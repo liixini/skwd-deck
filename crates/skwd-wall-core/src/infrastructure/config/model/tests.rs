@@ -858,3 +858,44 @@ fn wallpaper_load_timeout_defaults_and_bounds() {
         std::time::Duration::from_secs(3)
     );
 }
+
+#[test]
+fn theme_collections_borrow_config_storage() {
+    let config = Config::from_root(json!({"theme": {
+        "wallpaperProfiles": [{"key": "wallpaper"}], "savedThemes": [{"name": "saved"}]
+    }}));
+    assert_eq!(
+        config.theme().wallpaper_profiles().as_ptr(),
+        config.root["theme"]["wallpaperProfiles"].as_array().unwrap().as_ptr()
+    );
+    assert_eq!(
+        config.theme().saved_themes().as_ptr(),
+        config.root["theme"]["savedThemes"].as_array().unwrap().as_ptr()
+    );
+    assert!(Config::from_root(json!({})).theme().wallpaper_profiles().is_empty());
+    assert!(
+        Config::from_root(json!({"theme": {"savedThemes": false}}))
+            .theme()
+            .saved_themes()
+            .is_empty()
+    );
+}
+
+#[test]
+fn bulk_overrides_reuse_owned_config_and_preserve_unrelated_data() {
+    let config = Config::from_root(json!({
+        "theme": {"engine": "skwd-iris"}, "matugen": false,
+        "unrelated": vec!["payload"; 10000]
+    }));
+    let storage = config.root["unrelated"].as_array().unwrap().as_ptr();
+    let overridden = config.with_overrides([
+        ("theme.engine".to_string(), json!("matugen")),
+        ("theme.mode".to_string(), json!("light")),
+        ("matugen.colorIndex".to_string(), json!(2)),
+        ("...".to_string(), json!("ignored")),
+    ]);
+    assert_eq!(overridden.root["unrelated"].as_array().unwrap().as_ptr(), storage);
+    assert_eq!(overridden.theme().engine(), "matugen");
+    assert_eq!(overridden.theme().mode(), "light");
+    assert_eq!(overridden.theme().matugen_color_index(), 2);
+}

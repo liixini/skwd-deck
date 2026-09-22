@@ -273,15 +273,11 @@ pub(super) fn theme_preview(state: &Arc<WallState>, req: &Request) -> Response {
 }
 
 fn preview_config(state: &Arc<WallState>, req: &Request) -> skwd_wall_core::config::Config {
-    let mut config =
-        skwd_wall_core::theme::profiles::configuration(state, req.str_param("image", ""));
+    let config = skwd_wall_core::theme::profiles::configuration(state, req.str_param("image", ""));
     let Some(settings) = req.params.get("settings").and_then(serde_json::Value::as_object) else {
         return config;
     };
-    for (path, value) in skwd_config::theme_profile::validated(settings) {
-        config = config.with_override(&path, value);
-    }
-    config
+    config.with_overrides(skwd_config::theme_profile::validated(settings))
 }
 
 pub(super) fn theme_previews(state: &Arc<WallState>, req: &Request) -> Response {
@@ -641,7 +637,7 @@ pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<S
         "static" => {
             let identity = skwd_wall_core::theme::profiles::identity(state, &path);
             identity["key"].as_str().is_some_and(|key| {
-                skwd_config::theme_profile::settings(&cfg.theme().wallpaper_profiles(), key)
+                skwd_config::theme_profile::settings(cfg.theme().wallpaper_profiles(), key)
                     .is_some()
             })
         }

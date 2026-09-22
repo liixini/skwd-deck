@@ -115,28 +115,34 @@ impl Config {
 
     #[must_use]
     pub fn with_override(&self, path: &str, value: Value) -> Self {
-        let mut next = self.clone();
-        let parts = path.split('.').filter(|part| !part.is_empty()).collect::<Vec<_>>();
-        let Some((last, parents)) = parts.split_last() else { return next };
-        let mut current = &mut next.root;
-        for part in parents {
+        self.clone().with_overrides([(path.to_string(), value)])
+    }
+
+    #[must_use]
+    pub fn with_overrides(mut self, overrides: impl IntoIterator<Item = (String, Value)>) -> Self {
+        for (path, value) in overrides {
+            let parts = path.split('.').filter(|part| !part.is_empty()).collect::<Vec<_>>();
+            let Some((last, parents)) = parts.split_last() else { continue };
+            let mut current = &mut self.root;
+            for part in parents {
+                if !current.is_object() {
+                    *current = Value::Object(serde_json::Map::new());
+                }
+                current = current
+                    .as_object_mut()
+                    .expect("object established above")
+                    .entry((*part).to_string())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
+            }
             if !current.is_object() {
                 *current = Value::Object(serde_json::Map::new());
             }
-            current = current
+            current
                 .as_object_mut()
                 .expect("object established above")
-                .entry((*part).to_string())
-                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                .insert((*last).to_string(), value);
         }
-        if !current.is_object() {
-            *current = Value::Object(serde_json::Map::new());
-        }
-        current
-            .as_object_mut()
-            .expect("object established above")
-            .insert((*last).to_string(), value);
-        next
+        self
     }
 
     fn get(&self, path: &str) -> Option<&Value> {

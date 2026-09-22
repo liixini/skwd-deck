@@ -56,13 +56,16 @@ fn bridge_path(config: &Config) -> PathBuf {
 }
 
 fn cache_key(config: &Config, image: &str) -> String {
-    let settings = config.theme().settings_snapshot();
+    let theme = config.theme();
+    let settings = theme.settings_snapshot();
+    let name = theme.static_theme();
+    let saved = theme.saved_themes().iter().find(|saved| saved["name"].as_str() == Some(&name));
     format!(
         "bridge\0{}\0{}\0{}\0{}\0{image}",
         config.theme().backend(),
         config.theme().mode(),
         serde_json::json!(settings),
-        serde_json::json!([config.theme().saved_themes(), config.theme().wallpaper_profiles()])
+        serde_json::json!([saved, theme.static_custom()])
     )
 }
 
@@ -78,9 +81,6 @@ pub fn arm(state: &WallState) {
 }
 
 pub fn cached_palette(state: &WallState, image: &str) -> Option<serde_json::Value> {
-    if let Some(palette) = crate::theme::profiles::palette(state, image) {
-        return Some(palette);
-    }
     let config = crate::theme::profiles::configuration(state, image);
     cached_palette_for_config(state, &config, image)
 }
@@ -112,8 +112,8 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     }
     let config = crate::theme::profiles::configuration(state, image);
     let path = bridge_path(&config);
-    let palette =
-        cached_palette(state, image).with_context(|| format!("no preview palette for {image}"))?;
+    let palette = cached_palette_for_config(state, &config, image)
+        .with_context(|| format!("no preview palette for {image}"))?;
     let dark = crate::theme::resolve_dark(&config, image);
     let bytes = crate::static_templates::render_bridge(&config, &palette, dark)
         .unwrap_or_else(|| palette.to_string())

@@ -38,12 +38,10 @@ pub fn configuration(state: &WallState, source: &str) -> Config {
     let mut config = state.config().clone();
     let identity = identity(state, source);
     if let Some(settings) = skwd_config::theme_profile::settings(
-        &config.theme().wallpaper_profiles(),
+        config.theme().wallpaper_profiles(),
         identity["key"].as_str().unwrap_or(source),
     ) {
-        for (path, value) in settings {
-            config = config.with_override(&path, value);
-        }
+        config = config.with_overrides(settings);
     }
     config
 }
