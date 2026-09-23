@@ -81,7 +81,7 @@ fn renderer_binary_identity(path: &str) -> String {
 
 pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
     let renderer = video_engine(state);
-    let config = state.config();
+    let config = state.config().clone();
     let renderer_identity = renderer_binary_identity(&renderer.bin);
     let shader = config.transition().shader();
     let sand_scope = if shader.starts_with("sand-") {

@@ -19,6 +19,7 @@ pub(super) struct Environment {
     pub config: PathBuf,
     pub data: PathBuf,
     pub data_dirs: Vec<PathBuf>,
+    pub config_dirs: Vec<PathBuf>,
     pub receipts: PathBuf,
     pub search: Vec<PathBuf>,
     pub reload: bool,
@@ -48,6 +49,11 @@ impl Environment {
             )
             .collect(),
             receipts: state.join("skwd-wall-v2/app-themes"),
+            config_dirs: std::env::split_paths(
+                &std::env::var_os("XDG_CONFIG_DIRS").unwrap_or_else(|| "/etc/xdg".into()),
+            )
+            .filter(|path| path.is_absolute())
+            .collect(),
             search: std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect(),
             reload: true,
         }
@@ -103,6 +109,9 @@ pub(super) fn conflict(
 }
 
 fn inspect(env: &Environment, config: &crate::config::Config, recipe: &Recipe) -> AppThemeStatus {
+    if recipe.id == "waybar" {
+        return super::waybar::inspect(env, config);
+    }
     let (path, output, receipt_path) = env.paths(recipe);
     let installed = env.executable(recipe.id).is_some();
     let mut status = AppThemeStatus {
@@ -323,6 +332,9 @@ pub(super) fn set_with(
     palette: &Value,
     dark: bool,
 ) -> Result<()> {
+    if id == "waybar" {
+        return super::waybar::set(env, config, enabled, palette, dark);
+    }
     if let Some(app) = super::structured::APPS.iter().find(|app| app.id == id) {
         return app.set(env, config, enabled, palette, dark);
     }
@@ -446,6 +458,9 @@ pub(super) fn apply_with(
     if !env.receipts.exists() {
         return;
     }
+    if let Err(error) = super::waybar::update(env, config, palette, dark) {
+        log::warn!("app theme waybar: {error:#}");
+    }
     if let Err(error) = super::plasma::update(env, config, palette, dark) {
         log::warn!("app theme kde: {error:#}");
     }
@@ -457,6 +472,9 @@ pub(super) fn apply_with(
         }
     }
     for recipe in &RECIPES {
+        if recipe.id == "waybar" && super::waybar::managed(env) {
+            continue;
+        }
         let (_, _, path) = env.paths(recipe);
         let update = || -> Result<()> {
             let Some(mut receipt) =

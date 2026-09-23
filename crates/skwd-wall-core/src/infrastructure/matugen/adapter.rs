@@ -72,6 +72,10 @@ pub fn generate_config(config: &Config) -> PathBuf {
         } else {
             cache.join(&integ.output)
         };
+        if crate::theme::apps::protects_output(&output_path) {
+            log::warn!("custom output {} targets a managed Waybar file; skipped", integ.name);
+            continue;
+        }
         lines.push(format!("[templates.integration_{idx}]"));
         lines.push(format!("input_path = \"{}\"", input_path.display()));
         lines.push(format!("output_path = \"{}\"", output_path.display()));
@@ -235,7 +239,13 @@ pub(crate) fn run_reloads_where(
     keep: impl Fn(&crate::config::Integration) -> bool,
 ) {
     for integ in config.theme().integrations() {
-        if integ.reload.is_empty() || !keep(&integ) {
+        if integ.reload.is_empty()
+            || !keep(&integ)
+            || crate::theme::apps::protects_output(&crate::static_templates::integration_output(
+                config,
+                &integ.output,
+            ))
+        {
             continue;
         }
         let resolved = config.resolve(&integ.reload);

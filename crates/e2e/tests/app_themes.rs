@@ -4,6 +4,44 @@ use std::time::Duration;
 
 #[test]
 #[ignore = "requires release daemon and fixture renderer"]
+fn colour_config_changes_keep_renderer_policy_and_rpc_responsive() {
+    let mut sandbox = Sandbox::new("theme-policy");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &skwd_e2e::stub_renderer!());
+    let image = sandbox.library().join("theme.png");
+    assert!(ffmpeg_still(&image, "color=c=red:s=320x180"));
+    let mut config = json!({
+        "paths": {"wallpaper": sandbox.library()}, "restoreOnStartup": false,
+        "general": {"randomInterval": 0}, "transition": {"enabled": false},
+        "theme": {"policy": "fixed", "mode": "dark", "staticTheme": "nord"}
+    });
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let applied = client.call("wall.apply", json!({"type": "static", "path": image}), 1).unwrap();
+    assert!(applied.get("error").is_none(), "{applied}");
+    let path = sandbox.config_path();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            for generation in 0..2_000 {
+                config["theme"]["staticTheme"] =
+                    json!(if generation % 2 == 0 { "nord" } else { "dracula" });
+                let staged = path.with_extension("next");
+                std::fs::write(&staged, serde_json::to_vec(&config).unwrap()).unwrap();
+                std::fs::rename(&staged, &path).unwrap();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        for request in 2..202 {
+            let reply = client.call("wall.retheme", json!({}), request);
+            assert!(reply.is_some(), "Config updates blocked the daemon");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    });
+    assert!(walld.responsive());
+}
+
+#[test]
+#[ignore = "requires release daemon and fixture renderer"]
 fn managed_themes_migrate_and_restore_through_rpc() {
     use std::os::unix::fs::PermissionsExt;
 

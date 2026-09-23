@@ -10,6 +10,7 @@ fn fixture() -> (tempfile::TempDir, Environment, crate::config::Config) {
         data: root.path().join("data"),
         data_dirs: vec![],
         receipts: root.path().join("state"),
+        config_dirs: Vec::new(),
         search: vec![root.path().join("bin")],
         reload: true,
     };

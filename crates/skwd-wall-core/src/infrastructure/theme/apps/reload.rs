@@ -43,7 +43,7 @@ pub(super) fn reload(env: &Environment, recipe: &Recipe) -> String {
     .into()
 }
 
-fn process_config(path: &Path) -> Option<PathBuf> {
+pub(super) fn process_config(path: &Path) -> Option<PathBuf> {
     let root = path.parent()?;
     let mut current = path.to_path_buf();
     for _ in 0..4 {

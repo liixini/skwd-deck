@@ -2,7 +2,7 @@ use super::{catalogue::RECIPES, files, manager};
 use crate::config::Config;
 use serde_json::{Value, json};
 
-fn fixture() -> (tempfile::TempDir, manager::Environment, Config) {
+pub(super) fn fixture() -> (tempfile::TempDir, manager::Environment, Config) {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let bin = root.path().join("bin");
@@ -17,6 +17,7 @@ fn fixture() -> (tempfile::TempDir, manager::Environment, Config) {
         config: root.path().join("config"),
         data: root.path().join("data"),
         data_dirs: Vec::new(),
+        config_dirs: Vec::new(),
         receipts: root.path().join("state"),
         search: vec![bin],
         reload: false,
@@ -24,7 +25,7 @@ fn fixture() -> (tempfile::TempDir, manager::Environment, Config) {
     (root, env, Config::from_root(json!({})))
 }
 
-fn palette(color: &str) -> Value {
+pub(super) fn palette(color: &str) -> Value {
     let mut value = json!({});
     for key in super::super::profiles::ROLE_KEYS {
         value[key] = json!(color);
@@ -184,14 +185,13 @@ fn stylesheet_apps_use_their_own_comment_syntax_after_existing_theme_lines() {
     assert!(rasi.ends_with(
         "@theme \"arthur\"\n// Skwd app theme\n@import \"skwd-colors.rasi\"\n// End Skwd app theme\n"
     ));
-    assert!(css.ends_with(
-        "/* Skwd app theme */\n@import \"skwd-colors.css\";\n/* End Skwd app theme */\n"
-    ));
+    assert!(css.contains("/* Skwd Waybar colours */"));
+    assert!(css.contains("skwd-theme.css\";"));
     assert!(!rasi.contains('#'));
     assert!(!css.contains("\n#") && !css.contains("\n//"));
-    let colors = std::fs::read_to_string(env.config.join("waybar/skwd-colors.css")).unwrap();
-    assert!(colors.contains("@define-color primary #123456;"));
-    assert!(colors.contains("@define-color ansi_magenta_bright #"));
+    let colors = std::fs::read_to_string(env.config.join("waybar/skwd-theme.css")).unwrap();
+    assert!(colors.contains("@define-color skwd_primary #123456;"));
+    assert!(colors.contains("window#waybar.background #network"));
     let rendered = std::fs::read_to_string(env.config.join("rofi/skwd-colors.rasi")).unwrap();
     assert!(rendered.contains("selected-normal-background:  #123456;"));
 }

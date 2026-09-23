@@ -120,6 +120,33 @@ pub(super) fn restore(receipt: &Receipt, recipe: &Recipe, current: &str) -> Resu
     if current.matches(&receipt.after).count() == 1 {
         return Ok(current.replacen(&receipt.after, &receipt.before, 1));
     }
+    if recipe.id == "waybar" {
+        let normalize = |line: &str| line.split_ascii_whitespace().collect::<String>();
+        let expected: Vec<_> =
+            receipt.after.lines().filter(|line| !line.trim().is_empty()).map(normalize).collect();
+        let lines: Vec<_> = current.split_inclusive('\n').collect();
+        if !expected.is_empty() {
+            let matches: Vec<_> = lines
+                .windows(expected.len())
+                .enumerate()
+                .filter(|(_, window)| {
+                    window.iter().map(|line| normalize(line)).eq(expected.iter().cloned())
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if let [index] = matches.as_slice() {
+                let start: usize = lines[..*index].iter().map(|line| line.len()).sum();
+                let length: usize =
+                    lines[*index..*index + expected.len()].iter().map(|line| line.len()).sum();
+                return Ok(format!(
+                    "{}{}{}",
+                    &current[..start],
+                    receipt.before,
+                    &current[start + length..]
+                ));
+            }
+        }
+    }
     if recipe.id == "btop" {
         let lines: Vec<_> = current.split_inclusive('\n').filter(|line| theme_line(line)).collect();
         if lines.len() == 1 && lines[0].trim() == recipe.directive {

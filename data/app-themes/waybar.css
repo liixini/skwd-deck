@@ -1,0 +1,98 @@
+@define-color skwd_surface {{colors.surface.default.hex}};
+@define-color skwd_on_surface {{colors.on_surface.default.hex}};
+@define-color skwd_container {{colors.surface_container.default.hex}};
+@define-color skwd_primary {{colors.primary.default.hex}};
+@define-color skwd_on_primary {{colors.on_primary.default.hex}};
+@define-color skwd_secondary {{colors.secondary_container.default.hex}};
+@define-color skwd_on_secondary {{colors.on_secondary_container.default.hex}};
+@define-color skwd_tertiary {{colors.tertiary_container.default.hex}};
+@define-color skwd_on_tertiary {{colors.on_tertiary_container.default.hex}};
+@define-color skwd_outline {{colors.outline.default.hex}};
+@define-color skwd_error {{colors.error.default.hex}};
+@define-color skwd_on_error {{colors.on_error.default.hex}};
+@define-color skwd_success {{colors.ansi_green.default.hex}};
+@define-color skwd_warning {{colors.ansi_yellow.default.hex}};
+
+window#waybar.background {
+    background-color: @skwd_surface;
+    color: @skwd_on_surface;
+    border-color: @skwd_outline;
+}
+
+window#waybar.background .module,
+window#waybar.background .module button {
+    background-color: @skwd_container;
+    color: @skwd_on_surface;
+    border-color: @skwd_outline;
+}
+
+window#waybar.background .module label {
+    background-color: transparent;
+    color: inherit;
+}
+
+window#waybar.background #workspaces button,
+window#waybar.background #taskbar button {
+    background-color: @skwd_surface;
+    color: @skwd_on_surface;
+    border-color: @skwd_outline;
+}
+
+window#waybar.background #network,
+window#waybar.background #pulseaudio,
+window#waybar.background #wireplumber,
+window#waybar.background #backlight,
+window#waybar.background #power-profiles-daemon {
+    background-color: @skwd_secondary;
+    color: @skwd_on_secondary;
+}
+
+window#waybar.background #cpu,
+window#waybar.background #memory,
+window#waybar.background #disk,
+window#waybar.background #temperature {
+    background-color: @skwd_tertiary;
+    color: @skwd_on_tertiary;
+}
+
+window#waybar.background .module:hover,
+window#waybar.background .module button:hover,
+window#waybar.background #workspaces button:hover,
+window#waybar.background #taskbar button:hover {
+    background-color: @skwd_secondary;
+    color: @skwd_on_secondary;
+}
+
+window#waybar.background #workspaces button.active,
+window#waybar.background #workspaces button.focused,
+window#waybar.background #taskbar button.active,
+window#waybar.background #mode {
+    background-color: @skwd_primary;
+    color: @skwd_on_primary;
+}
+
+window#waybar.background #battery.charging,
+window#waybar.background #battery.plugged {
+    background-color: @skwd_container;
+    color: @skwd_success;
+}
+
+window#waybar#waybar.background .module.warning {
+    background-color: @skwd_container;
+    color: @skwd_warning;
+}
+
+window#waybar#waybar.background .module.critical,
+window#waybar.background #battery.critical:not(.charging),
+window#waybar.background #temperature.critical,
+window#waybar.background #network.disconnected,
+window#waybar.background #workspaces button.urgent {
+    background-color: @skwd_error;
+    color: @skwd_on_error;
+}
+
+window#waybar.background #pulseaudio.muted,
+window#waybar.background #wireplumber.muted {
+    background-color: @skwd_container;
+    color: @skwd_outline;
+}

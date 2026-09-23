@@ -233,6 +233,10 @@ pub fn render_integrations_where(
             continue;
         };
         let output = integration_output(config, &integ.output);
+        if crate::theme::apps::protects_output(&output) {
+            log::warn!("custom output {} targets a managed Waybar file; skipped", integ.name);
+            continue;
+        }
         if let Some(parent) = output.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
