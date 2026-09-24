@@ -257,7 +257,7 @@ pub fn downloaded_ids(we_dir: &std::path::Path) -> std::collections::HashSet<Str
     let mut set = std::collections::HashSet::new();
     if let Ok(rd) = std::fs::read_dir(we_dir) {
         for entry in rd.flatten() {
-            if entry.path().is_dir() {
+            if super::steam_download::presets::validate(&entry.path()).is_ok() {
                 set.insert(entry.file_name().to_string_lossy().into_owned());
             }
         }

@@ -153,3 +153,23 @@ fn all_edited_roles_reach_templates_and_the_current_snapshot() {
     }
     assert_eq!(current["palette"]["primary"], doc["colors"]["primary"]["light"]["color"]);
 }
+
+#[test]
+fn matugen_snapshot_keeps_the_resolved_smart_mode() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = WallState::test_new(json!({
+        "paths": {"cache": directory.path()},
+        "theme": {"policy": "wallpaper", "authority": "skwd", "engine": "matugen", "mode": "smart"}
+    }));
+    for dark in [false, true] {
+        let document = crate::material::document_with("#854cff", dark, "tonal-spot").unwrap();
+        let palette = crate::material::ui_palette(&document).unwrap();
+        std::fs::write(directory.path().join("colors.json"), palette.to_string()).unwrap();
+        std::fs::write(directory.path().join("scheme.json"), document.to_string()).unwrap();
+        remember_applied(&state, "/smart.jpg").unwrap();
+        let snapshot = current(&state).unwrap();
+        assert_eq!(snapshot["dark"], dark);
+        assert_eq!(snapshot["palette"], palette);
+        assert_eq!(state.config().theme().mode(), "smart");
+    }
+}

@@ -10,6 +10,8 @@ use wall_proto::ev;
 use crate::backend::events::EventPublisher;
 use crate::infrastructure::steam;
 
+pub(crate) mod presets;
+
 const MISSING_STEAM_HELPER: &str = "Steam Client support needs the optional skwd-deck-steamworks package (skwd-steam). Install it, or select SteamCMD in Settings > Steam.";
 
 fn steam_bin() -> std::path::PathBuf {
@@ -208,6 +210,18 @@ pub(crate) fn run_steamcmd_download(
     we_dir: &std::path::Path,
     ids: &[String],
 ) -> bool {
+    presets::download(publisher, we_dir, ids, |progress, pending| {
+        run_steamcmd_batch(progress, username, install_root, we_dir, pending)
+    })
+}
+
+fn run_steamcmd_batch(
+    publisher: &dyn EventPublisher,
+    username: &str,
+    install_root: &str,
+    we_dir: &std::path::Path,
+    ids: &[String],
+) -> bool {
     let _serial = steamcmd_serialize(publisher, ids);
     for id in ids {
         steam_dl_event(publisher, id, wall_proto::dl_status::DOWNLOADING, 0.0);
@@ -294,7 +308,14 @@ pub(crate) fn run_steamworks_download(
     we_dir: &std::path::Path,
     ids: &[String],
 ) -> bool {
-    run_steamworks_command(publisher, we_dir, ids, crate::infrastructure::proc::tool(steam_bin()))
+    presets::download(publisher, we_dir, ids, |progress, pending| {
+        run_steamworks_command(
+            progress,
+            we_dir,
+            pending,
+            crate::infrastructure::proc::tool(steam_bin()),
+        )
+    })
 }
 
 fn run_steamworks_command(

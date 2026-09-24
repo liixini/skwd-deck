@@ -2,6 +2,37 @@
 
 use super::*;
 
+#[test]
+fn preset_values_are_defaults_and_user_reset_restores_them() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("1");
+    let preset = root.path().join("2");
+    std::fs::create_dir(&base).unwrap();
+    std::fs::create_dir(&preset).unwrap();
+    std::fs::write(
+        base.join("project.json"),
+        serde_json::json!({"type":"scene","general":{"properties":declarations()}}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        preset.join("project.json"),
+        r#"{"dependency":"1","preset":{"glow":false,"zoom":2.0}}"#,
+    )
+    .unwrap();
+    let declared = read_declarations(&preset);
+    let overrides = serde_json::json!({"zoom":3.0}).as_object().unwrap().clone();
+    let rows = merge(&declared, &overrides);
+    let zoom = rows.iter().find(|row| row.name == "zoom").unwrap();
+    assert_eq!(zoom.value, 3.0);
+    assert_eq!(zoom.default, 2.0);
+    assert!(zoom.overridden);
+    let reset = merge(&declared, &Map::new());
+    assert_eq!(reset.iter().find(|row| row.name == "zoom").unwrap().value, 2.0);
+    assert_eq!(reset.iter().find(|row| row.name == "glow").unwrap().value, false);
+    assert!(reset.iter().all(|row| !row.overridden));
+    assert_eq!(read_declarations(&base)["glow"]["value"], true);
+}
+
 fn declarations() -> Map<String, Value> {
     serde_json::json!({
         "glow": {"type": "bool", "value": true, "text": "Glow", "order": 2},

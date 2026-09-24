@@ -240,7 +240,7 @@ fn signature(
     source: &Path,
     properties: &serde_json::Map<String, serde_json::Value>,
 ) -> std::io::Result<serde_json::Value> {
-    let mut pending = vec![source.canonicalize()?];
+    let mut pending = paper_control::we_project::Project::resolve(source)?.directories;
     let mut files = BTreeMap::new();
     let mut visited = std::collections::BTreeSet::new();
     while let Some(directory) = pending.pop() {

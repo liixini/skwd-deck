@@ -2,6 +2,44 @@ use super::{event_hub, events, subscribe};
 use serde_json::json;
 use std::path::Path;
 
+#[test]
+fn preset_process_waits_for_parent_and_links_both_items() {
+    let root = tempfile::tempdir().unwrap();
+    let preset = root.path().join("preset/2");
+    let parent = root.path().join("parent/1");
+    std::fs::create_dir_all(&preset).unwrap();
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::write(preset.join("project.json"), r#"{"dependency":"1","preset":{"rain":false}}"#)
+        .unwrap();
+    std::fs::write(parent.join("project.json"), r#"{"type":"scene"}"#).unwrap();
+    std::fs::write(parent.join("scene.pkg"), b"fixture").unwrap();
+    let hub = event_hub();
+    let mut rx = subscribe(&hub);
+    let library = root.path().join("library");
+    let mut fetched = Vec::new();
+    assert!(super::super::presets::download(
+        hub.as_ref(),
+        &library,
+        &["2".into()],
+        |progress, ids| {
+            fetched.extend_from_slice(ids);
+            let folder = if ids[0] == "2" { &preset } else { &parent };
+            let command =
+                helper(root.path(), &[json!({"id":ids[0],"status":"done","folder":folder})], 0);
+            super::super::run_steamworks_command(progress, &library, ids, command)
+        }
+    ));
+    assert_eq!(fetched, ["2", "1"]);
+    assert_eq!(library.join("2").canonicalize().unwrap(), preset);
+    assert_eq!(library.join("1").canonicalize().unwrap(), parent);
+    let received = events(&mut rx);
+    let completed: Vec<_> =
+        received.iter().filter(|event| event.data["status"] == "done").collect();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].data["id"], "2");
+    assert_eq!(received.last().unwrap().data["status"], "done");
+}
+
 fn helper(root: &Path, records: &[serde_json::Value], exit_code: u8) -> std::process::Command {
     let script = root.join("helper.sh");
     let output = records.iter().map(serde_json::Value::to_string).collect::<Vec<_>>().join("\n");

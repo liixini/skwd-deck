@@ -21,7 +21,7 @@ const MATERIAL: [(&str, &str); 9] = [
     ("rainbow", "Rainbow"),
     ("fruit-salad", "Fruit salad"),
 ];
-const MATUGEN: [(&str, &str); 9] = [
+const MATUGEN: [(&str, &str); 10] = [
     ("scheme-tonal-spot", "Tonal spot"),
     ("scheme-vibrant", "Vibrant"),
     ("scheme-expressive", "Expressive"),
@@ -31,6 +31,7 @@ const MATUGEN: [(&str, &str); 9] = [
     ("scheme-content", "Content"),
     ("scheme-rainbow", "Rainbow"),
     ("scheme-fruit-salad", "Fruit salad"),
+    ("scheme-smart", "Smart"),
 ];
 const NOCTALIA: [(&str, &str); 10] = [
     ("m3-tonal-spot", "Tonal spot"),
@@ -112,7 +113,8 @@ fn modes(backend: &str) -> (&'static str, &'static [(&'static str, &'static str)
     use skwd_config::keys::{matugen, theme};
     match backend {
         "static" => (theme::STATIC_THEME, &STATIC),
-        "matugen" | "dms" => (matugen::SCHEME_TYPE, &MATUGEN),
+        "matugen" => (matugen::SCHEME_TYPE, &MATUGEN),
+        "dms" => (matugen::SCHEME_TYPE, &MATUGEN[..9]),
         "noctalia" => (theme::NOCTALIA_SCHEME, &NOCTALIA),
         "wallust" | "skwd-wallust" => (theme::WALLUST_PALETTE, &WALLUST),
         "pywal" => (theme::PYWAL_SATURATE, &PYWAL),

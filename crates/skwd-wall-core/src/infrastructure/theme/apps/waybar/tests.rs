@@ -163,17 +163,11 @@ fn partial_setup_restores_written_imports_without_losing_untouched_styles() {
     assert!(!output_path(&env).exists());
 }
 
-#[test]
-fn legacy_palette_import_is_migrated_without_losing_user_css() {
-    let (_root, env, config) = fixture();
+fn legacy_setup(env: &Environment, css: &str) {
     let path = env.config.join("waybar/style.css");
     let output = env.config.join("waybar/skwd-colors.css");
     let (before, after) = files::patch(recipe(), ORIGINAL).unwrap();
-    files::write(
-        &path,
-        &format!("{ORIGINAL}{after}").replace("/* Skwd app theme */", "/*  Skwd app theme  */"),
-    )
-    .unwrap();
+    files::write(&path, css).unwrap();
     files::write(&output, "legacy colours").unwrap();
     files::save(
         &env.receipts.join("waybar.json"),
@@ -182,8 +176,8 @@ fn legacy_palette_import_is_migrated_without_losing_user_css() {
             enabled: true,
             pending: false,
             pending_config: None,
-            config: path.clone(),
-            output: output.clone(),
+            config: path,
+            output,
             original: Some(ORIGINAL.into()),
             before,
             after,
@@ -192,12 +186,88 @@ fn legacy_palette_import_is_migrated_without_losing_user_css() {
         },
     )
     .unwrap();
-    assert!(inspect(&env, &config).enabled);
+}
+
+#[test]
+fn legacy_palette_import_is_migrated_without_losing_user_css() {
+    let imports = [
+        "/*  Skwd app theme  */\n@import \"skwd-colors.css\";\n/* End Skwd app theme */\n",
+        "@import \"skwd-colors.css\";\n",
+        "/* Skwd app theme */\n@import 'skwd-colors.css';\n/* End Skwd app theme */\n",
+        "@import url('skwd-colors.css');\n",
+        "@import \"./skwd-colors.css\";\n",
+        "",
+    ];
+    for import in imports {
+        for migrate in [false, true] {
+            let (_root, env, config) = fixture();
+            let path = env.config.join("waybar/style.css");
+            let expected = format!("{ORIGINAL}#clock {{ padding: 7px; }}\n");
+            legacy_setup(&env, &format!("{ORIGINAL}{import}#clock {{ padding: 7px; }}\n"));
+            assert!(inspect(&env, &config).can_disable);
+            set(&env, &config, migrate, &palette("#abcdef"), true).unwrap();
+            assert!(!env.config.join("waybar/skwd-colors.css").exists());
+            assert!(!files::load(&env.receipts.join("waybar.json")).unwrap().unwrap().enabled);
+            if migrate {
+                let status = inspect(&env, &config);
+                assert!(status.enabled);
+                assert_eq!(status.output_path, output_path(&env).display().to_string());
+                assert!(files::read(&output_path(&env)).unwrap().unwrap().contains("#abcdef"));
+                set(&env, &config, false, &Value::Null, true).unwrap();
+            }
+            assert_eq!(files::read(&path).unwrap().unwrap(), expected, "{import:?}");
+        }
+    }
+}
+
+#[test]
+fn legacy_absolute_import_and_edited_generated_file_are_preserved_correctly() {
+    let (_root, env, config) = fixture();
+    let output = env.config.join("waybar/skwd-colors.css");
+    legacy_setup(&env, &format!("{ORIGINAL}{}\n", directive(&output)));
+    files::write(&output, "user colour edits").unwrap();
     set(&env, &config, true, &palette("#abcdef"), true).unwrap();
-    assert!(!output.exists());
-    assert!(!files::read(&path).unwrap().unwrap().contains("skwd-colors.css"));
+    assert_eq!(files::read(&output).unwrap().unwrap(), "user colour edits");
     set(&env, &config, false, &Value::Null, true).unwrap();
-    assert_eq!(files::read(&path).unwrap().unwrap(), ORIGINAL);
+    assert_eq!(files::read(&env.config.join("waybar/style.css")).unwrap().unwrap(), ORIGINAL);
+}
+
+#[test]
+fn legacy_cleanup_preserves_css_added_between_markers_and_missing_outputs() {
+    let (_root, env, config) = fixture();
+    let css = format!(
+        "{ORIGINAL}/* Skwd app theme */\n#clock {{ padding: 7px; }}\n@import 'skwd-colors.css';\n/* End Skwd app theme */\n"
+    );
+    legacy_setup(&env, &css);
+    std::fs::remove_file(env.config.join("waybar/skwd-colors.css")).unwrap();
+    set(&env, &config, true, &palette("#abcdef"), true).unwrap();
+    set(&env, &config, false, &Value::Null, true).unwrap();
+    assert_eq!(
+        files::read(&env.config.join("waybar/style.css")).unwrap().unwrap(),
+        format!("{ORIGINAL}#clock {{ padding: 7px; }}\n")
+    );
+}
+
+#[test]
+fn ambiguous_legacy_import_requires_review_without_modifying_files() {
+    let (_root, env, config) = fixture();
+    let css = format!("{ORIGINAL}@import \"skwd-colors.css\"; #clock {{ padding: 7px; }}\n");
+    legacy_setup(&env, &css);
+    let receipt = files::read(&env.receipts.join("waybar.json")).unwrap();
+    let status = inspect(&env, &config);
+    assert_eq!(status.state, "needs-review");
+    assert!(!status.can_disable);
+    assert!(status.detail.contains("skwd-colors.css"));
+    for enabled in [true, false] {
+        assert!(set(&env, &config, enabled, &palette("#abcdef"), true).is_err());
+        assert_eq!(files::read(&env.config.join("waybar/style.css")).unwrap().unwrap(), css);
+        assert_eq!(
+            files::read(&env.config.join("waybar/skwd-colors.css")).unwrap().unwrap(),
+            "legacy colours"
+        );
+        assert_eq!(files::read(&env.receipts.join("waybar.json")).unwrap(), receipt);
+        assert!(!output_path(&env).exists());
+    }
 }
 
 #[test]

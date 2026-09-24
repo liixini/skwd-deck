@@ -97,7 +97,21 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
     std::fs::write(&kitty, "font_size 13\n").unwrap();
     let waybar = sandbox.root.join("config/waybar/style.css");
     std::fs::create_dir_all(waybar.parent().unwrap()).unwrap();
-    std::fs::write(&waybar, "window#waybar { color: @primary; }\n").unwrap();
+    let original_waybar = "window#waybar { color: @primary; }\n";
+    std::fs::write(&waybar, format!("{original_waybar}@import 'skwd-colors.css';\n")).unwrap();
+    let legacy_output = sandbox.root.join("config/waybar/skwd-colors.css");
+    std::fs::write(&legacy_output, "legacy colours").unwrap();
+    let legacy_receipt = state_home.join("skwd-wall-v2/app-themes/waybar.json");
+    std::fs::create_dir_all(legacy_receipt.parent().unwrap()).unwrap();
+    std::fs::write(
+        &legacy_receipt,
+        serde_json::to_vec(&json!({
+            "version": 1, "enabled": true, "pending": false,
+            "config": waybar, "output": legacy_output, "original": original_waybar,
+            "before": "", "after": "/* Skwd app theme */\n@import \"skwd-colors.css\";\n/* End Skwd app theme */\n",
+            "rendered": "legacy colours", "result": "configured"
+        })).unwrap(),
+    ).unwrap();
     let walld = Walld::start(&sandbox);
     let mut client = walld.client();
     let invalid = client.call("theme.app.set", json!({"id": "kitty"}), 1).unwrap();
@@ -140,6 +154,16 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         assert_eq!(row["enabled"], true, "{row}");
         let output = row["output_path"].as_str().unwrap();
         assert!(!std::fs::read_to_string(output).unwrap().contains("{{"));
+        if id == "waybar" {
+            assert!(output.ends_with("/skwd-theme.css"));
+            assert!(!legacy_output.exists());
+            let receipt: Value =
+                serde_json::from_slice(&std::fs::read(&legacy_receipt).unwrap()).unwrap();
+            assert_eq!(receipt["enabled"], false);
+            let style = std::fs::read_to_string(&waybar).unwrap();
+            assert!(style.contains("skwd-theme.css"));
+            assert!(!style.contains("skwd-colors.css"));
+        }
         let response =
             client.call("theme.app.set", json!({"id": id, "enabled": false}), 6).unwrap();
         assert!(response.get("error").is_none(), "{id}: {response}");

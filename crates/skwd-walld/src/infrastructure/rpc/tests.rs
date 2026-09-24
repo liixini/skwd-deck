@@ -251,11 +251,34 @@ fn existing_workshop_download_refreshes_the_library() {
     let (state, subs, stats) = harness();
     let directory = state.config().we_dir().join("123456789");
     std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("project.json"), r#"{"type":"scene"}"#).unwrap();
+    std::fs::write(directory.join("scene.pkg"), b"fixture").unwrap();
     let scans_before = testenv::scan_calls();
     let response = call(&state, &subs, &stats, "steam.download", json!({"id": "123456789"}));
     assert_eq!(response.result.as_ref().unwrap()["status"], "exists");
     assert_eq!(testenv::scan_calls(), scans_before + 1);
-    std::fs::remove_dir(&directory).unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn preset_download_is_existing_only_when_parent_is_ready() {
+    let (_guard, _root) = testenv::lock();
+    testenv::write_config(json!({"steam":{"backend":"steamcmd"}}));
+    let (state, subs, stats) = harness();
+    let directory = state.config().we_dir().join("123456789");
+    let parent = state.config().we_dir().join("123456788");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("project.json"), r#"{"dependency":"123456788","preset":{}}"#)
+        .unwrap();
+    assert!(crate::infrastructure::steam_download::steam_inflight_begin("123456789"));
+    let response = call(&state, &subs, &stats, "steam.download", json!({"id":"123456789"}));
+    crate::infrastructure::steam_download::steam_inflight_end("123456789");
+    assert_eq!(response.result.as_ref().unwrap()["status"], "in_progress");
+    std::fs::create_dir_all(&parent).unwrap();
+    std::fs::write(parent.join("project.json"), r#"{"type":"scene"}"#).unwrap();
+    std::fs::write(parent.join("scene.pkg"), b"fixture").unwrap();
+    let response = call(&state, &subs, &stats, "steam.download", json!({"id":"123456789"}));
+    assert_eq!(response.result.as_ref().unwrap()["status"], "exists");
 }
 
 #[test]

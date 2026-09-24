@@ -1,5 +1,22 @@
 use super::*;
 
+#[test]
+fn preset_capture_is_invalidated_by_parent_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("1");
+    let preset = root.path().join("2");
+    std::fs::create_dir(&base).unwrap();
+    std::fs::create_dir(&preset).unwrap();
+    std::fs::write(base.join("project.json"), b"{}").unwrap();
+    std::fs::write(base.join("scene.pkg"), b"fixture").unwrap();
+    std::fs::write(preset.join("project.json"), br#"{"dependency":"1","preset":{}}"#).unwrap();
+    let original = signature(&preset, &serde_json::Map::new()).unwrap();
+    std::fs::write(base.join("scene.pkg"), b"changed parent").unwrap();
+    assert_ne!(original, signature(&preset, &serde_json::Map::new()).unwrap());
+    std::fs::remove_file(base.join("project.json")).unwrap();
+    assert!(signature(&preset, &serde_json::Map::new()).is_err());
+}
+
 fn fixture() -> (tempfile::TempDir, serde_json::Value, Vec<PathBuf>, serde_json::Value) {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("scene");

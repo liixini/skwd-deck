@@ -361,9 +361,10 @@ fn scene_process_output_set() {
     std::fs::write(
         &bin,
         format!(
-            "#!/bin/sh\n: > '{}'\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> '{}'; done\nexec cat\n",
+            "#!/bin/sh\n: > '{}'\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> '{}'; done\n: > '{}'\nexec cat\n",
             args_path.display(),
-            args_path.display()
+            args_path.display(),
+            args_path.with_extension("ready").display()
         ),
     )
     .unwrap();
@@ -384,8 +385,10 @@ fn scene_process_output_set() {
     std::thread::scope(|scope| {
         let ready = scope.spawn(|| {
             while !stop.load(Ordering::Relaxed) {
-                for pid in state.renderers().wallpaper_pids() {
-                    state.renderers().signal_ready(pid);
+                if args_path.with_extension("ready").is_file() {
+                    for pid in state.renderers().wallpaper_pids() {
+                        state.renderers().signal_ready(pid);
+                    }
                 }
                 std::thread::sleep(Duration::from_millis(2));
             }
@@ -651,7 +654,11 @@ fn cold_scene_request_reaches_renderer_arguments() {
         let captured = directory.path().join("args");
         std::fs::write(
             &binary,
-            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexec cat\n", captured.display()),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n: > '{}'\nexec cat\n",
+                captured.display(),
+                captured.with_extension("ready").display()
+            ),
         )
         .unwrap();
         let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
@@ -667,8 +674,10 @@ fn cold_scene_request_reaches_renderer_arguments() {
         std::thread::scope(|scope| {
             let ready = scope.spawn(|| {
                 while !stop.load(Ordering::Relaxed) {
-                    for pid in state.renderers().wallpaper_pids() {
-                        state.renderers().signal_ready(pid);
+                    if captured.with_extension("ready").is_file() {
+                        for pid in state.renderers().wallpaper_pids() {
+                            state.renderers().signal_ready(pid);
+                        }
                     }
                     std::thread::sleep(Duration::from_millis(2));
                 }

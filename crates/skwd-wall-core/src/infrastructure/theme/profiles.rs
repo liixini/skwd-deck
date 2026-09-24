@@ -105,7 +105,8 @@ pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
     {
         result["scheme"] = scheme;
     }
-    result["dark"] = if config.theme().authority() == "dms" {
+    result["dark"] = if config.theme().authority() == "dms" || config.theme().backend() == "matugen"
+    {
         result
             .pointer("/scheme/is_dark_mode")
             .cloned()

@@ -133,7 +133,9 @@ fn invoke(
                     let published = crate::theme::profiles::publish_document(
                         config,
                         &val,
-                        mode != "light",
+                        val.get("is_dark_mode")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(mode != "light"),
                         false,
                     );
                     if !published {
@@ -190,7 +192,7 @@ pub fn run_with(
 
     let config_path = generate_config(config);
     let scheme = scheme.map_or_else(|| config.theme().matugen_scheme(), str::to_string);
-    let mode = mode.map_or_else(|| config.theme().matugen_mode(), str::to_string);
+    let mode = mode.map_or_else(|| config.theme().mode(), str::to_string);
     let mode = resolve_cli_mode(config, image_path, &mode);
     let want = index.unwrap_or_else(|| config.theme().matugen_color_index());
 

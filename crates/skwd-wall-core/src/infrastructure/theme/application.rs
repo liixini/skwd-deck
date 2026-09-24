@@ -354,7 +354,14 @@ fn matugen_preview_args(config: &Config, image: &str, dark: bool) -> Vec<String>
         "-t".to_string(),
         config.theme().matugen_scheme(),
         "-m".to_string(),
-        if dark { "dark" } else { "light" }.to_string(),
+        if config.theme().mode() == "smart" {
+            "smart"
+        } else if dark {
+            "dark"
+        } else {
+            "light"
+        }
+        .to_string(),
         "--source-color-index".to_string(),
         config.theme().matugen_color_index().to_string(),
     ]
@@ -368,16 +375,19 @@ pub(crate) fn matugen_pick(val: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
-fn matugen_preview(config: &Config, image: &str, dark: bool) -> Vec<String> {
+fn matugen_preview_document(config: &Config, image: &str, dark: bool) -> Option<serde_json::Value> {
     let mut cmd = Command::new("matugen");
     cmd.args(matugen_preview_args(config, image, dark));
-    let Some(out) = run_capture(&mut cmd) else {
-        return Vec::new();
-    };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(&out) else {
-        return Vec::new();
-    };
-    matugen_pick(&val)
+    if let Some(contrast) = config.theme().matugen_contrast() {
+        cmd.arg("--contrast").arg(contrast.to_string());
+    }
+    serde_json::from_str(&run_capture(&mut cmd)?).ok()
+}
+
+fn matugen_preview(config: &Config, image: &str, dark: bool) -> Vec<String> {
+    matugen_preview_document(config, image, dark)
+        .map(|document| matugen_pick(&document))
+        .unwrap_or_default()
 }
 
 fn wallust_preview(config: &Config, image: &str, dark: bool) -> Vec<String> {
@@ -598,6 +608,13 @@ pub fn styled_palette(config: &Config, seed: &str, dark: bool) -> Option<serde_j
 }
 
 pub fn preview_palette(config: &Config, image: &str) -> Option<serde_json::Value> {
+    if resolve_backend(config) == "matugen"
+        && (config.theme().mode() == "smart" || config.theme().matugen_scheme() == "scheme-smart")
+    {
+        let dark = config.theme().mode() == "smart" || resolve_dark(config, image);
+        return matugen_preview_document(config, image, dark)
+            .and_then(|document| crate::material::ui_palette(&document));
+    }
     let dark = resolve_dark(config, image);
     match resolve_backend(config).as_str() {
         "static" => return static_palette_value(config, dark),
@@ -659,6 +676,11 @@ const TONE_CACHE_CAP: usize = 512;
 pub fn resolve_dark(config: &Config, image: &str) -> bool {
     static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
     let mode = config.theme().mode();
+    if mode == "smart" && resolve_backend(config) == "matugen" {
+        return matugen_preview_document(config, image, true)
+            .and_then(|document| document.get("is_dark_mode").and_then(serde_json::Value::as_bool))
+            .unwrap_or(true);
+    }
     if mode != "auto" {
         return mode != "light";
     }
@@ -680,6 +702,10 @@ pub fn resolve_dark(config: &Config, image: &str) -> bool {
 
 pub fn apply(config: &Config, image_path: &str) -> bool {
     let backend = resolve_backend(config);
+    if backend == "matugen" {
+        log::info!("theme apply: backend=matugen mode={} src={image_path}", config.theme().mode());
+        return crate::matugen::run(config, image_path);
+    }
     let dark = resolve_dark(config, image_path);
     log::info!("theme apply: backend={backend} dark={dark} src={image_path}");
     match backend.as_str() {
@@ -691,7 +717,6 @@ pub fn apply(config: &Config, image_path: &str) -> bool {
             };
             super::profiles::publish(config, &val, dark)
         }
-        "matugen" => crate::matugen::run(config, image_path),
         "noctalia" => {
             let ok = crate::noctalia::write_bridge_palette(config, image_path, dark);
             if ok {

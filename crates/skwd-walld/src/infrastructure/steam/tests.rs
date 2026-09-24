@@ -142,3 +142,23 @@ fn ext_from_url_query() {
     assert_eq!(ext_from_url("https://steamuserimages.akamai.net/ugc/abc.png?w=100"), "png");
     assert_eq!(ext_from_url("https://x/y/preview"), "jpg");
 }
+
+#[test]
+fn downloaded_marker_requires_the_preset_parent_media() {
+    let root = tempfile::tempdir().unwrap();
+    let preset = root.path().join("2");
+    let parent = root.path().join("1");
+    std::fs::create_dir(&preset).unwrap();
+    std::fs::write(preset.join("project.json"), r#"{"dependency":"1","preset":{}}"#).unwrap();
+    assert!(downloaded_ids(root.path()).is_empty());
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::write(parent.join("project.json"), r#"{"type":"scene"}"#).unwrap();
+    assert!(downloaded_ids(root.path()).is_empty());
+    std::fs::write(parent.join("scene.pkg"), b"fixture").unwrap();
+    assert_eq!(
+        downloaded_ids(root.path()),
+        std::collections::HashSet::from(["1".into(), "2".into()])
+    );
+    std::fs::remove_file(parent.join("scene.pkg")).unwrap();
+    assert!(downloaded_ids(root.path()).is_empty());
+}

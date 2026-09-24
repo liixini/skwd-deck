@@ -14,22 +14,9 @@ pub fn scene_properties(state: &WallState, we_id: &str) -> Vec<WeProperty> {
 }
 
 pub fn read_declarations(item_dir: &std::path::Path) -> Map<String, Value> {
-    let Ok(bytes) = std::fs::read(item_dir.join("project.json")) else {
-        return Map::new();
-    };
-    let Ok(project) = serde_json::from_slice::<Value>(&strip_bom(&bytes)) else {
-        return Map::new();
-    };
-    project
-        .get("general")
-        .and_then(|top| top.get("properties"))
-        .and_then(Value::as_object)
-        .cloned()
+    paper_control::we_project::Project::resolve(item_dir)
+        .map(|project| project.declarations())
         .unwrap_or_default()
-}
-
-fn strip_bom(bytes: &[u8]) -> Vec<u8> {
-    bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes).to_vec()
 }
 
 pub fn merge(declared: &Map<String, Value>, overrides: &Map<String, Value>) -> Vec<WeProperty> {

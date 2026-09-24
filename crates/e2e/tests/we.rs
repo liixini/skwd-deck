@@ -7,6 +7,56 @@ use std::time::Duration;
 
 const STUB: &str = "fake_renderer";
 
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn preset_apply_and_property_reset_keep_the_selected_item() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("we-preset");
+    scene_dir_with_properties(
+        &sandbox,
+        "1",
+        &json!({"rain":{"type":"bool","value":true,"text":"Rain"}}),
+    );
+    let preset = sandbox.root.join("we/2");
+    std::fs::create_dir(&preset).unwrap();
+    std::fs::write(
+        preset.join("project.json"),
+        r#"{"dependency":"1","preset":{"rain":false},"title":"Subtle"}"#,
+    )
+    .unwrap();
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    sandbox.write_config(&json!({
+        "paths":{"wallpaper":sandbox.library(),"steamWorkshop":sandbox.root.join("we")},
+        "restoreOnStartup":false,"general":{"randomInterval":0},
+        "effects":{"autoRecolor":false,"autoTheme":""},"transition":{"enabled":false}
+    }));
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let call = |client: &mut Client, method: &str, params: Value| {
+        let response = client.call(method, params, 900).expect("RPC reply");
+        assert!(response.get("error").is_none(), "{response}");
+        response
+    };
+    let declared = rows(Some(&call(&mut client, "wall.we_properties", json!({"we_id":"2"}))));
+    assert_eq!(row(&declared, "rain").unwrap()["default"], false);
+    call(&mut client, "wall.apply", json!({"type":"we","we_id":"2","output":"DP-1"}));
+    assert_eq!(output_id(&mut client, "DP-1"), ("we".into(), "2".into()));
+    let written = rows(Some(&call(
+        &mut client,
+        "wall.set_we_property",
+        json!({"we_id":"2","name":"rain","value":true}),
+    )));
+    assert_eq!(row(&written, "rain").unwrap()["value"], true);
+    let reset =
+        rows(Some(&call(&mut client, "wall.set_we_property", json!({"we_id":"2","reset":true}))));
+    assert_eq!(row(&reset, "rain").unwrap()["value"], false);
+    assert_eq!(row(&reset, "rain").unwrap()["overridden"], false);
+    let original = rows(Some(&call(&mut client, "wall.we_properties", json!({"we_id":"1"}))));
+    assert_eq!(row(&original, "rain").unwrap()["value"], true);
+    assert_eq!(output_id(&mut client, "DP-1").1, "2");
+}
+
 fn scene_dir(sandbox: &Sandbox, we_id: &str) {
     let dir = sandbox.root.join("we").join(we_id);
     std::fs::create_dir_all(&dir).expect("we scene dir");

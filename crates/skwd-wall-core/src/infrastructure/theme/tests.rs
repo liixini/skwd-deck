@@ -554,3 +554,18 @@ fn preview_palettes_cover_schemes() {
     );
     assert!(palettes.iter().all(|(_, palette)| swatch_from_palette(palette).len() == 6));
 }
+
+#[test]
+fn matugen_smart_preview_preserves_cli_choices() {
+    let config = Config::from_root(json!({
+        "theme": {"mode": "smart"},
+        "matugen": {"mode": "dark", "schemeType": "scheme-smart"}
+    }));
+    for dark in [false, true] {
+        let args = matugen_preview_args(&config, "/wall.png", dark);
+        for (flag, value) in [("-m", "smart"), ("-t", "scheme-smart")] {
+            assert_eq!(args[args.iter().position(|arg| arg == flag).unwrap() + 1], value);
+        }
+        assert!(args.iter().any(|arg| arg == "--dry-run"));
+    }
+}

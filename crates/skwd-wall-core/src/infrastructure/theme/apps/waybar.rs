@@ -175,6 +175,13 @@ pub(super) fn inspect(env: &Environment, config: &Config) -> AppThemeStatus {
                 status.can_disable = true;
                 status.state = "configured".into();
                 status.output_path = legacy.output.display().to_string();
+                let restored = files::read(&legacy.config)
+                    .and_then(|text| restore_legacy(&legacy, text.as_deref().unwrap_or_default()));
+                if let Err(error) = restored {
+                    status.state = "needs-review".into();
+                    status.detail = error.to_string();
+                    status.can_disable = false;
+                }
             }
             if let Some(reason) = conflict(config, &output_path(env), styles) {
                 status.state = "conflict".into();
@@ -209,14 +216,40 @@ fn rendered(palette: &Value, dark: bool) -> Result<String> {
     Ok(text)
 }
 
+fn restore_legacy(receipt: &files::Receipt, text: &str) -> Result<String> {
+    let text = files::restore(receipt, recipe(), text).unwrap_or_else(|_| text.to_owned());
+    let name = receipt.output.file_name().context("Saved Waybar colours have no file name")?;
+    let relative = Path::new(name);
+    let dotted = Path::new(".").join(relative);
+    let restored: String = text
+        .split_inclusive('\n')
+        .filter(|line| {
+            let marker = line.split_ascii_whitespace().collect::<String>();
+            !matches!(marker.as_str(), "/*Skwdapptheme*/" | "/*EndSkwdapptheme*/")
+                && ![receipt.output.as_path(), relative, dotted.as_path()]
+                    .iter()
+                    .any(|output| import_line(line, output))
+        })
+        .collect();
+    ensure!(
+        !restored.contains(name.to_string_lossy().as_ref()),
+        "The legacy Waybar import in {} needs review; put its skwd-colors.css import on a separate line before retrying",
+        receipt.config.display()
+    );
+    Ok(restored)
+}
+
 fn retire_legacy(env: &Environment) -> Result<()> {
     let path = env.receipts.join("waybar.json");
     if let Some(mut receipt) =
         files::load(&path)?.filter(|receipt| receipt.enabled || receipt.pending)
     {
-        let text = files::read(&receipt.config)?.unwrap_or_default();
-        let restored = files::restore(&receipt, recipe(), &text)?;
-        files::write(&receipt.config, &restored)?;
+        if let Some(text) = files::read(&receipt.config)? {
+            let restored = restore_legacy(&receipt, &text)?;
+            if restored != text {
+                files::write(&receipt.config, &restored)?;
+            }
+        }
         if files::read(&receipt.output)?.as_deref() == Some(&receipt.rendered) {
             std::fs::remove_file(&receipt.output)?;
         }

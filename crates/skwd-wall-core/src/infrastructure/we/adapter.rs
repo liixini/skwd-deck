@@ -93,11 +93,10 @@ pub(crate) fn commit_scene_set(
 }
 
 pub fn read_project_type(item_dir: &Path) -> (String, String) {
-    let path = item_dir.join("project.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(project) = paper_control::we_project::Project::resolve(item_dir) else {
         return ("scene".to_string(), String::new());
     };
-    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let val = project.document;
     let ty = val.get("type").and_then(|node| node.as_str()).unwrap_or("scene").to_lowercase();
     let file = val.get("file").and_then(|node| node.as_str()).unwrap_or("").to_string();
     (ty, file)
@@ -330,9 +329,7 @@ fn native_scene<'a>(
     allow_warm_swap: bool,
     transition: Option<OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<NativeSceneCandidate<'a>> {
-    if !["scene.pkg", "gifscene.pkg"].iter().any(|name| item_dir.join(name).is_file()) {
-        anyhow::bail!("native Wallpaper Engine scene package is missing in {}", item_dir.display());
-    }
+    paper_control::we_project::Project::scene_package_at(item_dir)?;
     let dir = item_dir.display().to_string();
     let fill = state.config().renderer().we_scene_fill_mode();
     let (transitions, shader, duration_ms) = {
@@ -424,7 +421,7 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
         return Ok(false);
     }
     let item_dir = state.config().we_dir().join(we_id);
-    if !["scene.pkg", "gifscene.pkg"].iter().any(|name| item_dir.join(name).is_file()) {
+    if paper_control::we_project::Project::scene_package_at(&item_dir).is_err() {
         return Ok(false);
     }
     let dir = item_dir.display().to_string();
@@ -519,10 +516,11 @@ pub fn apply_we(
         )
     };
     if ty == "video" {
+        let project = paper_control::we_project::Project::resolve(&item_dir)?;
         if file.is_empty() {
             anyhow::bail!("WE video item {we_id} has no media file in project.json");
         }
-        let Some(video) = safe_item_join(&item_dir, &file) else {
+        let Some(video) = safe_item_join(&project.source, &file) else {
             anyhow::bail!("WE item has unsafe video file path: {file}");
         };
         let request = crate::backend::wallpaper::ApplyVideoRequest {

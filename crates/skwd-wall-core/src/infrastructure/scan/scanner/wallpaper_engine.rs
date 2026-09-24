@@ -115,8 +115,9 @@ where
     }
     let is_video_project = project_type.eq_ignore_ascii_case("video");
     let video_path = is_video_project
-        .then(|| crate::we::safe_item_join(item_directory, &file))
-        .flatten()
+        .then(|| paper_control::we_project::Project::resolve(item_directory))
+        .and_then(Result::ok)
+        .and_then(|project| crate::we::safe_item_join(&project.source, &file))
         .filter(|path| path.is_file());
     if is_video_project && video_path.is_none() {
         let _ = state.with_db(|conn| db::delete_entries(conn, std::slice::from_ref(&key)));

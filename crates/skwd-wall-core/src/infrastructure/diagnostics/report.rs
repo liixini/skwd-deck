@@ -76,7 +76,7 @@ pub fn config_report(config: &Config) -> String {
         "  matugen       = enabled={} scheme={} mode={} index={} contrast={:?}",
         config.theme().matugen_enabled(),
         config.theme().matugen_scheme(),
-        config.theme().matugen_mode(),
+        config.theme().mode(),
         config.theme().matugen_color_index(),
         config.theme().matugen_contrast()
     );
