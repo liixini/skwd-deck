@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-const VERIFY_REVISION: &str = "d72dbeb599fd884c13f0b55e59f3df2b42d28d80";
+const VERIFY_REVISION: &str = "6c8fc9023e41a2d71fed44de4f7b7313d0f7fb17";
 
 fn root() -> PathBuf {
     workspace_from(&std::env::current_dir().expect("current directory"))
