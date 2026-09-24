@@ -89,6 +89,19 @@ impl CoreWallpaperApplication {
 }
 
 impl WallpaperApplication for CoreWallpaperApplication {
+    fn release_outputs(&self, outputs: &[String]) -> anyhow::Result<()> {
+        anyhow::ensure!(!outputs.is_empty(), "external handoff requires at least one output");
+        let socket = crate::infrastructure::paper::paper_socket_path();
+        if socket.exists() {
+            crate::infrastructure::paper::PaperClient::new(
+                self.state.config().renderer().paper_bin(),
+                socket,
+            )
+            .stop(outputs.to_vec())?;
+        }
+        crate::apply::release_outputs(&self.state, outputs)
+    }
+
     fn apply_static(&self, request: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         self.stop_paper()?;
         crate::apply::apply_static(

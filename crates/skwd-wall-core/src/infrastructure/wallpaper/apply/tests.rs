@@ -2164,3 +2164,136 @@ fn scene_fps_policy_detects_active_override_changes_and_default_restoration() {
     assert!(!native_scene_policy_matches(&st));
     assert_eq!(crate::we::scene_fps(&st, "a"), global);
 }
+
+#[test]
+fn external_handoff_retires_every_renderer_and_clears_restore_state() {
+    let st = Stub::new();
+    st.renderers().swap_paper(sleeper());
+    st.renderers().set_base_still(sleeper(), None);
+    st.renderers().set_video_paper("DP-1", sleeper(), None);
+    st.renderers().set_output_still("DP-2", sleeper(), None);
+    let holder = sleeper();
+    let holder_pid = holder.id();
+    st.renderers().track(holder);
+    st.renderers().set_assignment("DP-1", "old");
+    seed(&st, "*", "we", "", "123", true, 50);
+    let mut pids = st.renderers().wallpaper_pids();
+    pids.push(holder_pid);
+    assert!(!pids.is_empty());
+    release_outputs(&st, &["*".into()]).unwrap();
+    st.renderers().set_session_paused(17, false);
+    refresh_renderer_policy(&st).unwrap();
+    assert!(st.renderers().wallpaper_pids().is_empty());
+    assert!(st.renderers().assignments().is_empty());
+    assert_eq!(recorded(&st), serde_json::json!({}));
+    for pid in pids {
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    }
+    release_outputs(&st, &["*".into()]).unwrap();
+}
+
+#[test]
+fn external_handoff_preserves_other_display_and_can_return_to_paper() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::new();
+    let _ready = st.readiness();
+    seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
+    seed(&st, "DP-2", "static", "/w/b.png", "", true, 0);
+    let monitors = vec!["DP-1".to_string(), "DP-2".to_string()];
+    reconcile_ready(&st, "fill", &monitors, false, "", 0).unwrap();
+    let preserved = recorded(&st)["DP-2"].clone();
+    release_outputs(&st, &["DP-1".into()]).unwrap();
+    assert!(!st.renderers().has_video_paper("DP-1"));
+    assert!(recorded(&st).get("DP-1").is_none());
+    assert_eq!(recorded(&st)["DP-2"], preserved);
+    assert!(st.renderers().has_output_still("DP-2"));
+    assert!(!st.renderers().assignments().contains_key("DP-1"));
+    refresh_renderer_policy(&st).unwrap();
+    assert!(!st.renderers().has_video_paper("DP-1"));
+    apply_output_with_transition(&st, "DP-1", "video", "/v/new.mp4", "", "fill", true, 80, None)
+        .unwrap();
+    assert!(st.renderers().has_video_paper("DP-1"));
+    assert_eq!(recorded(&st)["DP-1"]["path"], "/v/new.mp4");
+    assert_eq!(recorded(&st)["DP-2"], preserved);
+}
+
+#[test]
+fn external_handoff_splits_a_shared_we_renderer() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::new();
+    let _ready = st.readiness();
+    let item = st.config().we_dir().join("123");
+    std::fs::create_dir_all(&item).unwrap();
+    std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+    for output in ["DP-1", "DP-2"] {
+        seed(&st, output, "we", "", "123", true, 50);
+    }
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], false, "", 0).unwrap();
+    let before = st.renderers().wallpaper_pids();
+    release_outputs(&st, &["DP-1".into()]).unwrap();
+    assert!(recorded(&st).get("DP-1").is_none());
+    assert_eq!(recorded(&st)["DP-2"]["we_id"], "123");
+    assert!(st.renderers().has_video_paper("DP-2"));
+    assert!(!st.renderers().has_video_paper("DP-1,DP-2"));
+    assert!(before.iter().all(|pid| !Path::new(&format!("/proc/{pid}")).exists()));
+}
+
+#[test]
+fn external_handoff_failure_preserves_previous_assignment() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::new();
+    let _ready = st.readiness();
+    seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
+    seed(&st, "DP-2", "static", "/w/b.png", "", true, 0);
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], false, "", 0).unwrap();
+    let previous = recorded(&st);
+    let assignments = st.renderers().assignments();
+    let pids = st.renderers().wallpaper_pids();
+    let video_outputs = st.renderers().video_paper_outputs();
+    assert!(!video_outputs.is_empty());
+    std::fs::remove_file(st.config().renderer().vk_bin()).unwrap();
+    st.renderers().kill_output_still("DP-2");
+    assert!(release_outputs(&st, &["DP-1".into()]).is_err());
+    assert_eq!(recorded(&st), previous);
+    assert_eq!(st.renderers().assignments(), assignments);
+    assert_eq!(st.renderers().video_paper_outputs(), video_outputs);
+    assert!(video_outputs.iter().all(|output| st.renderers().has_video_paper(output)));
+    assert!(pids.iter().any(|pid| Path::new(&format!("/proc/{pid}")).exists()));
+}
+
+#[test]
+fn external_handoff_wildcard_requires_known_displays_and_preserves_unselected_ones() {
+    let _guard = crate::outputs::enum_exclusive();
+    let st = Stub::new();
+    let _ready = st.readiness();
+    let fake = st.path().join("outputs");
+    let previous_env = std::env::var_os("SKWD_FAKE_OUTPUTS_FILE");
+    unsafe {
+        std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", &fake);
+    }
+    std::fs::write(&fake, ",").unwrap();
+    seed(&st, "*", "video", "/v/a.mp4", "", true, 80);
+    st.renderers().set_video_paper("*", sleeper(), None);
+    let previous = recorded(&st);
+    let rejected = release_outputs(&st, &["DP-1".into()]);
+    let after_rejection = recorded(&st);
+    let incumbent_alive = st.renderers().has_video_paper("*");
+    std::fs::write(&fake, "DP-1:1920x1080,DP-2:1920x1080,DP-3:1920x1080").unwrap();
+    let result = release_outputs(&st, &["DP-1".into(), "DP-3".into()]);
+    unsafe {
+        match previous_env {
+            Some(value) => std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", value),
+            None => std::env::remove_var("SKWD_FAKE_OUTPUTS_FILE"),
+        }
+    }
+    assert!(rejected.is_err());
+    assert_eq!(after_rejection, previous);
+    assert!(incumbent_alive);
+    result.unwrap();
+    assert_eq!(recorded(&st).as_object().unwrap().len(), 1);
+    assert_eq!(recorded(&st)["DP-2"]["path"], "/v/a.mp4");
+    assert!(st.renderers().has_video_paper("DP-2"));
+    assert!(!st.renderers().has_video_paper("*"));
+    assert!(release_outputs(&st, &[]).is_err());
+    assert!(st.renderers().has_video_paper("DP-2"));
+}
