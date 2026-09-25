@@ -21,6 +21,7 @@ use super::static_media::native_still_override;
 use super::transition::TransitionSelection;
 
 pub use super::engine::{VideoEngine, video_engine_is_vk};
+pub use super::external::release_outputs;
 pub use super::policy::{
     active_renderer_policy_matches, independent_playback, native_scene_properties_match,
     paper_policy_matches, renderer_policy_matches, scene_properties_signature,

@@ -742,3 +742,98 @@ fn scene_fps_override_persists_and_controls_each_renderer() {
         assert!(env.split(|byte| *byte == 0).any(|entry| entry == b"SKWD_PAPER_WE_FPS=20"));
     }
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn we_external_handoff_survives_picker_close_and_returns_to_paper() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("we-external-handoff");
+    sandbox.set_env(
+        "SKWD_PAPER_V2_SOCKET",
+        &sandbox.root.join("runtime/paper.sock").to_string_lossy(),
+    );
+    scene_dir(&sandbox, "123");
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    let image = sandbox.library().join("image.png");
+    assert!(ffmpeg_still(&image, "color=c=red:s=32x32"));
+    let marker = sandbox.root.join("external-applied");
+    let mut config = json!({
+        "paths":{"wallpaper":sandbox.library(), "steamWorkshop":sandbox.root.join("we")},
+        "pickOnlyMode":false, "restoreOnStartup":false,
+        "transition":{"enabled":false}, "general":{"randomInterval":0},
+        "theme":{"policy":"off"}
+    });
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let response = client.call("wall.apply", json!({"type":"we", "we_id":"123"}), 1).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert!(wait_until(|| !child_pids(walld.pid(), STUB).is_empty(), Duration::from_secs(5)));
+    let old = child_pids(walld.pid(), STUB);
+    let check_old =
+        old.iter().map(|pid| format!("test ! -d /proc/{pid}")).collect::<Vec<_>>().join(" && ");
+    config["pickOnlyMode"] = json!(true);
+    config["postProcessing"] = json!([{"type":"static", "command":format!("{check_old} && printf applied > '{}'", marker.display())}]);
+    sandbox.write_config(&config);
+    let response = client.call("wall.apply", json!({"type":"static", "path":image}), 2).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert!(
+        wait_until(|| marker.exists(), Duration::from_secs(5)),
+        "external hook must run after Paper exits"
+    );
+    client.call("picker.session.end", json!({}), 3);
+    drop(client);
+    let mut client = walld.client();
+    client.call("wall.set_paused", json!({"paused":false}), 4);
+    assert!(child_pids(walld.pid(), STUB).is_empty());
+    assert_eq!(sandbox.outputs_json(), json!({}));
+    assert_eq!(sandbox.last_wallpaper()["path"], json!(image));
+    config["pickOnlyMode"] = json!(false);
+    config["postProcessing"] = json!([]);
+    sandbox.write_config(&config);
+    let response = client.call("wall.apply", json!({"type":"we", "we_id":"123"}), 5).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert!(wait_until(|| !child_pids(walld.pid(), STUB).is_empty(), Duration::from_secs(5)));
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn we_external_handoff_preserves_locked_display() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("we-external-locked");
+    sandbox.set_env(
+        "SKWD_PAPER_V2_SOCKET",
+        &sandbox.root.join("runtime/paper.sock").to_string_lossy(),
+    );
+    scene_dir(&sandbox, "123");
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:1920x1080,DP-3:1920x1080");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    let image = sandbox.library().join("image.png");
+    assert!(ffmpeg_still(&image, "color=c=red:s=32x32"));
+    let mut config = json!({
+        "paths":{"wallpaper":sandbox.library(), "steamWorkshop":sandbox.root.join("we")},
+        "pickOnlyMode":false, "restoreOnStartup":false,
+        "transition":{"enabled":false}, "general":{"randomInterval":0},
+        "theme":{"policy":"off"}
+    });
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let response = client.call("wall.apply", json!({"type":"we", "we_id":"123"}), 1).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    config["pickOnlyMode"] = json!(true);
+    config["display"] = json!({"outputLocks":{"DP-1":true}});
+    sandbox.write_config(&config);
+    let response = client.call("wall.apply", json!({"type":"static", "path":image}), 2).unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert_eq!(response["result"]["locked"], json!(["DP-1"]));
+    assert_eq!(sandbox.outputs_json()["DP-1"]["we_id"], "123");
+    assert!(sandbox.outputs_json().get("DP-2").is_none());
+    assert!(sandbox.outputs_json().get("DP-3").is_none());
+    assert!(wait_until(|| child_pids(walld.pid(), STUB).len() == 1, Duration::from_secs(5)));
+    client.call("picker.session.end", json!({}), 3);
+    assert_eq!(sandbox.outputs_json()["DP-1"]["we_id"], "123");
+}

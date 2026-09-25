@@ -29,6 +29,7 @@ static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
         std::env::remove_var("SKWD_WALL_CONFIG");
         std::env::remove_var("SKWD_WALL_V2_CACHE");
         std::env::remove_var("SKWD_WALL_PAPER_STILL");
+        std::env::remove_var("SKWD_PAPER_V2_SOCKET");
         std::env::remove_var("SKWD_WALL_DEBUG");
     }
     root
