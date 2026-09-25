@@ -1,4 +1,4 @@
-%{!?skwd_version:%global skwd_version 1.0.0~beta.20}
+%{!?skwd_version:%global skwd_version 1.0.0~beta.21}
 
 Name:           skwd-deck-steamworks
 Version:        %{skwd_version}
