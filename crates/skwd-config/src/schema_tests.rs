@@ -228,6 +228,80 @@ fn transition_fps_is_independent_and_preserves_legacy_caps() {
 }
 
 #[test]
+fn picker_parallax_options_are_independent_opt_in_booleans() {
+    for path in [crate::keys::selector::SLICE_PARALLAX, crate::keys::selector::HEX_PARALLAX] {
+        assert_eq!(boolean_default(path), Some(false));
+        assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
+        assert_eq!(normalize_value(path, &json!(false)), Some(json!(false)));
+    }
+    assert_ne!(crate::keys::selector::SLICE_PARALLAX, crate::keys::selector::HEX_PARALLAX);
+}
+
+#[test]
+fn layout_settings_normalize_bounds_and_reject_wrong_types() {
+    for path in [crate::keys::selector::DEPTH_COUNT, crate::keys::selector::COLLECTION_COUNT] {
+        assert_eq!(normalize_value(path, &json!(-100)), Some(json!(3)));
+        assert_eq!(normalize_value(path, &json!("bad")), None);
+    }
+    assert_eq!(
+        normalize_value(crate::keys::selector::DEPTH_NAVIGATION_MS, &json!(9999)),
+        Some(json!(8000))
+    );
+    assert_eq!(
+        normalize_value(crate::keys::selector::COLLECTION_TILT, &json!(-20)),
+        Some(json!(0))
+    );
+}
+
+#[test]
+fn card_shadows_have_independent_boolean_settings() {
+    let depth = setting::selector::DEPTH_SHADOWS;
+    let slices = setting::selector::SLICE_SHADOWS;
+    assert!(!depth.read(&json!({})));
+    assert!(slices.read(&json!({})));
+    let config =
+        json!({"components":{"wallpaperSelector":{"depthShadows":false,"sliceShadows":true}}});
+    assert!(!depth.read(&config));
+    assert!(slices.read(&config));
+    for key in [crate::keys::selector::DEPTH_SHADOWS, crate::keys::selector::SLICE_SHADOWS] {
+        assert_eq!(normalize_value(key, &json!(false)), Some(json!(false)));
+        assert_eq!(normalize_value(key, &json!("invalid")), None);
+    }
+}
+
+#[test]
+fn depth_defaults_match_the_local_profile_and_preserve_saved_values() {
+    use setting::selector as depth;
+    let config = json!({});
+    for (setting, expected) in [
+        (depth::DEPTH_HEIGHT, 520.0),
+        (depth::DEPTH_WIDTH_PX, 280.0),
+        (depth::DEPTH_SPACING_PX, 280.0),
+        (depth::DEPTH_COUNT, 5.0),
+        (depth::DEPTH_FALLOFF_FACTOR, 0.05),
+        (depth::DEPTH_CORNERS, 0.0),
+        (depth::DEPTH_SKEW, 0.0),
+        (depth::DEPTH_NAVIGATION_MS, 1000.0),
+    ] {
+        assert_eq!(setting.read(&config), expected);
+    }
+    assert!(!depth::DEPTH_SELECTION_FRAME.read(&config));
+    assert!(!depth::DEPTH_SHADOWS.read(&config));
+    let saved = json!({"components":{"wallpaperSelector":{
+        "depthWidthPx":450,"depthSpacingPx":300,"depthCount":9,"depthFalloffFactor":0.4,
+        "depthNavigationMs":250,"depthSkew":35,"depthSelectionFrame":true,"depthShadows":true
+    }}});
+    assert_eq!(depth::DEPTH_WIDTH_PX.read(&saved), 450.0);
+    assert_eq!(depth::DEPTH_SPACING_PX.read(&saved), 300.0);
+    assert_eq!(depth::DEPTH_COUNT.read(&saved), 9.0);
+    assert_eq!(depth::DEPTH_FALLOFF_FACTOR.read(&saved), 0.4);
+    assert_eq!(depth::DEPTH_NAVIGATION_MS.read(&saved), 250.0);
+    assert_eq!(depth::DEPTH_SKEW.read(&saved), 35.0);
+    assert!(depth::DEPTH_SELECTION_FRAME.read(&saved));
+    assert!(depth::DEPTH_SHADOWS.read(&saved));
+}
+
+#[test]
 fn optional_filter_controls_have_enabled_boolean_defaults() {
     for path in [
         crate::keys::filter_bar::SHOW_ORIENT,

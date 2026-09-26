@@ -240,6 +240,40 @@ pub mod setting {
     }
 
     pub mod selector {
+        pub const DEPTH_SHADOWS: Setting<bool> =
+            Setting::boolean(keys::selector::DEPTH_SHADOWS, false);
+        pub const SLICE_SHADOWS: Setting<bool> =
+            Setting::boolean(keys::selector::SLICE_SHADOWS, true);
+        pub const DEPTH_SELECTION_FRAME: Setting<bool> =
+            Setting::boolean(keys::selector::DEPTH_SELECTION_FRAME, false);
+        pub const DEPTH_HEIGHT: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_HEIGHT, 520.0, 100.0, 1600.0);
+        pub const DEPTH_WIDTH_PX: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_WIDTH_PX, 280.0, 40.0, 2400.0);
+        pub const DEPTH_SPACING_PX: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_SPACING_PX, 280.0, 0.0, 4000.0);
+        pub const DEPTH_COUNT: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_COUNT, 5.0, 3.0, 21.0);
+        pub const DEPTH_FALLOFF_FACTOR: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_FALLOFF_FACTOR, 0.05, 0.0, 1.0);
+        pub const DEPTH_CORNERS: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNERS, 0.0, 0.0, 100.0);
+        pub const DEPTH_SKEW: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_SKEW, 0.0, -200.0, 200.0);
+        pub const DEPTH_NAVIGATION_MS: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_NAVIGATION_MS, 1000.0, 35.0, 8000.0);
+        pub const COLLECTION_SIZE: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_SIZE, 42.0, 15.0, 65.0);
+        pub const COLLECTION_SPACING: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_SPACING, 17.0, 5.0, 30.0);
+        pub const COLLECTION_COUNT: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_COUNT, 7.0, 3.0, 11.0);
+        pub const COLLECTION_TILT: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_TILT, 52.0, 0.0, 75.0);
+        pub const COLLECTION_CORNERS: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_CORNERS, 2.0, 0.0, 100.0);
+        pub const COLLECTION_SPEED: Setting<f64> =
+            Setting::bounded_number(keys::selector::COLLECTION_SPEED, 100.0, 25.0, 300.0);
         use super::{Setting, keys};
 
         pub const DISPLAY_MODE: Setting<String> =
@@ -412,6 +446,23 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::motion::FAST_MS.spec(),
     setting::motion::STANDARD_MS.spec(),
     setting::motion::SLOW_MS.spec(),
+    setting::selector::DEPTH_SHADOWS.spec(),
+    setting::selector::SLICE_SHADOWS.spec(),
+    setting::selector::DEPTH_SELECTION_FRAME.spec(),
+    setting::selector::DEPTH_HEIGHT.spec(),
+    setting::selector::DEPTH_WIDTH_PX.spec(),
+    setting::selector::DEPTH_SPACING_PX.spec(),
+    setting::selector::DEPTH_COUNT.spec(),
+    setting::selector::DEPTH_FALLOFF_FACTOR.spec(),
+    setting::selector::DEPTH_CORNERS.spec(),
+    setting::selector::DEPTH_SKEW.spec(),
+    setting::selector::DEPTH_NAVIGATION_MS.spec(),
+    setting::selector::COLLECTION_SIZE.spec(),
+    setting::selector::COLLECTION_SPACING.spec(),
+    setting::selector::COLLECTION_COUNT.spec(),
+    setting::selector::COLLECTION_TILT.spec(),
+    setting::selector::COLLECTION_CORNERS.spec(),
+    setting::selector::COLLECTION_SPEED.spec(),
     setting::selector::DISPLAY_MODE.spec(),
     setting::selector::FLIP_DURATION_MS.spec(),
     setting::selector::GRID_BORDER_WIDTH.spec(),
@@ -531,6 +582,8 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::general::WEATHER_MATCH, false),
     SettingSpec::boolean(crate::keys::selector::ROUND_CORNERS, false),
     SettingSpec::boolean(crate::keys::selector::SLICE_WOBBLE, false),
+    SettingSpec::boolean(crate::keys::selector::SLICE_PARALLAX, false),
+    SettingSpec::boolean(crate::keys::selector::HEX_PARALLAX, false),
     SettingSpec::boolean(crate::keys::paper::PERFORMANCE_MODE, false),
     SettingSpec::boolean(crate::keys::paper::VIDEO_MULTI_PROCESS, true),
     SettingSpec::boolean(crate::keys::niri::OVERVIEW_ONLY_PLAYBACK, false),

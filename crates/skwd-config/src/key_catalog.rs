@@ -243,6 +243,23 @@ pub mod keys {
         pub const HAND_FAN_ROLL: &str = "components.wallpaperSelector.handFanRoll";
         pub const HAND_SKEW: &str = "components.wallpaperSelector.handSkew";
         pub const HAND_BOB: &str = "components.wallpaperSelector.handBob";
+        pub const DEPTH_SHADOWS: &str = "components.wallpaperSelector.depthShadows";
+        pub const SLICE_SHADOWS: &str = "components.wallpaperSelector.sliceShadows";
+        pub const DEPTH_SELECTION_FRAME: &str = "components.wallpaperSelector.depthSelectionFrame";
+        pub const DEPTH_HEIGHT: &str = "components.wallpaperSelector.depthHeight";
+        pub const DEPTH_WIDTH_PX: &str = "components.wallpaperSelector.depthWidthPx";
+        pub const DEPTH_SPACING_PX: &str = "components.wallpaperSelector.depthSpacingPx";
+        pub const DEPTH_COUNT: &str = "components.wallpaperSelector.depthCount";
+        pub const DEPTH_FALLOFF_FACTOR: &str = "components.wallpaperSelector.depthFalloffFactor";
+        pub const DEPTH_CORNERS: &str = "components.wallpaperSelector.depthCorners";
+        pub const DEPTH_SKEW: &str = "components.wallpaperSelector.depthSkew";
+        pub const DEPTH_NAVIGATION_MS: &str = "components.wallpaperSelector.depthNavigationMs";
+        pub const COLLECTION_SIZE: &str = "components.wallpaperSelector.collectionSize";
+        pub const COLLECTION_SPACING: &str = "components.wallpaperSelector.collectionSpacing";
+        pub const COLLECTION_COUNT: &str = "components.wallpaperSelector.collectionCount";
+        pub const COLLECTION_TILT: &str = "components.wallpaperSelector.collectionTilt";
+        pub const COLLECTION_CORNERS: &str = "components.wallpaperSelector.collectionCorners";
+        pub const COLLECTION_SPEED: &str = "components.wallpaperSelector.collectionSpeed";
         pub const HAND_CARD_HEIGHT: &str = "components.wallpaperSelector.handCardHeight";
         pub const HAND_CARD_WIDTH: &str = "components.wallpaperSelector.handCardWidth";
         pub const HAND_COUNT: &str = "components.wallpaperSelector.handCount";
@@ -399,6 +416,8 @@ pub mod keys {
         pub const SANDY_SWAP_STYLE: &str = "components.wallpaperSelector.sandySwapStyle";
         pub const SANDY_VORTEX: &str = "components.wallpaperSelector.sandyVortex";
         pub const SLICE_WIDTH: &str = "components.wallpaperSelector.sliceWidth";
+        pub const SLICE_PARALLAX: &str = "components.wallpaperSelector.sliceParallax";
+        pub const HEX_PARALLAX: &str = "components.wallpaperSelector.hexParallax";
         pub const SLICE_WOBBLE: &str = "components.wallpaperSelector.sliceWobble";
         pub const TAG_CLOUD_WIDTH: &str = "components.wallpaperSelector.tagCloudWidth";
     }

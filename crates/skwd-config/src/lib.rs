@@ -4,6 +4,7 @@ mod atomic;
 mod environment;
 mod getter_macro;
 mod key_catalog;
+mod picker;
 mod power;
 pub mod schema;
 mod settings;
@@ -13,6 +14,7 @@ mod value;
 pub use atomic::{atomic_write, atomic_write_mode, follow_links};
 pub use environment::{cache_dir, config_dir, config_path, env, home, resolve};
 pub use key_catalog::keys;
+pub use picker::canonicalize_depth_layout;
 pub use power::{
     DEFAULT_BATTERY_FPS, DEFAULT_BATTERY_VIDEO_IDLE_SECONDS, PowerSourceState, battery_fps,
     battery_percent, battery_percent_at, battery_saver_enabled, battery_video_idle_seconds,
