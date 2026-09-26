@@ -937,6 +937,30 @@ fn retheme_handoff() {
 }
 
 #[test]
+fn retheme_from_output() {
+    let (_guard, _root) = testenv::lock();
+    let (state, subs, stats) = harness();
+    let cache = state.config().cache_dir();
+    skwd_wall_core::audio::write_state(&cache, &json!({}));
+    let resp = call(&state, &subs, &stats, "wall.retheme", json!({"output": "DP-2"}));
+    assert_eq!(ecode(&resp), 1);
+    skwd_wall_core::audio::write_state(
+        &cache,
+        &json!({
+            "DP-1": skwd_wall_core::audio::entry("static", "/tmp/skwd-main.png", "", true, 0),
+            "DP-2": skwd_wall_core::audio::entry("static", "/tmp/skwd-side.png", "", true, 0),
+        }),
+    );
+    state.theme().set_source("/tmp/skwd-main.png");
+    let val = rr(call(&state, &subs, &stats, "wall.retheme", json!({"output": "DP-2"})));
+    assert_eq!(val["rethemed"], json!(true));
+    assert_eq!(state.theme().source().as_deref(), Some("/tmp/skwd-side.png"));
+    let resp = call(&state, &subs, &stats, "wall.retheme", json!({"output": "HDMI-A-1"}));
+    assert_eq!(ecode(&resp), 1);
+    assert_eq!(state.theme().source().as_deref(), Some("/tmp/skwd-side.png"));
+}
+
+#[test]
 fn theme_preview_profiles() {
     let (_guard, _root) = testenv::lock();
     testenv::write_config(json!({

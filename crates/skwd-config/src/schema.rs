@@ -612,6 +612,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::transition::SAND_SHARP, false),
     SettingSpec::text(crate::keys::paper::ENGINE, "skwd-paper"),
     SettingSpec::text(crate::keys::display::FILL_MODE, "fill"),
+    SettingSpec::text(crate::keys::display::THEME_OUTPUT, ""),
     SettingSpec::text(crate::keys::matugen::SCHEME_TYPE, "scheme-fidelity"),
     SettingSpec::text(crate::keys::matugen::MODE, "dark"),
     SettingSpec::text(crate::keys::noctalia::THEME_MODE, "follow"),

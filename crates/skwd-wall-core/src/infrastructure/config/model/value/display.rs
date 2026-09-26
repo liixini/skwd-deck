@@ -19,6 +19,18 @@ impl<'a> DisplayConfig<'a> {
     skwd_config::getters! {
         fill_color: str(skwd_config::keys::display::FILL_COLOR, "000000ff");
         fill_mode: str(skwd_config::keys::display::FILL_MODE, "fill");
+        theme_output: str(skwd_config::keys::display::THEME_OUTPUT, "");
+    }
+
+    pub fn themes_from(
+        &self,
+        committed: &[String],
+        connected: impl FnOnce() -> Vec<String>,
+    ) -> bool {
+        let source = self.theme_output();
+        source.is_empty()
+            || committed.iter().any(|output| output == "*" || *output == source)
+            || !connected().contains(&source)
     }
 
     pub fn fill_override_for(&self, output: &str) -> Option<String> {

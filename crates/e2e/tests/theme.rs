@@ -569,3 +569,93 @@ exit 0
     drop(walld);
     checks.finish();
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn theme_output_limits_recolouring_to_the_chosen_display() {
+    let stub = skwd_e2e::stub_renderer!();
+    let mut sandbox = Sandbox::new("theme-output");
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:2560x1440");
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
+    let main = sandbox.library().join("main.png");
+    let side = sandbox.library().join("side.png");
+    let both = sandbox.library().join("both.png");
+    assert!(ffmpeg_still(&main, "color=c=red:s=320x180"));
+    assert!(ffmpeg_still(&side, "color=c=green:s=320x180"));
+    assert!(ffmpeg_still(&both, "color=c=blue:s=320x180"));
+    let mut config = base_config(&sandbox);
+    config["display"] = json!({"themeOutput": "DP-1"});
+    sandbox.write_config(&config);
+
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let mut sub = walld.client();
+    let mut checks = Checks::default();
+    let subscribed = sub.call("subscribe", json!({}), 40);
+    checks.check(
+        "event subscription acknowledged",
+        subscribed.as_ref().and_then(|value| value.get("result")?.get("subscribed"))
+            == Some(&json!(true)),
+        || format!("{subscribed:?}"),
+    );
+    let sourced = |event: &Value, path: &Path| {
+        theme_done(event)
+            .and_then(|data| data["source"].as_str())
+            .is_some_and(|source| Path::new(source).file_stem() == path.file_stem())
+    };
+
+    let applied = client
+        .call("wall.apply", json!({"type": "static", "path": side, "output": "DP-2"}), 1)
+        .unwrap();
+    checks.check("side display apply accepted", applied.get("error").is_none(), || {
+        applied.to_string()
+    });
+    let stray = wait_event(&mut sub, Duration::from_secs(3), |event| theme_done(event).is_some());
+    checks.check("side display apply leaves colours alone", stray.is_none(), || {
+        format!("{stray:?}\n{}", walld.log_contents())
+    });
+
+    let applied = client
+        .call("wall.apply", json!({"type": "static", "path": main, "output": "DP-1"}), 2)
+        .unwrap();
+    checks.check("colour display apply accepted", applied.get("error").is_none(), || {
+        applied.to_string()
+    });
+    let done = wait_event(&mut sub, WAIT, |event| theme_done(event).is_some());
+    checks.check(
+        "colour display apply regenerates colours from its wallpaper",
+        done.as_ref().is_some_and(|event| sourced(event, &main)),
+        || format!("{done:?}\n{}", walld.log_contents()),
+    );
+
+    let retheme = client.call("wall.retheme", json!({"output": "DP-2"}), 3).unwrap();
+    checks.check("retheme from a display accepted", retheme.get("error").is_none(), || {
+        retheme.to_string()
+    });
+    let done = wait_event(&mut sub, WAIT, |event| theme_done(event).is_some());
+    checks.check(
+        "retheme from a display uses that display's wallpaper",
+        done.as_ref().is_some_and(|event| sourced(event, &side)),
+        || format!("{done:?}\n{}", walld.log_contents()),
+    );
+
+    let applied = client
+        .call("wall.apply", json!({"type": "static", "path": both, "output": "*"}), 4)
+        .unwrap();
+    checks.check("all display apply accepted", applied.get("error").is_none(), || {
+        applied.to_string()
+    });
+    let done = wait_event(&mut sub, WAIT, |event| theme_done(event).is_some());
+    checks.check(
+        "all display apply regenerates colours",
+        done.as_ref().is_some_and(|event| sourced(event, &both)),
+        || format!("{done:?}\n{}", walld.log_contents()),
+    );
+    if checks.failed() {
+        sandbox.mark_failed();
+    }
+    drop(sub);
+    drop(client);
+    drop(walld);
+    checks.finish();
+}

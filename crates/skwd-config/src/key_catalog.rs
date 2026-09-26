@@ -18,6 +18,7 @@ pub mod keys {
         pub const FILL_MODES: &str = "display.fillModes";
         pub const OUTPUT_LOCKS: &str = "display.outputLocks";
         pub const OUTPUT_POLICIES: &str = "display.outputPolicies";
+        pub const THEME_OUTPUT: &str = "display.themeOutput";
     }
     pub mod effects {
         pub const AUTO_RECOLOR: &str = "effects.autoRecolor";

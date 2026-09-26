@@ -9,6 +9,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::display::FILL_MODE, "display.fillMode");
     assert_eq!(keys::display::FILL_MODES, "display.fillModes");
     assert_eq!(keys::display::OUTPUT_LOCKS, "display.outputLocks");
+    assert_eq!(keys::display::THEME_OUTPUT, "display.themeOutput");
     assert_eq!(keys::dms::HOVER_PREVIEW, "dms.hoverPreview");
     assert_eq!(keys::features::MATUGEN, "features.matugen");
     assert_eq!(keys::features::STEAM, "features.steam");

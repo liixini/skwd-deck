@@ -151,7 +151,7 @@ pub(super) fn outputs_list(
             let getf = |key: &str| entry.and_then(|entry| entry.get(key));
             let raw_path = getf("path").and_then(serde_json::Value::as_str).unwrap_or("");
             let we_id = getf("we_id").and_then(serde_json::Value::as_str).unwrap_or("");
-            let path_owned = library_path(state, raw_path);
+            let path_owned = crate::infrastructure::media_paths::library_path(state, raw_path);
             let path = path_owned.as_str();
             let kind = getf("type").and_then(Value::as_str).unwrap_or("");
             let animated = matches!(kind, wall_proto::kind::VIDEO | wall_proto::kind::WE);
@@ -197,7 +197,8 @@ pub(super) fn outputs_list(
             if name.is_empty() || id.is_empty() {
                 continue;
             }
-            let path_owned = library_path(state, wallpaper_field("path"));
+            let path_owned =
+                crate::infrastructure::media_paths::library_path(state, wallpaper_field("path"));
             let kind = wallpaper_field("type").to_string();
             let we_id = wallpaper_field("we_id").to_string();
             let current =
@@ -224,17 +225,6 @@ pub(super) fn outputs_list(
         }
     }
     Response::ok(req.id, json!({"outputs": outputs}))
-}
-
-fn library_path(state: &Arc<WallState>, path: &str) -> String {
-    if path.is_empty() || !path.contains("/video-opt/") {
-        return path.to_string();
-    }
-    state
-        .with_db(|connection| skwd_wall_core::db::tinier_convert_src(connection, path))
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| path.to_string())
 }
 
 pub(super) fn current_of(

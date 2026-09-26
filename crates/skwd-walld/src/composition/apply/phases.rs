@@ -126,7 +126,11 @@ impl CommittedApply {
         let config = state.config().clone();
         Self::drive_publication(|step| match step {
             PostCommitStep::Theme => {
-                if let Some(theme_source) = receipt.theme_source.as_deref() {
+                if let Some(theme_source) = receipt.theme_source.as_deref()
+                    && config
+                        .display()
+                        .themes_from(&decision.committed_outputs, skwd_wall_core::outputs::names)
+                {
                     state.theme().set_source(theme_source);
                     crate::infrastructure::theme_worker::theme_apply_after_async(
                         theme_source,

@@ -238,7 +238,12 @@ pub(super) fn wall_retheme(
     stats: &Arc<Stats>,
 ) -> Response {
     state.reload_config();
-    if let Some(source) = state.theme().source() {
+    let source = match request.opt_str("output") {
+        Some(output) => crate::infrastructure::media_paths::output_theme_source(state, output),
+        None => state.theme().source(),
+    };
+    if let Some(source) = source {
+        state.theme().set_source(&source);
         crate::infrastructure::theme_worker::theme_apply_async(&source);
         Response::ok(request.id, json!({"rethemed": true}))
     } else {

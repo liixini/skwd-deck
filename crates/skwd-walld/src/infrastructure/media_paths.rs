@@ -50,6 +50,35 @@ pub(crate) fn static_thumb(state: &Arc<WallState>, path: &str) -> Option<String>
         .filter(|thumb| Path::new(thumb).exists())
 }
 
+pub(crate) fn library_path(state: &Arc<WallState>, path: &str) -> String {
+    if path.is_empty() || !path.contains("/video-opt/") {
+        return path.to_string();
+    }
+    state
+        .with_db(|connection| skwd_wall_core::db::tinier_convert_src(connection, path))
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| path.to_string())
+}
+
+pub(crate) fn output_theme_source(state: &Arc<WallState>, output: &str) -> Option<String> {
+    let desired = skwd_wall_core::audio::read_state(&state.config().cache_dir());
+    let entry = desired.get(output).or_else(|| desired.get("*"))?;
+    let field = |key| entry.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
+    let path = library_path(state, field("path"));
+    match field("type") {
+        wall_proto::kind::STATIC if !path.is_empty() => {
+            Some(static_thumb(state, &path).unwrap_or(path))
+        }
+        wall_proto::kind::VIDEO => video_thumb(state, &path),
+        wall_proto::kind::WE if skwd_wall_core::we::valid_we_id(field("we_id")) => {
+            skwd_wall_core::we::find_preview(&state.config().we_dir().join(field("we_id")))
+                .map(|preview| preview.display().to_string())
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum VideoRoute<'a> {
     Transition(&'a str),

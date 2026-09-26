@@ -59,6 +59,25 @@ fn output_locks_default_off() {
 }
 
 #[test]
+fn theme_output_limits_recolouring() {
+    let owned = |names: &[&str]| names.iter().map(|name| (*name).to_string()).collect::<Vec<_>>();
+    let connected = || owned(&["DP-1", "DP-2", "HDMI-A-1"]);
+    let any = Config::from_root(json!({}));
+    assert_eq!(any.display().theme_output(), "");
+    assert!(any.display().themes_from(&owned(&["DP-2"]), connected));
+
+    let pinned = Config::from_root(json!({"display": {"themeOutput": "DP-1"}}));
+    assert!(pinned.display().themes_from(&owned(&["DP-1"]), connected));
+    assert!(pinned.display().themes_from(&owned(&["*"]), connected));
+    assert!(pinned.display().themes_from(&owned(&["DP-2", "DP-1"]), connected));
+    assert!(!pinned.display().themes_from(&owned(&["DP-2"]), connected));
+    assert!(!pinned.display().themes_from(&owned(&["DP-2", "HDMI-A-1"]), connected));
+
+    let absent = Config::from_root(json!({"display": {"themeOutput": "DP-9"}}));
+    assert!(absent.display().themes_from(&owned(&["DP-2"]), connected));
+}
+
+#[test]
 fn vitals_getters() {
     let defaults = Config::from_root(json!({}));
     assert!(defaults.vitals_enabled());
