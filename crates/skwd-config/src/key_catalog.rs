@@ -47,6 +47,9 @@ pub mod keys {
         pub const RESOLUTION_PRESETS: &str = "filterBar.resolutionPresets";
         pub const SHOW_COLORS: &str = "filterBar.show.colors";
         pub const SHOW_FAVOURITES: &str = "filterBar.show.favourites";
+        pub const SHOW_ORIENT: &str = "filterBar.show.orient";
+        pub const SHOW_DOWNLOAD: &str = "filterBar.show.download";
+        pub const SHOW_PLAYLISTS: &str = "filterBar.show.playlists";
         pub const SHOW_FOLDER: &str = "filterBar.show.folder";
         pub const SHOW_RANDOM: &str = "filterBar.show.random";
         pub const SHOW_RESOLUTION: &str = "filterBar.show.resolution";

@@ -211,3 +211,18 @@ fn transition_fps_is_independent_and_preserves_legacy_caps() {
     assert_eq!(normalize_value(key, &json!(-5)), Some(json!(0)));
     assert_eq!(normalize_value(key, &json!(2000)), Some(json!(1000)));
 }
+
+#[test]
+fn optional_filter_controls_have_enabled_boolean_defaults() {
+    for path in [
+        crate::keys::filter_bar::SHOW_ORIENT,
+        crate::keys::filter_bar::SHOW_TAG_CLOUD,
+        crate::keys::filter_bar::SHOW_DOWNLOAD,
+        crate::keys::filter_bar::SHOW_PLAYLISTS,
+    ] {
+        assert_eq!(find(path).map(|spec| spec.kind), Some(ValueKind::Boolean));
+        assert_eq!(boolean_default(path), Some(true));
+        assert_eq!(normalize_value(path, &json!(false)), Some(json!(false)));
+        assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
+    }
+}
