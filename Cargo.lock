@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "paper-control"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "gif",
  "libc",
@@ -1547,14 +1547,14 @@ dependencies = [
 
 [[package]]
 name = "paper-geom"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "paper-log"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "tracing-appender",
  "tracing-subscriber",
@@ -1562,7 +1562,7 @@ dependencies = [
 
 [[package]]
 name = "paper-runtime"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "libc",
  "paper-log",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "paper-scene"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "paper-shaders"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "regex-lite",
 ]
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-config"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "dirs",
  "serde_json",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-e2e"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "paper-control",
  "rusqlite",
@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-helm"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "paper-control",
  "serde_json",
@@ -2274,7 +2274,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-lens-proto"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "serde",
  "serde_json",
@@ -2282,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-log"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "libc",
  "log",
@@ -2290,7 +2290,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-palette"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "material-colors",
  "serde_json",
@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-steam"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "serde_json",
  "steamworks",
@@ -2307,7 +2307,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-core"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "anyhow",
  "bit-set",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-effects"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "anyhow",
  "image",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-wall-scan"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "skwd-walld"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "anyhow",
  "dhat",
@@ -2915,7 +2915,7 @@ dependencies = [
 
 [[package]]
 name = "wall-proto"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "libc",
  "paper-shaders",
@@ -2926,7 +2926,7 @@ dependencies = [
 
 [[package]]
 name = "wall-rules"
-version = "1.0.0-beta.21"
+version = "1.0.0-beta.22"
 dependencies = [
  "proptest",
  "serde_json",
