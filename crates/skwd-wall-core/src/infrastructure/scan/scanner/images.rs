@@ -116,6 +116,7 @@ where
     let row = Row {
         key: format!("static:{name}"),
         name: name.to_string(),
+        path: path.to_string_lossy().into_owned(),
         thumb: thumb.to_string_lossy().into_owned(),
         thumb_sm: thumb_small.to_string_lossy().into_owned(),
         mtime,

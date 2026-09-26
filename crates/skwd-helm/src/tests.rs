@@ -461,3 +461,15 @@ fn config_persist_keeps_symlink() {
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
     assert_eq!(saved["general"]["wallpaperDir"], "/wp");
 }
+
+#[test]
+fn static_apply_uses_catalog_source_path() {
+    let item: wall_proto::WallpaperItem = serde_json::from_value(json!({
+        "key": "static:new.png", "type": "static", "path": "/data/壁纸/new.png"
+    }))
+    .unwrap();
+    assert_eq!(
+        crate::wallpaper::apply_params_for_item(&item, "/old", "/videos", "*"),
+        Some(json!({"type":"static", "path":"/data/壁纸/new.png", "output":"*"}))
+    );
+}

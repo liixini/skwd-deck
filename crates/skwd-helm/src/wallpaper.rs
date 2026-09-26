@@ -42,10 +42,16 @@ pub(super) fn apply_params_for_item(
         );
     }
     let path = item
-        .video_file
+        .path
         .as_ref()
-        .filter(|path| kind == wall_proto::kind::VIDEO && !path.is_empty())
+        .filter(|path| kind == wall_proto::kind::STATIC && !path.is_empty())
         .cloned()
+        .or_else(|| {
+            item.video_file
+                .as_ref()
+                .filter(|path| kind == wall_proto::kind::VIDEO && !path.is_empty())
+                .cloned()
+        })
         .or_else(|| path_for_key(item.key.as_deref()?, wallpaper_dir, video_dir))?;
     let kind = if kind == wall_proto::kind::VIDEO {
         wall_proto::kind::VIDEO

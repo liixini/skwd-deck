@@ -70,7 +70,7 @@ fn indexed_duration_roundtrip() {
     assert_eq!(update_duration(&conn, "video:a.mp4", 92_500).unwrap(), 1);
     let list = list_wallpapers(&conn, false).unwrap();
     assert_eq!(list[0]["duration_ms"], 92_500);
-    let (json, _) = list_wallpapers_json(&conn, false).unwrap();
+    let (json, _) = list_wallpapers_json(&conn, false, "/data/壁纸/").unwrap();
     let typed: Vec<wall_proto::WallpaperItem> = serde_json::from_str(&json).unwrap();
     assert_eq!(typed[0].duration_ms, Some(92_500));
 }
@@ -85,8 +85,15 @@ fn list_json_matches_tree() {
     set_favourite(&conn, "static:a.png", true).unwrap();
 
     for fav in [false, true] {
-        let tree = serde_json::Value::Array(list_wallpapers(&conn, fav).unwrap());
-        let (json, count) = list_wallpapers_json(&conn, fav).unwrap();
+        let mut rows = list_wallpapers(&conn, fav).unwrap();
+        for row in &mut rows {
+            if row["type"] == "static" {
+                let relative = row["key"].as_str().unwrap().strip_prefix("static:").unwrap();
+                row["path"] = serde_json::json!(format!("/data/壁纸/{relative}"));
+            }
+        }
+        let tree = serde_json::Value::Array(rows);
+        let (json, count) = list_wallpapers_json(&conn, fav, "/data/壁纸/").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed, tree);
         assert_eq!(count, tree.as_array().unwrap().len());

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct WallpaperItem {
     pub key: Option<String>,
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(rename = "type")]
     pub kind: Option<String>,
     pub preview: Option<String>,

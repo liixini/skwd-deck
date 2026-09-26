@@ -151,3 +151,60 @@ pathlib.Path(str(index) + '.fingerprint').write_text(str(request['fingerprint'])
     wait_keys(&mut client, &["static:old.png", "static:retired.png", "static:shared.png"]);
     wait_index(&index, &["static:old.png", "static:retired.png", "static:shared.png"]);
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn static_source_switch_publishes_applyable_paths_and_missing_file_errors() {
+    let mut sandbox = Sandbox::new("static-source-path");
+    let first = sandbox.library();
+    let second = sandbox.root.join("壁纸");
+    fs::create_dir_all(&second).unwrap();
+    assert!(ffmpeg_still(&first.join("old.png"), "color=c=red:s=96x64"));
+    let expected = second.join("new.png");
+    assert!(ffmpeg_still(&expected, "color=c=blue:s=96x64"));
+    sandbox.set_env("SKWD_WALL_PAPER_STILL", &skwd_e2e::stub_renderer!());
+    let mut config = json!({
+        "paths":{"wallpaper":first,"videoWallpaper":first},
+        "pickOnlyMode":false,"restoreOnStartup":false,
+        "effects":{"autoRecolor":false,"autoTheme":""},
+        "transition":{"enabled":false}
+    });
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    wait_keys(&mut client, &["static:old.png"]);
+    let mut events = walld.client();
+    assert_eq!(events.call("subscribe", json!({}), 2).unwrap()["result"]["subscribed"], true);
+    config["paths"]["wallpaper"] = json!(format!("{}/", second.display()));
+    sandbox.write_config(&config);
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let cached = loop {
+        assert!(Instant::now() < deadline, "no new image event after source switch");
+        if let Some(event) = events.recv(Duration::from_millis(250))
+            && event["event"] == "skwd.wall.cached"
+            && event["data"]["key"] == "static:new.png"
+        {
+            break event["data"].clone();
+        }
+    };
+    assert_eq!(cached["path"], json!(expected));
+    let applied =
+        client.call("wall.apply", json!({"type":"static","path":cached["path"]}), 3).unwrap();
+    assert!(applied.get("error").is_none(), "{applied}");
+    assert_eq!(sandbox.last_wallpaper()["path"], json!(expected));
+    let listed = client.call("wall.list", json!({}), 4).unwrap();
+    let row = listed["result"]["wallpapers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == "static:new.png")
+        .unwrap();
+    assert_eq!(row["path"], json!(expected));
+    let before = sandbox.outputs_json();
+    let missing = second.join("missing.png");
+    let failed = client.call("wall.apply", json!({"type":"static","path":missing}), 5).unwrap();
+    let message = failed["error"]["message"].as_str().expect("missing source fails");
+    assert!(message.contains(missing.to_str().unwrap()), "{message}");
+    assert!(message.contains("No such file or directory"), "{message}");
+    assert_eq!(sandbox.outputs_json(), before, "failed apply changed assignments");
+}

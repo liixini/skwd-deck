@@ -3,6 +3,7 @@ use serde_json::json;
 pub(super) struct Row {
     pub(super) key: String,
     pub(super) name: String,
+    pub(super) path: String,
     pub(super) thumb: String,
     pub(super) thumb_sm: String,
     pub(super) mtime: i64,
@@ -18,6 +19,7 @@ pub(super) fn row_item_json(row: &Row) -> serde_json::Value {
     json!({
         "key": row.key,
         "name": row.name,
+        "path": row.path,
         "type": wall_proto::kind::STATIC,
         "thumb": row.thumb,
         "thumb_sm": row.thumb_sm,

@@ -175,6 +175,8 @@ fn key_apply_shapes() {
 #[test]
 fn failed_execution_cannot_publish_for_any_media_or_output_scope() {
     let (_guard, root) = testenv::lock();
+    let image = root.join("apply-fixture.png");
+    std::fs::write(&image, "fixture").unwrap();
     let we_root = root.join("we");
     let we_item = we_root.join("123");
     std::fs::create_dir_all(&we_item).unwrap();
@@ -195,7 +197,7 @@ fn failed_execution_cannot_publish_for_any_media_or_output_scope() {
     let _ = std::fs::remove_file(cache.join("last-applied.json"));
 
     for (kind, path, we_id) in [
-        (wall_proto::kind::STATIC, "/wall/fail.png", ""),
+        (wall_proto::kind::STATIC, image.to_str().unwrap(), ""),
         (wall_proto::kind::VIDEO, "/wall/fail.mp4", ""),
         (wall_proto::kind::WE, "", "123"),
     ] {
@@ -236,6 +238,8 @@ fn failed_execution_cannot_publish_for_any_media_or_output_scope() {
 #[test]
 fn superseded_handoff_cannot_publish_for_any_media_or_output_scope() {
     let (_guard, root) = testenv::lock();
+    let image = root.join("apply-fixture.png");
+    std::fs::write(&image, "fixture").unwrap();
     let we_root = root.join("we-superseded");
     let we_item = we_root.join("456");
     std::fs::create_dir_all(&we_item).unwrap();
@@ -257,7 +261,7 @@ fn superseded_handoff_cannot_publish_for_any_media_or_output_scope() {
     let _ = std::fs::remove_file(cache.join("last-applied.json"));
 
     for (kind, path, we_id) in [
-        (wall_proto::kind::STATIC, "/wall/late.png", ""),
+        (wall_proto::kind::STATIC, image.to_str().unwrap(), ""),
         (wall_proto::kind::VIDEO, "/wall/late.mp4", ""),
         (wall_proto::kind::WE, "", "456"),
     ] {
@@ -301,6 +305,8 @@ fn superseded_handoff_cannot_publish_for_any_media_or_output_scope() {
 #[test]
 fn retry_publishes_once_for_each_media_and_output_scope() {
     let (_guard, root) = testenv::lock();
+    let image = root.join("apply-fixture.png");
+    std::fs::write(&image, "fixture").unwrap();
     let we_root = root.join("we-retry");
     let we_item = we_root.join("789");
     std::fs::create_dir_all(&we_item).unwrap();
@@ -318,7 +324,7 @@ fn retry_publishes_once_for_each_media_and_output_scope() {
     let mut events = testenv::subscribe(&publisher);
 
     for (kind, path, we_id) in [
-        (wall_proto::kind::STATIC, "/wall/retry.png", ""),
+        (wall_proto::kind::STATIC, image.to_str().unwrap(), ""),
         (wall_proto::kind::VIDEO, "/wall/retry.mp4", ""),
         (wall_proto::kind::WE, "", "789"),
     ] {

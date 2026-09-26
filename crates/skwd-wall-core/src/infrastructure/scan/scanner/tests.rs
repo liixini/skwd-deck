@@ -193,6 +193,7 @@ fn row_json_wire_shape() {
     let row = Row {
         key: "static:a.png".into(),
         name: "a.png".into(),
+        path: "/data/壁纸/a.png".into(),
         thumb: "/t.webp".into(),
         thumb_sm: "/s.webp".into(),
         mtime: 1,
@@ -206,6 +207,8 @@ fn row_json_wire_shape() {
     let json = row_item_json(&row);
     assert_eq!(json["key"], "static:a.png");
     assert_eq!(json["type"], "static");
+    let item: wall_proto::WallpaperItem = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(item.path.as_deref(), Some("/data/壁纸/a.png"));
     assert_eq!(json["width"], 1920);
     assert!(json.get("thumb_sm").is_some());
 }

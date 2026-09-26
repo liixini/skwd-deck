@@ -281,7 +281,8 @@ mod tests;
 fn payload_for(ctx: &Ctx, request: &Request, heavy: bool) -> String {
     let Ctx { database, stats, .. } = ctx;
     if heavy {
-        return list_payload(database, request, stats);
+        let wallpaper_dir = ctx.config.read().wallpaper_dir();
+        return list_payload(database, request, stats, &wallpaper_dir);
     }
     let response = dispatch(ctx, request);
     response_payload(&response, request.id)
@@ -299,10 +300,13 @@ fn list_payload(
     database: &skwd_wall_core::infrastructure::database::Database,
     request: &Request,
     stats: &Stats,
+    wallpaper_dir: &str,
 ) -> String {
     stats.rpc(&request.method);
     let favourites = request.bool_param("favourites", false);
-    match database.with_connection(|connection| db::list_wallpapers_json(connection, favourites)) {
+    match database.with_connection(|connection| {
+        db::list_wallpapers_json(connection, favourites, wallpaper_dir)
+    }) {
         Ok((rows, count)) => {
             format!(r#"{{"id":{},"result":{{"count":{count},"wallpapers":{rows}}}}}"#, request.id)
         }

@@ -70,6 +70,7 @@ pub fn list_wallpapers(
 pub fn list_wallpapers_json(
     conn: &Connection,
     favourite_only: bool,
+    wallpaper_dir: &str,
 ) -> rusqlite::Result<(String, usize)> {
     let sql = if favourite_only {
         "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta WHERE favourite = 1 ORDER BY name"
@@ -96,7 +97,18 @@ pub fn list_wallpapers_json(
         {
             tags = Some(merge_tag(tags.as_deref().unwrap_or(""), fx));
         }
+        let path = (ty.as_deref() == Some(wall_proto::kind::STATIC))
+            .then(|| {
+                key.as_deref()?.strip_prefix("static:").map(|relative| {
+                    std::path::Path::new(wallpaper_dir)
+                        .join(relative)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            })
+            .flatten();
         let item = wall_proto::WallpaperItem {
+            path,
             key: key.clone(),
             name: row.get(1)?,
             kind: ty,

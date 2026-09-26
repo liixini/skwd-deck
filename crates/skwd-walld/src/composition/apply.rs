@@ -461,6 +461,14 @@ fn apply_static_arm(
     transition_override: Option<&TransitionOverride>,
 ) -> anyhow::Result<ExecutionReceipt> {
     let path = &decision.path;
+    if !pick_only {
+        let resolved = skwd_wall_core::apply::resolve_current_image(path);
+        match std::fs::metadata(&resolved) {
+            Ok(metadata) if metadata.is_file() => {}
+            Ok(_) => anyhow::bail!("static image is not a regular file: {resolved}"),
+            Err(error) => anyhow::bail!("cannot access static image {resolved}: {error}"),
+        }
+    }
     let output = &decision.output;
     let generation = decision.generation;
     let (mut transitions_enabled, mut shader, mut duration_ms) = {
