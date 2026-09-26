@@ -5,6 +5,21 @@ use serde_json::json;
 use super::*;
 
 #[test]
+fn slices_default_to_touching_edges_without_rewriting_explicit_spacing() {
+    let path = crate::keys::selector::SLICE_SPACING;
+    assert_eq!(read_number(&json!({}), path), Some(0.0));
+
+    for spacing in [-70.0, -30.0, 0.0, 12.0] {
+        let root = json!({"components": {"wallpaperSelector": {"sliceSpacing": spacing}}});
+        assert_eq!(read_number(&root, path), Some(spacing));
+        assert_eq!(
+            normalize_value(path, &json!(spacing)).and_then(|value| value.as_f64()),
+            Some(spacing)
+        );
+    }
+}
+
+#[test]
 fn theme_mode_has_a_canonical_typed_default() {
     let path = crate::keys::theme::MODE;
     assert_eq!(find(path).map(|spec| spec.kind), Some(ValueKind::Text));
