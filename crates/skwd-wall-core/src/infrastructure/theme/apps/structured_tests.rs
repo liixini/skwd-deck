@@ -178,3 +178,44 @@ fn interrupted_restoration_is_recoverable_before_and_after_file_write() {
         }
     }
 }
+
+#[test]
+fn custom_field_mappings_follow_palette_and_removed_fields_are_restored() {
+    let (_root, env, config) = fixture();
+    for app in &APPS {
+        let path = app.paths(&env).0;
+        files::write(&path, original(app)).unwrap();
+        let mapping_path = env.config.join(format!("skwd-wall-v2/app-themes/{}.template", app.id));
+        let keys = roles(app.id)[0].0.clone();
+        files::write(&mapping_path, &json!([{"path": keys, "role": "tertiary"}]).to_string())
+            .unwrap();
+        let mut colors = palette("#123456");
+        colors["tertiary"] = json!("#abcdef");
+        app.set(&env, &config, true, &colors, true).unwrap();
+        let text = files::read(&path).unwrap().unwrap();
+        assert!(text.contains("#abcdef"));
+        let mut document = Document::parse(&text, app.json).unwrap();
+        let keys: Vec<_> = keys.into_iter().map(str::to_owned).collect();
+        document.set(&keys, Some("\"#998877\"")).unwrap();
+        files::write(&path, &document.text()).unwrap();
+        super::super::manager::customize_with(
+            &env,
+            &config,
+            app.id,
+            "disconnect",
+            &Value::Null,
+            true,
+        )
+        .unwrap();
+        super::super::manager::apply_with(&env, &config, &palette("#fedcba"), true);
+        assert!(files::read(&path).unwrap().unwrap().contains("#998877"));
+        super::super::manager::customize_with(&env, &config, app.id, "reconnect", &colors, true)
+            .unwrap();
+        assert!(files::read(&path).unwrap().unwrap().contains("#abcdef"));
+        files::write(&mapping_path, "[]").unwrap();
+        app.set(&env, &config, true, &colors, true).unwrap();
+        assert!(files::read(&path).unwrap().unwrap().contains("#998877"));
+        app.set(&env, &config, false, &Value::Null, true).unwrap();
+        assert!(files::read(&path).unwrap().unwrap().contains("#998877"));
+    }
+}

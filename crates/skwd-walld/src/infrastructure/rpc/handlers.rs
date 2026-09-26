@@ -306,3 +306,28 @@ pub(super) fn task_control(ctx: &Ctx, req: &Request) -> Response {
         _ => Response::err(req.id, -32601, "this task does not support that control"),
     }
 }
+
+pub(super) fn theme_app(state: &WallState, req: &Request) -> Response {
+    state.reload_config();
+    let result = if req.method == wall_proto::rpc::THEME_APP_CUSTOMIZE {
+        skwd_wall_core::theme::apps::customize(
+            state,
+            req.str_param("id", ""),
+            req.str_param("action", ""),
+        )
+    } else {
+        let Some(enabled) = req.params.get("enabled").and_then(Value::as_bool) else {
+            return Response::err(req.id, -32602, "enabled must be a boolean");
+        };
+        skwd_wall_core::theme::apps::set_enabled(
+            state,
+            req.str_param("id", ""),
+            enabled,
+            req.params.get("adopt").and_then(Value::as_bool).unwrap_or(false),
+        )
+    };
+    match result {
+        Ok(result) => Response::ok(req.id, json!(result)),
+        Err(error) => Response::err(req.id, 1, error.to_string()),
+    }
+}

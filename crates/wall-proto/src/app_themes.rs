@@ -15,6 +15,14 @@ pub struct AppThemeStatus {
     pub can_enable: bool,
     pub can_disable: bool,
     pub can_adopt: bool,
+    #[serde(default)]
+    pub template_path: String,
+    #[serde(default)]
+    pub customized: bool,
+    #[serde(default)]
+    pub can_disconnect: bool,
+    #[serde(default)]
+    pub can_reconnect: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

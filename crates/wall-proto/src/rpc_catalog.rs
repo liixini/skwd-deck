@@ -1,5 +1,6 @@
 pub mod rpc {
     pub const THEME_APPS: &str = "theme.apps";
+    pub const THEME_APP_CUSTOMIZE: &str = "theme.app.customize";
     pub const THEME_APP_SET: &str = "theme.app.set";
     pub const PLAYBACK_PROCESSES: &str = "playback.processes";
     pub const THEME_CURRENT: &str = "theme.current";
@@ -170,6 +171,7 @@ pub mod rpc {
         THEME_CURRENT,
         THEME_APPS,
         THEME_APP_SET,
+        THEME_APP_CUSTOMIZE,
         THEME_BACKENDS,
         THEME_PREVIEW,
         THEME_PREVIEWS,

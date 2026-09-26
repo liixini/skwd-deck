@@ -10,7 +10,7 @@ use crate::config::Config;
 mod paths;
 
 const MARKER: &str = "/* Skwd Waybar colours */";
-const TEMPLATE: &str = concat!(
+pub(super) const TEMPLATE: &str = concat!(
     include_str!("../../../../../../data/matugen/templates/waybar.css"),
     include_str!("../../../../../../data/app-themes/waybar.css"),
 );
@@ -119,6 +119,10 @@ pub(super) fn inspect(env: &Environment, config: &Config) -> AppThemeStatus {
         can_enable: installed,
         can_disable: false,
         can_adopt: false,
+        template_path: String::new(),
+        customized: false,
+        can_disconnect: false,
+        can_reconnect: false,
     };
     let check = || -> Result<(Vec<Style>, Option<Receipt>)> {
         let saved = load(env)?;
@@ -206,12 +210,16 @@ fn recipe() -> &'static super::catalogue::Recipe {
     RECIPES.iter().find(|recipe| recipe.id == "waybar").unwrap()
 }
 
-fn rendered(palette: &Value, dark: bool) -> Result<String> {
+fn rendered(env: &Environment, palette: &Value, dark: bool) -> Result<String> {
     ensure!(
         super::super::profiles::valid_palette(palette),
         "Apply a wallpaper or choose a colour theme first"
     );
-    let text = crate::static_templates::render_palette(TEMPLATE, palette, dark);
+    let text = crate::static_templates::render_palette(
+        &super::customization::template(env, "waybar", TEMPLATE)?,
+        palette,
+        dark,
+    );
     ensure!(!text.contains("{{"), "Waybar colours contain unsupported palette values");
     Ok(text)
 }
@@ -293,7 +301,7 @@ pub(super) fn set(
         return retire_legacy(env);
     }
     ensure!(env.executable("waybar").is_some(), "Waybar is not installed");
-    let text = rendered(palette, dark)?;
+    let text = rendered(env, palette, dark)?;
     if let Some(receipt) = saved.filter(|receipt| receipt.enabled || receipt.pending) {
         ensure!(
             !receipt.pending,
@@ -376,7 +384,7 @@ pub(super) fn update(
     dark: bool,
 ) -> Result<()> {
     if let Some(receipt) = load(env)?.filter(|receipt| receipt.enabled && !receipt.pending) {
-        publish(env, config, receipt, &rendered(palette, dark)?, false)?;
+        publish(env, config, receipt, &rendered(env, palette, dark)?, false)?;
     }
     Ok(())
 }
@@ -400,3 +408,43 @@ fn protects(env: &Environment, output: &Path) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+pub(super) fn reconnect(
+    env: &Environment,
+    config: &Config,
+    palette: &Value,
+    dark: bool,
+) -> Result<()> {
+    let text = rendered(env, palette, dark)?;
+    let Some(mut receipt) = load(env)? else {
+        retire_legacy(env)?;
+        if output_path(env).exists() {
+            files::writable(&output_path(env))?;
+            std::fs::remove_file(output_path(env))?;
+        }
+        return set(env, config, true, palette, dark);
+    };
+    ensure!(
+        conflict(config, &receipt.output, &receipt.styles).is_none(),
+        "Another custom output controls Waybar; turn it off before reconnecting"
+    );
+    for style in &mut receipt.styles {
+        let current = files::read(&style.path)?;
+        style.base = strip(current.as_deref().unwrap_or_default(), &receipt.output);
+        style.original = current.map(|_| style.base.clone());
+    }
+    receipt.pending = true;
+    save(env, &receipt)?;
+    files::write(&receipt.output, &text)?;
+    for style in &receipt.styles {
+        files::write(
+            &style.path,
+            &format!("{}\n{MARKER}\n{}\n", style.base, directive(&receipt.output)),
+        )?;
+    }
+    receipt.rendered = text;
+    receipt.enabled = true;
+    receipt.pending = false;
+    receipt.result = super::reload::reload(env, recipe());
+    save(env, &receipt)
+}

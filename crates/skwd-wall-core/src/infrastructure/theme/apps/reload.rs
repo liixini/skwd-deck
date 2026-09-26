@@ -1,11 +1,16 @@
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 use super::{catalogue::Recipe, manager::Environment};
 
 pub(super) fn reload(env: &Environment, recipe: &Recipe) -> String {
     if !env.reload {
         return "configured".into();
+    }
+    if recipe.id == "fish" {
+        return fish(env);
     }
     if recipe.id == "niri" {
         return "watching".into();
@@ -41,6 +46,38 @@ pub(super) fn reload(env: &Environment, recipe: &Recipe) -> String {
         "on-next-open"
     }
     .into()
+}
+
+fn fish(env: &Environment) -> String {
+    let notify = || -> Option<()> {
+        let enabled = super::files::load(&env.receipts.join("fish.json")).ok().flatten()?.enabled;
+        let mut child = crate::proc::tool(env.executable("fish")?)
+            .args(["-c", "set -U __skwd_theme_revision $argv"])
+            .arg(if enabled { "on" } else { "off" })
+            .arg(crate::paths::tmp_suffix())
+            .env("HOME", &env.home)
+            .env("XDG_CONFIG_HOME", &env.config)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.success().then_some(()),
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+            }
+        }
+    };
+    if notify().is_some() { "on-next-open" } else { "reload-needed" }.into()
 }
 
 pub(super) fn process_config(path: &Path) -> Option<PathBuf> {

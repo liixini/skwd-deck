@@ -52,23 +52,10 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         ),
         rpc::THEME_APPS => {
             state.reload_config();
-            Response::ok(req.id, json!(skwd_wall_core::theme::apps::list(&state.config())))
+            let config = state.config().clone();
+            Response::ok(req.id, json!(skwd_wall_core::theme::apps::list(&config)))
         }
-        rpc::THEME_APP_SET => {
-            state.reload_config();
-            let Some(enabled) = req.params.get("enabled").and_then(Value::as_bool) else {
-                return Response::err(req.id, -32602, "enabled must be a boolean");
-            };
-            match skwd_wall_core::theme::apps::set_enabled(
-                state,
-                req.str_param("id", ""),
-                enabled,
-                req.params.get("adopt").and_then(Value::as_bool).unwrap_or(false),
-            ) {
-                Ok(result) => Response::ok(req.id, json!(result)),
-                Err(error) => Response::err(req.id, 1, error.to_string()),
-            }
-        }
+        rpc::THEME_APP_SET | rpc::THEME_APP_CUSTOMIZE => theme_app(state, req),
         rpc::THEME_CURRENT => match skwd_wall_core::theme::profiles::current(state) {
             Ok(current) => Response::ok(req.id, current),
             Err(error) => Response::err(req.id, 1, error.to_string()),

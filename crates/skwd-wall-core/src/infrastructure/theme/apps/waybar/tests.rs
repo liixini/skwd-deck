@@ -290,7 +290,8 @@ fn formatted_imports_remain_connected_and_can_be_removed() {
 
 #[test]
 fn overlay_only_changes_colour_properties() {
-    let css = rendered(&palette("#abcdef"), true).unwrap();
+    let (_root, env, _) = fixture();
+    let css = rendered(&env, &palette("#abcdef"), true).unwrap();
     for block in css.split('{').skip(1) {
         let body = block.split('}').next().unwrap();
         for declaration in body.split(';').filter(|text| !text.trim().is_empty()) {

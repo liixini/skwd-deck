@@ -118,6 +118,10 @@ impl App {
             can_enable: installed,
             can_disable: false,
             can_adopt: false,
+            template_path: String::new(),
+            customized: false,
+            can_disconnect: false,
+            can_reconnect: false,
         };
         let check = || -> Result<(bool, bool, bool)> {
             files::writable(&path)?;
@@ -265,9 +269,16 @@ impl App {
                 edits: Vec::new(),
             }
         };
+        let mappings = super::customization::mappings(env, self.id)?;
+        for edit in &receipt.edits {
+            if !mappings.iter().any(|mapping| mapping.path == edit.path) {
+                document.set(&edit.path, edit.before.as_deref())?;
+            }
+        }
         let mut edits = Vec::new();
-        for (keys, role) in roles(self.id) {
-            let path: Vec<String> = keys.into_iter().map(str::to_owned).collect();
+        for mapping in mappings {
+            let path = mapping.path;
+            let role = mapping.role;
             let before = match receipt.edits.iter().find(|edit| edit.path == path) {
                 Some(edit) => edit.before.clone(),
                 None => document.get(&path)?,
@@ -307,7 +318,7 @@ fn owns(document: &Document, edits: &[Edit]) -> Result<bool> {
     Ok(true)
 }
 
-fn roles(id: &str) -> Vec<(Vec<&'static str>, &'static str)> {
+pub(super) fn roles(id: &str) -> Vec<(Vec<&'static str>, &'static str)> {
     match id {
         "code" => [
             ("editor.background", "surface"),
@@ -347,3 +358,21 @@ fn roles(id: &str) -> Vec<(Vec<&'static str>, &'static str)> {
 #[cfg(test)]
 #[path = "structured_tests.rs"]
 mod tests;
+
+impl App {
+    pub(super) fn reconnect(
+        &self,
+        env: &Environment,
+        config: &crate::config::Config,
+        palette: &Value,
+        dark: bool,
+    ) -> Result<()> {
+        super::customization::mappings(env, self.id)?;
+        let mut receipt =
+            self.load(env)?.ok_or_else(|| anyhow::anyhow!("No saved app theme setup"))?;
+        receipt.enabled = false;
+        receipt.pending = false;
+        files::write(&self.paths(env).1, &serde_json::to_string_pretty(&receipt)?)?;
+        self.set(env, config, true, palette, dark)
+    }
+}

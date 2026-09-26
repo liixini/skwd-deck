@@ -118,3 +118,108 @@ fn existing_kde_template_offers_migration_and_missing_prior_scheme_blocks_setup(
     assert!(!inspect(&env, &config).can_enable);
     assert!(set(&env, &config, true, &palette("#123456"), true).is_err());
 }
+
+#[test]
+fn failed_refresh_recovers_automatically_with_the_latest_palette() {
+    let (_root, env, config) = fixture();
+    set(&env, &config, true, &palette("#123456"), true).unwrap();
+    files::write(&env.config.join("fail"), "").unwrap();
+    assert!(update(&env, &config, &palette("#abcdef"), true).is_err());
+    assert_eq!(inspect(&env, &config).state, "interrupted");
+    std::fs::remove_file(env.config.join("fail")).unwrap();
+    update(&env, &config, &palette("#fedcba"), true).unwrap();
+    assert_eq!(inspect(&env, &config).state, "applied");
+    assert!(files::read(&env.config.join("kdeglobals")).unwrap().unwrap().contains("254,220,186"));
+    set(&env, &config, false, &Value::Null, true).unwrap();
+    assert_eq!(selected(&env).unwrap(), "BreezeDark");
+}
+
+#[test]
+fn initial_apply_failure_recovers_and_pending_output_edits_are_preserved() {
+    let (_root, env, config) = fixture();
+    files::write(&env.config.join("fail"), "").unwrap();
+    assert!(set(&env, &config, true, &palette("#123456"), true).is_err());
+    std::fs::remove_file(env.config.join("fail")).unwrap();
+    let path = env.data.join("color-schemes/SkwdManaged.colors");
+    files::write(&path, "user edit").unwrap();
+    assert!(update(&env, &config, &palette("#abcdef"), true).is_err());
+    assert_eq!(selected(&env).unwrap(), "BreezeDark");
+    assert_eq!(files::read(&path).unwrap().unwrap(), "user edit");
+    let pending = load(&env).unwrap().unwrap().pending_text.unwrap();
+    files::write(&path, &pending).unwrap();
+    update(&env, &config, &palette("#abcdef"), true).unwrap();
+    assert_eq!(inspect(&env, &config).state, "applied");
+}
+
+#[test]
+fn interrupted_undo_retries_restoration_without_reenabling_the_theme() {
+    let (_root, env, config) = fixture();
+    set(&env, &config, true, &palette("#123456"), true).unwrap();
+    files::write(&env.config.join("fail"), "").unwrap();
+    assert!(set(&env, &config, false, &Value::Null, true).is_err());
+    std::fs::remove_file(env.config.join("fail")).unwrap();
+    update(&env, &config, &palette("#abcdef"), true).unwrap();
+    assert_eq!(selected(&env).unwrap(), "BreezeDark");
+    assert!(!inspect(&env, &config).enabled);
+    assert!(!env.data.join("color-schemes/SkwdManaged.colors").exists());
+}
+
+#[test]
+fn pending_refresh_does_not_replace_an_external_selection() {
+    let (_root, env, config) = fixture();
+    set(&env, &config, true, &palette("#123456"), true).unwrap();
+    files::write(&env.config.join("fail"), "").unwrap();
+    assert!(update(&env, &config, &palette("#abcdef"), true).is_err());
+    std::fs::remove_file(env.config.join("fail")).unwrap();
+    files::write(&env.config.join("kdeglobals"), "[General]\nColorScheme=UserTheme\n").unwrap();
+    assert!(update(&env, &config, &palette("#fedcba"), true).is_err());
+    assert_eq!(selected(&env).unwrap(), "UserTheme");
+}
+
+#[test]
+fn legacy_pending_refresh_and_interrupted_output_write_can_recover() {
+    let (_root, env, config) = fixture();
+    set(&env, &config, true, &palette("#123456"), true).unwrap();
+    let mut receipt = load(&env).unwrap().unwrap();
+    receipt.pending = true;
+    save(&env, &receipt).unwrap();
+    update(&env, &config, &palette("#abcdef"), true).unwrap();
+    let mut receipt = load(&env).unwrap().unwrap();
+    receipt.pending = true;
+    receipt.pending_text =
+        Some(manager::rendered(&env, &KDE_RECIPE, &palette("#fedcba"), true).unwrap());
+    save(&env, &receipt).unwrap();
+    update(&env, &config, &palette("#fedcba"), true).unwrap();
+    assert_eq!(inspect(&env, &config).state, "applied");
+}
+
+#[test]
+fn custom_kde_mappings_survive_refresh_and_disconnect_preserves_manual_scheme() {
+    let (_root, env, config) = fixture();
+    let custom = env.config.join("skwd-wall-v2/app-themes/kde.template");
+    let template = KDE_RECIPE.template.replace("colors.primary.", "colors.tertiary.");
+    files::write(&custom, &template).unwrap();
+    let mut colors = palette("#123456");
+    colors["tertiary"] = json!("#abcdef");
+    manager::set_with(&env, &config, "kde", true, &colors, true).unwrap();
+    assert!(
+        files::read(&env.data.join("color-schemes/SkwdManaged.colors"))
+            .unwrap()
+            .unwrap()
+            .contains("171,205,239")
+    );
+    files::write(
+        &env.config.join("kdeglobals"),
+        "[General]\nColorScheme=BreezeDark\nfont=Manual\n",
+    )
+    .unwrap();
+    let before = files::read(&env.config.join("kdeglobals")).unwrap();
+    manager::customize_with(&env, &config, "kde", "disconnect", &Value::Null, true).unwrap();
+    manager::apply_with(&env, &config, &palette("#fedcba"), true);
+    assert_eq!(files::read(&env.config.join("kdeglobals")).unwrap(), before);
+    manager::customize_with(&env, &config, "kde", "reconnect", &colors, true).unwrap();
+    assert_eq!(inspect(&env, &config).state, "applied");
+    manager::set_with(&env, &config, "kde", false, &Value::Null, true).unwrap();
+    assert_eq!(selected(&env).unwrap(), "BreezeDark");
+    assert!(files::read(&env.config.join("kdeglobals")).unwrap().unwrap().contains("font=Manual"));
+}

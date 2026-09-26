@@ -50,9 +50,19 @@ fn managed_themes_migrate_and_restore_through_rpc() {
     sandbox.set_env("XDG_STATE_HOME", state_home.to_str().unwrap());
     let tools = sandbox.root.join("bin");
     std::fs::create_dir_all(&tools).unwrap();
-    for name in
-        ["kitty", "btop", "ghostty", "niri", "rofi", "waybar", "code", "alacritty", "yazi", "zed"]
-    {
+    for name in [
+        "fish",
+        "kitty",
+        "btop",
+        "ghostty",
+        "niri",
+        "rofi",
+        "waybar",
+        "code",
+        "alacritty",
+        "yazi",
+        "zed",
+    ] {
         let path = tools.join(name);
         std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -87,6 +97,8 @@ fn managed_themes_migrate_and_restore_through_rpc() {
     std::fs::write(
         &kde_tool,
         r#"#!/bin/sh
+[ ! -f "$XDG_CONFIG_HOME/kde-fail" ] || exit 1
+sleep 0.1
 printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
 "#,
     )
@@ -134,9 +146,35 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
             .is_some_and(|response| response.get("error").is_none()),
         Duration::from_secs(10)
     ));
-    for id in
-        ["kitty", "btop", "ghostty", "niri", "rofi", "waybar", "kde", "code", "alacritty", "yazi"]
-    {
+    let polling = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let readers: Vec<_> = (0..2)
+        .map(|_| {
+            let polling = polling.clone();
+            let mut reader = walld.client();
+            std::thread::spawn(move || {
+                let mut count = 0;
+                while polling.load(std::sync::atomic::Ordering::Acquire) {
+                    let reply = reader.call("theme.apps", json!({}), 100);
+                    assert!(reply.is_some(), "Theme status blocked during migration");
+                    count += 1;
+                }
+                count
+            })
+        })
+        .collect();
+    for id in [
+        "fish",
+        "kitty",
+        "btop",
+        "ghostty",
+        "niri",
+        "rofi",
+        "waybar",
+        "kde",
+        "code",
+        "alacritty",
+        "yazi",
+    ] {
         let response = client
             .call(
                 "theme.app.set",
@@ -154,6 +192,30 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         assert_eq!(row["enabled"], true, "{row}");
         let output = row["output_path"].as_str().unwrap();
         assert!(!std::fs::read_to_string(output).unwrap().contains("{{"));
+        if id == "kde" {
+            let failure = sandbox.root.join("config/kde-fail");
+            std::fs::write(&failure, "").unwrap();
+            client.call("wall.retheme", json!({}), 7).unwrap();
+            let status = |client: &mut skwd_e2e::Client| {
+                client.call("theme.apps", json!({}), 8).unwrap()["result"]["apps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|app| app["id"] == "kde")
+                    .unwrap()
+                    .clone()
+            };
+            assert!(wait_until(
+                || status(&mut client)["state"] == "interrupted",
+                Duration::from_secs(10)
+            ));
+            std::fs::remove_file(failure).unwrap();
+            client.call("wall.retheme", json!({}), 9).unwrap();
+            assert!(wait_until(
+                || status(&mut client)["state"] == "applied",
+                Duration::from_secs(10)
+            ));
+        }
         if id == "waybar" {
             assert!(output.ends_with("/skwd-theme.css"));
             assert!(!legacy_output.exists());
@@ -169,6 +231,10 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         assert!(response.get("error").is_none(), "{id}: {response}");
         assert!(!std::path::Path::new(output).exists());
     }
+    polling.store(false, std::sync::atomic::Ordering::Release);
+    for reader in readers {
+        assert!(reader.join().unwrap() > 0);
+    }
     assert_eq!(std::fs::read_to_string(&kitty).unwrap(), "font_size 13\n");
     assert_eq!(std::fs::read_to_string(&waybar).unwrap(), "window#waybar { color: @primary; }\n");
     let saved: Value =
@@ -180,4 +246,68 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
     assert!(std::fs::read_to_string(kdeglobals).unwrap().contains("ColorScheme=BreezeDark"));
     assert_eq!(saved["integrations"][0]["template"], "kitty.conf");
     assert!(state_home.join("skwd-wall-v2/app-themes/kitty-migration.json").exists());
+    for id in [
+        "fish",
+        "kitty",
+        "btop",
+        "ghostty",
+        "niri",
+        "rofi",
+        "waybar",
+        "kde",
+        "code",
+        "alacritty",
+        "yazi",
+    ] {
+        let response = client.call("theme.app.set", json!({"id":id,"enabled":true}), 30).unwrap();
+        assert!(response.get("error").is_none(), "{id}: {response}");
+        let response = client
+            .call("theme.app.customize", json!({"id":id,"action":"create-template"}), 31)
+            .unwrap();
+        assert!(response.get("error").is_none(), "{id}: {response}");
+        let row = response["result"]["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|app| app["id"] == id)
+            .unwrap();
+        let template = row["template_path"].as_str().unwrap();
+        assert!(std::path::Path::new(template).exists());
+        let output = row["output_path"].as_str().unwrap().to_owned();
+        let before = std::fs::read(&output).unwrap();
+        let response =
+            client.call("theme.app.customize", json!({"id":id,"action":"disconnect"}), 32).unwrap();
+        assert!(response.get("error").is_none(), "{id}: {response}");
+        let row = response["result"]["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|app| app["id"] == id)
+            .unwrap();
+        assert_eq!(row["state"], "disconnected");
+        assert_eq!(row["enabled"], false);
+        assert_eq!(std::fs::read(&output).unwrap(), before);
+        let response =
+            client.call("theme.app.customize", json!({"id":id,"action":"reconnect"}), 33).unwrap();
+        assert!(response.get("error").is_none(), "{id}: {response}");
+        let row = response["result"]["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|app| app["id"] == id)
+            .unwrap();
+        assert_eq!(row["enabled"], true);
+        assert_ne!(row["state"], "disconnected");
+        let response = client
+            .call("theme.app.customize", json!({"id":id,"action":"reset-template"}), 34)
+            .unwrap();
+        assert!(response.get("error").is_none(), "{id}: {response}");
+        let row = response["result"]["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|app| app["id"] == id)
+            .unwrap();
+        assert_eq!(row["customized"], false);
+    }
 }

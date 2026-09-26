@@ -8,7 +8,16 @@ pub(super) struct Recipe {
     pub signal: Option<i32>,
 }
 
-pub(super) const RECIPES: [Recipe; 6] = [
+pub(super) const RECIPES: [Recipe; 7] = [
+    Recipe {
+        id: "fish",
+        name: "Fish",
+        config: "fish/config.fish",
+        output: "skwd-colors.fish",
+        directive: "source (status dirname)/skwd-colors.fish",
+        template: include_str!("../../../../../../data/app-themes/fish.fish"),
+        signal: None,
+    },
     Recipe {
         id: "kitty",
         name: "Kitty",

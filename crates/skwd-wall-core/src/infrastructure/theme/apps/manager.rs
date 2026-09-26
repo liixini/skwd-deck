@@ -12,7 +12,7 @@ use super::catalogue::{KDE_RECIPE, RECIPES, Recipe};
 use super::files::{self, Receipt};
 use super::reload::reload;
 
-static SERIAL: Mutex<()> = Mutex::new(());
+pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 
 pub(super) struct Environment {
     pub home: PathBuf,
@@ -66,7 +66,7 @@ impl Environment {
         })
     }
 
-    fn paths(&self, recipe: &Recipe) -> (PathBuf, PathBuf, PathBuf) {
+    pub(super) fn paths(&self, recipe: &Recipe) -> (PathBuf, PathBuf, PathBuf) {
         let mut config = self.config.join(recipe.config);
         if recipe.id == "ghostty" && self.config.join("ghostty/config.ghostty").exists() {
             config = self.config.join("ghostty/config.ghostty");
@@ -127,6 +127,10 @@ fn inspect(env: &Environment, config: &crate::config::Config, recipe: &Recipe) -
         can_enable: installed,
         can_disable: false,
         can_adopt: false,
+        template_path: String::new(),
+        customized: false,
+        can_disconnect: false,
+        can_reconnect: false,
     };
     let check = || -> Result<(String, String, bool, bool)> {
         files::writable(&path)?;
@@ -197,25 +201,55 @@ pub(super) fn list_with(env: &Environment, config: &crate::config::Config) -> Ap
     let mut apps: Vec<_> = RECIPES.iter().map(|recipe| inspect(env, config, recipe)).collect();
     apps.push(super::plasma::inspect(env, config));
     apps.extend(super::structured::APPS.iter().map(|app| app.inspect(env, config)));
+    for app in &mut apps {
+        super::customization::describe(env, app);
+    }
     apps.sort_by(|a, b| b.installed.cmp(&a.installed).then_with(|| a.name.cmp(&b.name)));
     AppThemesResult { apps }
 }
 
-pub(super) fn rendered(recipe: &Recipe, palette: &Value, dark: bool) -> Result<String> {
+pub(super) fn rendered(
+    env: &Environment,
+    recipe: &Recipe,
+    palette: &Value,
+    dark: bool,
+) -> Result<String> {
     ensure!(
         super::super::profiles::valid_palette(palette),
         "Apply a wallpaper or choose a colour theme first"
     );
-    let text = crate::static_templates::render_palette(recipe.template, palette, dark);
+    let text = crate::static_templates::render_palette(
+        &super::customization::template(env, recipe.id, recipe.template)?,
+        palette,
+        dark,
+    );
     ensure!(!text.contains("{{"), "The app template contains unsupported colour tokens");
     Ok(text)
 }
 
-fn validate(env: &Environment, recipe: &Recipe, path: &Path, text: &str) -> Result<()> {
+fn validate(
+    env: &Environment,
+    recipe: &Recipe,
+    path: &Path,
+    text: &str,
+    generated: Option<&str>,
+) -> Result<()> {
     if recipe.id != "niri" || !env.reload {
         return Ok(());
     }
     let parent = path.parent().context("Missing Niri config directory")?;
+    let mut replacement = None;
+    let text = if let Some(generated) = generated {
+        let mut file =
+            tempfile::Builder::new().prefix(".skwd-colours-").suffix(".kdl").tempfile_in(parent)?;
+        file.write_all(generated.as_bytes())?;
+        let directive =
+            format!("include {}", serde_json::to_string(&file.path().to_string_lossy())?);
+        replacement = Some(file);
+        text.replace(recipe.directive, &directive)
+    } else {
+        text.to_owned()
+    };
     let mut staged =
         tempfile::Builder::new().prefix(".skwd-validate-").suffix(".kdl").tempfile_in(parent)?;
     staged.write_all(text.as_bytes())?;
@@ -230,6 +264,7 @@ fn validate(env: &Environment, recipe: &Recipe, path: &Path, text: &str) -> Resu
         "Niri rejected the theme setup: {}",
         String::from_utf8_lossy(&result.stderr).trim()
     );
+    drop(replacement);
     Ok(())
 }
 
@@ -332,6 +367,10 @@ pub(super) fn set_with(
     palette: &Value,
     dark: bool,
 ) -> Result<()> {
+    ensure!(
+        !super::customization::disconnected(env, id),
+        "Reconnect the app theme before changing its colours"
+    );
     if id == "waybar" {
         return super::waybar::set(env, config, enabled, palette, dark);
     }
@@ -360,6 +399,10 @@ pub(super) fn set_with(
                 status.can_disable && status.state != "changed",
                 "The app theme changed outside Skwd; review its setup"
             );
+            let rendered = rendered(env, recipe, palette, dark)?;
+            validate(env, recipe, &output, &rendered, None)?;
+            files::write(&output, &rendered)?;
+            receipt.rendered = rendered;
             receipt.result = reload(env, recipe);
             return files::save(&receipt_path, &receipt);
         }
@@ -384,13 +427,13 @@ pub(super) fn set_with(
             original,
             before,
             after,
-            rendered: rendered(recipe, palette, dark)?,
+            rendered: rendered(env, recipe, palette, dark)?,
             result: "configured".into(),
         };
         files::save(&receipt_path, &receipt)?;
         let install = || -> Result<()> {
             files::write(&output, &receipt.rendered)?;
-            validate(env, recipe, &path, &next)?;
+            validate(env, recipe, &path, &next, None)?;
             ensure!(
                 files::read(&path)? == receipt.original,
                 "The app config changed during setup; try again"
@@ -420,7 +463,7 @@ pub(super) fn set_with(
         } else {
             files::restore(&receipt, recipe, &current)?
         };
-        validate(env, recipe, &path, &restored)?;
+        validate(env, recipe, &path, &restored, None)?;
         receipt.pending = true;
         receipt.pending_config = Some(restored.clone());
         files::save(&receipt_path, &receipt)?;
@@ -458,21 +501,28 @@ pub(super) fn apply_with(
     if !env.receipts.exists() {
         return;
     }
-    if let Err(error) = super::waybar::update(env, config, palette, dark) {
+    if !super::customization::disconnected(env, "waybar")
+        && let Err(error) = super::waybar::update(env, config, palette, dark)
+    {
         log::warn!("app theme waybar: {error:#}");
     }
-    if let Err(error) = super::plasma::update(env, config, palette, dark) {
+    if !super::customization::disconnected(env, "kde")
+        && let Err(error) = super::plasma::update(env, config, palette, dark)
+    {
         log::warn!("app theme kde: {error:#}");
     }
     for app in &super::structured::APPS {
-        if app.inspect(env, config).enabled
+        if !super::customization::disconnected(env, app.id)
+            && app.inspect(env, config).enabled
             && let Err(error) = app.set(env, config, true, palette, dark)
         {
             log::warn!("app theme {}: {error:#}", app.id);
         }
     }
     for recipe in &RECIPES {
-        if recipe.id == "waybar" && super::waybar::managed(env) {
+        if super::customization::disconnected(env, recipe.id)
+            || recipe.id == "waybar" && super::waybar::managed(env)
+        {
             continue;
         }
         let (_, _, path) = env.paths(recipe);
@@ -489,10 +539,11 @@ pub(super) fn apply_with(
                 files::read(&receipt.output)?.as_deref() == Some(&receipt.rendered),
                 "The generated theme was edited outside Skwd"
             );
-            let text = rendered(recipe, palette, dark)?;
+            let text = rendered(env, recipe, palette, dark)?;
             if text == receipt.rendered && receipt.result != "reload-needed" {
                 return Ok(());
             }
+            validate(env, recipe, &receipt.output, &text, None)?;
             files::write(&receipt.output, &text)?;
             receipt.rendered = text;
             receipt.result = reload(env, recipe);
@@ -501,5 +552,98 @@ pub(super) fn apply_with(
         if let Err(error) = update() {
             log::warn!("app theme {}: {error:#}", recipe.id);
         }
+    }
+}
+
+pub fn customize(state: &crate::WallState, id: &str, action: &str) -> Result<AppThemesResult> {
+    let _theme = state.theme().lock_shell_preview();
+    let _serial = crate::lock(&SERIAL);
+    let env = Environment::current();
+    let config = state.config().clone();
+    let snapshot = state.theme().applied_theme();
+    let mut palette =
+        snapshot.as_ref().and_then(|value| value.get("palette")).cloned().unwrap_or(Value::Null);
+    if let Some(scheme) = snapshot.as_ref().and_then(|value| value.get("scheme")) {
+        palette["_scheme"] = scheme.clone();
+    }
+    let dark = snapshot.as_ref().and_then(|value| value["dark"].as_bool()).unwrap_or(true);
+    customize_with(&env, &config, id, action, &palette, dark)?;
+    Ok(list_with(&env, &config))
+}
+
+pub(super) fn customize_with(
+    env: &Environment,
+    config: &crate::config::Config,
+    id: &str,
+    action: &str,
+    palette: &Value,
+    dark: bool,
+) -> Result<()> {
+    super::customization::defaults(id)?;
+    match action {
+        "create-template" => super::customization::edit_template(env, id, false),
+        "reset-template" => super::customization::edit_template(env, id, true),
+        "disconnect" => super::customization::disconnect(env, id),
+        "reconnect" => {
+            super::customization::backup(env, id)?;
+            super::customization::disconnect(env, id)?;
+            if id == "kde" {
+                super::plasma::reconnect(env, config, palette, dark)?;
+            } else if id == "waybar" {
+                super::waybar::reconnect(env, config, palette, dark)?;
+            } else if let Some(app) = super::structured::APPS.iter().find(|app| app.id == id) {
+                app.reconnect(env, config, palette, dark)?;
+            } else {
+                let recipe =
+                    RECIPES.iter().find(|recipe| recipe.id == id).context("Unknown app theme")?;
+                let (path, output, saved) = env.paths(recipe);
+                let mut receipt = files::load(&saved)?.context("No saved app theme setup")?;
+                env.check_receipt(recipe, &receipt)?;
+                let current = files::read(&path)?.unwrap_or_default();
+                let rendered = rendered(env, recipe, palette, dark)?;
+                let next = if files::restore(&receipt, recipe, &current).is_ok() {
+                    current.clone()
+                } else {
+                    let base: String = current
+                        .split_inclusive('\n')
+                        .filter(|line| {
+                            let line = line.trim();
+                            line != recipe.directive
+                                && !matches!(
+                                    line,
+                                    "# Skwd app theme"
+                                        | "# End Skwd app theme"
+                                        | "// Skwd app theme"
+                                        | "// End Skwd app theme"
+                                )
+                        })
+                        .collect();
+                    let (before, after) = files::patch(recipe, &base)?;
+                    let next = files::changed(&base, &before, &after)?;
+                    receipt.original = Some(base);
+                    receipt.before = before;
+                    receipt.after = after;
+                    next
+                };
+                validate(env, recipe, &output, &rendered, None)?;
+                validate(env, recipe, &path, &next, Some(&rendered))?;
+                receipt.pending = true;
+                receipt.pending_config = Some(next.clone());
+                receipt.rendered = rendered;
+                files::save(&saved, &receipt)?;
+                files::write(&output, &receipt.rendered)?;
+                ensure!(
+                    files::read(&path)?.unwrap_or_default() == current,
+                    "The app config changed during reconnection; try again"
+                );
+                files::write(&path, &next)?;
+                receipt.enabled = true;
+                receipt.pending = false;
+                receipt.result = reload(env, recipe);
+                files::save(&saved, &receipt)?;
+            }
+            super::customization::connected(env, id)
+        }
+        _ => anyhow::bail!("Unknown app theme customization action"),
     }
 }

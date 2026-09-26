@@ -34,6 +34,10 @@ if [ "$e2e" -eq 1 ]; then
     done
 fi
 
+if [ -n "${SKWD_TEST_FISH:-}" ]; then
+    cargo test --release -p skwd-wall-core --features daemon --lib fish_sessions -- --ignored --nocapture
+fi
+
 if [ "$theme_vm" -eq 1 ]; then
     python3 scripts/theme-provider-vm.py all
 fi

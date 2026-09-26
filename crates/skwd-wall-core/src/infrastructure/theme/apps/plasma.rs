@@ -24,6 +24,12 @@ struct Receipt {
     outputs: BTreeMap<String, String>,
     enabled: bool,
     pending: bool,
+    #[serde(default)]
+    pending_text: Option<String>,
+    #[serde(default)]
+    pending_selection: Option<String>,
+    #[serde(default)]
+    disabling: bool,
 }
 
 fn selected(env: &Environment) -> Result<String> {
@@ -64,7 +70,8 @@ fn load(env: &Environment) -> Result<Option<Receipt>> {
         "The saved Plasma theme location changed; review its setup"
     );
     ensure!(
-        value.outputs.keys().all(|name| NAMES.contains(&name.as_str())),
+        NAMES.contains(&value.active.as_str())
+            && value.outputs.keys().all(|name| NAMES.contains(&name.as_str())),
         "Unknown managed Plasma scheme"
     );
     Ok(Some(value))
@@ -96,6 +103,10 @@ pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppT
         can_enable: installed,
         can_disable: false,
         can_adopt: false,
+        template_path: String::new(),
+        customized: false,
+        can_disconnect: false,
+        can_reconnect: false,
     };
     let check = || -> Result<Option<Receipt>> {
         files::writable(&path)?;
@@ -194,6 +205,13 @@ fn output(receipt: &Receipt, name: &str) -> PathBuf {
 }
 
 fn remove_outputs(receipt: &Receipt) -> Result<()> {
+    if let Some(text) = &receipt.pending_text {
+        let path = output(receipt, &receipt.active);
+        if files::read(&path)?.as_ref() == Some(text) {
+            files::writable(&path)?;
+            std::fs::remove_file(path)?;
+        }
+    }
     for (name, text) in &receipt.outputs {
         let path = output(receipt, name);
         if files::read(&path)?.as_ref() == Some(text) {
@@ -204,6 +222,40 @@ fn remove_outputs(receipt: &Receipt) -> Result<()> {
     Ok(())
 }
 
+fn resume(env: &Environment, receipt: &mut Receipt) -> Result<()> {
+    let current = selected(env)?;
+    ensure!(
+        receipt.pending_selection.as_ref().map_or_else(
+            || owned(receipt, &current),
+            |previous| current == *previous || current == receipt.active
+        ),
+        "The Plasma theme changed outside Skwd"
+    );
+    ensure!(NAMES.contains(&receipt.active.as_str()), "Unknown pending Plasma scheme");
+    let text = receipt
+        .pending_text
+        .as_ref()
+        .or_else(|| receipt.outputs.get(&receipt.active))
+        .context("The pending Plasma colours are missing")?
+        .clone();
+    for name in NAMES {
+        let current = files::read(&output(receipt, name))?;
+        ensure!(
+            current.as_ref() == receipt.outputs.get(name)
+                || name == receipt.active && current.as_ref() == Some(&text),
+            "The generated Plasma theme was changed outside Skwd"
+        );
+    }
+    files::write(&output(receipt, &receipt.active), &text)?;
+    apply_scheme(env, &receipt.active)?;
+    receipt.outputs.insert(receipt.active.clone(), text);
+    receipt.enabled = true;
+    receipt.pending = false;
+    receipt.pending_text = None;
+    receipt.pending_selection = None;
+    save(env, receipt)
+}
+
 pub(super) fn set(
     env: &Environment,
     config: &crate::config::Config,
@@ -211,17 +263,25 @@ pub(super) fn set(
     palette: &Value,
     dark: bool,
 ) -> Result<()> {
-    let saved = load(env)?;
+    let mut saved = load(env)?;
+    if enabled && let Some(receipt) = saved.as_mut().filter(|r| r.pending) {
+        ensure!(!receipt.disabling, "Finish undoing the Plasma theme before enabling it");
+        resume(env, receipt)?;
+    }
     let status = inspect(env, config);
     if !enabled {
         if let Some(mut receipt) = saved.filter(|r| r.enabled || r.pending) {
             ensure!(status.can_disable, "The Plasma theme changed outside Skwd; review its setup");
             receipt.pending = true;
+            receipt.disabling = true;
             save(env, &receipt)?;
             apply_scheme(env, &receipt.previous)?;
             remove_outputs(&receipt)?;
             receipt.enabled = false;
             receipt.pending = false;
+            receipt.pending_text = None;
+            receipt.pending_selection = None;
+            receipt.disabling = false;
             save(env, &receipt)?;
         }
         return Ok(());
@@ -243,6 +303,9 @@ pub(super) fn set(
             outputs: BTreeMap::new(),
             enabled: false,
             pending: false,
+            pending_text: None,
+            pending_selection: None,
+            disabling: false,
         },
     };
     let name = if selected(env)? == NAMES[0] { NAMES[1] } else { NAMES[0] };
@@ -253,22 +316,19 @@ pub(super) fn set(
             .context("The saved Plasma colours are missing")?
             .replace(&receipt.active, name)
     } else {
-        manager::rendered(&KDE_RECIPE, palette, dark)?.replace("SkwdMatugen", name)
+        manager::rendered(env, &KDE_RECIPE, palette, dark)?.replace("SkwdMatugen", name)
     };
     let path = output(&receipt, name);
     ensure!(
         files::read(&path)?.as_ref() == receipt.outputs.get(name),
         "The generated Plasma theme was changed outside Skwd"
     );
+    receipt.pending_selection = Some(selected(env)?);
     receipt.active = name.into();
-    receipt.outputs.insert(name.into(), rendered.clone());
+    receipt.pending_text = Some(rendered);
     receipt.pending = true;
     save(env, &receipt)?;
-    files::write(&path, &rendered)?;
-    apply_scheme(env, name)?;
-    receipt.enabled = true;
-    receipt.pending = false;
-    save(env, &receipt)
+    resume(env, &mut receipt)
 }
 
 pub(super) fn update(
@@ -277,8 +337,8 @@ pub(super) fn update(
     palette: &Value,
     dark: bool,
 ) -> Result<()> {
-    if load(env)?.is_some_and(|receipt| receipt.enabled && !receipt.pending) {
-        set(env, config, true, palette, dark)?;
+    if let Some(receipt) = load(env)?.filter(|receipt| receipt.enabled || receipt.pending) {
+        set(env, config, !receipt.disabling, palette, dark)?;
     }
     Ok(())
 }
@@ -286,3 +346,39 @@ pub(super) fn update(
 #[cfg(test)]
 #[path = "plasma_tests.rs"]
 mod tests;
+
+pub(super) fn reconnect(
+    env: &Environment,
+    _config: &crate::config::Config,
+    palette: &Value,
+    dark: bool,
+) -> Result<()> {
+    let mut receipt = load(env)?.context("No saved Plasma theme setup")?;
+    let current = selected(env)?;
+    if !NAMES.contains(&current.as_str()) {
+        ensure!(
+            scheme_exists(env, &current),
+            "Select an installed KDE colour scheme before reconnecting"
+        );
+        receipt.previous.clone_from(&current);
+    }
+    ensure!(
+        scheme_exists(env, &receipt.previous),
+        "The previous KDE scheme is missing; select an installed scheme before reconnecting"
+    );
+    let name = if current == NAMES[0] { NAMES[1] } else { NAMES[0] };
+    let rendered = manager::rendered(env, &KDE_RECIPE, palette, dark)?.replace("SkwdMatugen", name);
+    receipt.outputs.clear();
+    for name in NAMES {
+        if let Some(text) = files::read(&output(&receipt, name))? {
+            receipt.outputs.insert(name.into(), text);
+        }
+    }
+    receipt.active = name.into();
+    receipt.pending = true;
+    receipt.pending_text = Some(rendered);
+    receipt.pending_selection = Some(current);
+    receipt.disabling = false;
+    save(env, &receipt)?;
+    resume(env, &mut receipt)
+}
