@@ -689,16 +689,18 @@ fn optimize_start_converts_image() {
     assert_eq!(rr(response)["started"], json!(true));
 
     let destination = wallpaper_dir.path().join("rpc-fixture.webp");
-    for _ in 0..100 {
-        if destination.is_file() {
-            break;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let status = loop {
+        let status = rr(super::dispatch(
+            &ctx,
+            &wall_proto::Request { method: "optimize.status".into(), params: json!({}), id: 100 },
+        ));
+        if status["running"] == json!(false) {
+            break status;
         }
+        assert!(std::time::Instant::now() < deadline, "optimizer did not finish: {status}");
         std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    let status = rr(super::dispatch(
-        &ctx,
-        &wall_proto::Request { method: "optimize.status".into(), params: json!({}), id: 100 },
-    ));
+    };
     assert!(destination.is_file(), "optimizer status: {status}");
     assert_eq!(status["optimized"], json!(1));
     assert!(status["future_saved_bytes"].as_u64().unwrap_or(0) > 0);
