@@ -9,6 +9,10 @@ use skwd_wall_core::backend::wallpaper::{
 struct FailingApplication;
 
 impl WallpaperApplication for FailingApplication {
+    fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
+        anyhow::bail!("injected release failure")
+    }
+
     fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         anyhow::bail!("injected static failure")
     }
@@ -71,6 +75,10 @@ impl FlakyApplication {
 }
 
 impl WallpaperApplication for FlakyApplication {
+    fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
+        anyhow::bail!("injected release failure")
+    }
+
     fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         self.attempt()
     }
@@ -103,6 +111,10 @@ impl WallpaperApplication for FlakyApplication {
 }
 
 impl WallpaperApplication for SupersedingApplication {
+    fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
+        anyhow::bail!("injected release failure")
+    }
+
     fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         self.supersede();
         Ok(())
@@ -377,6 +389,10 @@ struct OneShotSupersedingApplication {
 }
 
 impl WallpaperApplication for OneShotSupersedingApplication {
+    fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
+        anyhow::bail!("injected release failure")
+    }
+
     fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -592,6 +608,10 @@ impl ExpectedWeTransition {
 }
 
 impl WallpaperApplication for ExpectedWeTransition {
+    fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
+        anyhow::bail!("injected release failure")
+    }
+
     fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -695,4 +715,65 @@ fn wallpaper_engine_resolves_request_transition_for_scene_and_video_outputs() {
             }
         }
     }
+}
+
+#[test]
+fn failed_external_handoff_cannot_publish_for_any_media_or_output_scope() {
+    let (_guard, root) = testenv::lock();
+    let we_root = root.join("we");
+    let we_item = we_root.join("123");
+    std::fs::create_dir_all(&we_item).unwrap();
+    std::fs::write(we_item.join("project.json"), r#"{"type":"scene","file":"scene.json"}"#)
+        .unwrap();
+    testenv::write_config(serde_json::json!({
+        "paths": { "steamWorkshop": we_root.to_string_lossy() },
+        "features": { "steam": true },
+        "pickOnlyMode": true,
+        "history": { "enabled": true }
+    }));
+    let (state, publisher, stats) = testenv::harness();
+    let history =
+        crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
+    state.theme().set_source("sentinel-theme");
+    let mut events = testenv::subscribe(&publisher);
+    let cache = root.join("cache/skwd-wall-v2");
+    let _ = std::fs::remove_file(cache.join("last-applied.json"));
+
+    for (kind, path, we_id) in [
+        (wall_proto::kind::STATIC, "/wall/fail.png", ""),
+        (wall_proto::kind::VIDEO, "/wall/fail.mp4", ""),
+        (wall_proto::kind::WE, "", "123"),
+    ] {
+        for output in ["*", "DP-1"] {
+            let _ = std::fs::remove_file(cache.join("last-wallpaper.json"));
+            let _ = std::fs::remove_file(cache.join("history.json"));
+            let result = apply_core(
+                &state,
+                &FailingApplication,
+                &history,
+                publisher.as_ref(),
+                &stats,
+                kind,
+                path,
+                we_id,
+                true,
+                0,
+                ApplySource::User,
+                output,
+                false,
+                false,
+                None,
+                None,
+            );
+            assert!(result.unwrap_err().to_string().contains("injected release failure"));
+            assert!(!cache.join("last-wallpaper.json").exists());
+            assert!(!cache.join("history.json").exists());
+            assert_eq!(state.theme().source().as_deref(), Some("sentinel-theme"));
+        }
+    }
+    assert!(
+        testenv::events(&mut events).iter().all(|event| event.event != wall_proto::ev::APPLIED)
+    );
+    assert_eq!(stats.counters_json()["applies"], 0);
+    assert!(!cache.join("last-applied.json").exists());
 }

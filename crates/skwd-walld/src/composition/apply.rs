@@ -448,7 +448,11 @@ fn apply_core_locked(
         let target = if path.is_empty() { we_id } else { path };
         log::warn!("apply gen={generation}: {kind} to={target} output={output} failed: {error:#}");
     }
-    Ok(execution?.commit(state)?.publish(state, history, publisher, stats))
+    let execution = execution?;
+    if pick_only {
+        application.release_outputs(&decision.committed_outputs)?;
+    }
+    Ok(execution.commit(state)?.publish(state, history, publisher, stats))
 }
 
 fn apply_static_arm(

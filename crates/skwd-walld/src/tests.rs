@@ -42,6 +42,7 @@ fn pick_only_apply() {
         .stdin(std::process::Stdio::piped())
         .spawn()
         .unwrap();
+    let pid = child.id();
     let stdin = child.stdin.take();
     state.renderers().set_video_paper("DP-1", child, stdin);
     state.renderers().set_session_paused(17, true);
@@ -60,10 +61,9 @@ fn pick_only_apply() {
     }
     assert_eq!(v["applied"], json!(path));
     assert!(!state.renderers().renderer_alive("static"));
-    assert_eq!(
-        std::fs::read_to_string(pause_output).unwrap(),
-        "{\"to\":\"\",\"pause\":true}\n{\"to\":\"\",\"pause\":false}\n{\"to\":\"\",\"pause\":true}\n{\"to\":\"\",\"pause\":false}\n"
-    );
+    assert!(!state.renderers().has_video_paper("DP-1"));
+    assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
+    assert_eq!(skwd_wall_core::audio::read_state(&state.config().cache_dir()), json!({}));
     let last: Value = serde_json::from_str(
         &std::fs::read_to_string(root.join("cache/skwd-wall-v2/last-wallpaper.json")).unwrap(),
     )
@@ -440,4 +440,93 @@ fn reapply_dead_renderer() {
         assert_ne!(v["noop"], json!(true));
     }
     assert_eq!(ecode(&r), -1);
+}
+
+#[test]
+fn pick_only_stops_paper_service_for_exact_output_and_propagates_failure() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixListener;
+    let (_guard, root) = testenv::lock();
+    testenv::write_config(json!({"pickOnlyMode": true}));
+    let wall = root.join("walls/external.png");
+    std::fs::write(&wall, b"png").unwrap();
+    let socket = skwd_wall_core::infrastructure::paper::paper_socket_path();
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&socket);
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        for (output, fail) in [("DP-1", false), ("*", false), ("DP-2", true)] {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(&stream).read_line(&mut line).unwrap();
+            let request: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(request["method"], "paper.stop");
+            assert_eq!(request["params"]["outputs"], json!([output]));
+            let response = if fail {
+                json!({"id":request["id"], "error":{"code":"stop_failed","message":"stop failed"}})
+            } else {
+                json!({"id":request["id"], "result":{"stopped":1}})
+            };
+            writeln!(stream, "{response}").unwrap();
+        }
+    });
+    let (state, subs, stats) = harness();
+    for output in ["DP-1", "*"] {
+        rr(call(
+            &state,
+            &subs,
+            &stats,
+            "wall.apply",
+            json!({"type":"static", "path":wall, "output":output}),
+        ));
+    }
+    let child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    state.renderers().set_video_paper("DP-2", child, None);
+    let response = call(
+        &state,
+        &subs,
+        &stats,
+        "wall.apply",
+        json!({"type":"static", "path":wall, "output":"DP-2"}),
+    );
+    assert!(testenv::emsg(&response).contains("stop failed"));
+    assert!(state.renderers().has_video_paper("DP-2"));
+    state.renderers().kill_all();
+    server.join().unwrap();
+    std::fs::remove_file(socket).unwrap();
+}
+
+#[test]
+fn pick_only_releases_old_renderer_for_every_media_kind_and_output_scope() {
+    let (_guard, root) = testenv::lock();
+    testenv::write_config(json!({"pickOnlyMode":true}));
+    let image = root.join("walls/external-matrix.png");
+    let video = root.join("videos/external-matrix.mp4");
+    std::fs::write(&image, b"png").unwrap();
+    std::fs::write(&video, b"video").unwrap();
+    let (state, subs, stats) = harness();
+    for params in [
+        json!({"type":"static", "path":image}),
+        json!({"type":"video", "path":video}),
+        json!({"type":"we", "we_id":"123"}),
+    ] {
+        for output in ["*", "DP-1"] {
+            let child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+            let pid = child.id();
+            state.renderers().set_video_paper("DP-1", child, None);
+            skwd_wall_core::audio::write_state(
+                &state.config().cache_dir(),
+                &json!({
+                    "DP-1":{"type":"we", "we_id":"old", "path":""}
+                }),
+            );
+            let mut request = params.clone();
+            request["output"] = json!(output);
+            let response = call(&state, &subs, &stats, "wall.apply", request);
+            assert!(response.error.is_none(), "{:?}", response.error);
+            assert!(state.renderers().wallpaper_pids().is_empty());
+            assert_eq!(unsafe { libc::kill(pid.cast_signed(), 0) }, -1);
+            assert_eq!(skwd_wall_core::audio::read_state(&state.config().cache_dir()), json!({}));
+        }
+    }
 }

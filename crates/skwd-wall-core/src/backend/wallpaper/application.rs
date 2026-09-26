@@ -57,6 +57,7 @@ pub struct VideoTransitionRequest<'a> {
 }
 
 pub trait WallpaperApplication: Send + Sync {
+    fn release_outputs(&self, outputs: &[String]) -> anyhow::Result<()>;
     fn apply_static(&self, request: ApplyStaticRequest<'_>) -> anyhow::Result<()>;
     fn apply_static_smart(&self, request: StaticSmartRequest<'_>) -> anyhow::Result<()>;
     fn apply_video(&self, request: ApplyVideoRequest<'_>) -> anyhow::Result<()>;
