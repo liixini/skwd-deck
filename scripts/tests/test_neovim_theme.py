@@ -1,3 +1,4 @@
+import configparser
 import json
 import os
 from pathlib import Path
@@ -104,6 +105,28 @@ class NeovimTheme(unittest.TestCase):
         self.wait(lambda: self.highlight('Normal').get('fg') != 0xabcdef)
         self.assertEqual(self.expr('g:colors_name'), 'default')
         self.assertEqual(self.expr('&termguicolors'), '0')
+
+    def test_editor_background_matches_terminal_surface(self):
+        for background, surface in [('#b7c0de', '#e1e1f3'), ('#111418', '#202530')]:
+            with self.subTest(background=background, surface=surface):
+                roles = {'background': background, 'surface': surface}
+
+                def render(template):
+                    def replace(match):
+                        color = roles.get(match[1], '#123456')
+                        return color[1:] if match[2] == 'hex_stripped' else color
+                    return re.sub(r'\{\{colors\.(\w+)\.default\.(hex|hex_stripped)\}\}',
+                                  replace, template)
+
+                foot = configparser.ConfigParser()
+                foot.read_string(render((ROOT / 'data/app-themes/foot.ini').read_text()))
+                self.write_palette(render((ROOT / 'data/app-themes/neovim.json').read_text()))
+                expected = int(surface[1:], 16)
+                self.wait(lambda: self.highlight('Normal').get('bg') == expected)
+                for group in ['Normal', 'NormalNC']:
+                    for section in ['colors-dark', 'colors-light']:
+                        self.assertEqual(self.highlight(group)['bg'],
+                                         int(foot[section]['background'], 16))
 
 
 if __name__ == '__main__':

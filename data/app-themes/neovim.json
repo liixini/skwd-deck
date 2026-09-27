@@ -1,11 +1,11 @@
 {
   "Normal": {
     "fg": "{{colors.on_surface.default.hex}}",
-    "bg": "{{colors.background.default.hex}}"
+    "bg": "{{colors.surface.default.hex}}"
   },
   "NormalNC": {
     "fg": "{{colors.on_surface.default.hex}}",
-    "bg": "{{colors.background.default.hex}}"
+    "bg": "{{colors.surface.default.hex}}"
   },
   "NormalFloat": {
     "fg": "{{colors.on_surface.default.hex}}",
