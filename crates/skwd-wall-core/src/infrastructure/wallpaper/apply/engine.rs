@@ -20,7 +20,15 @@ pub(super) fn apply_static_override(
     path: &str,
     fill_mode: &str,
 ) -> Option<anyhow::Result<()>> {
-    if state.config().renderer().engine() == "awww" && crate::awww::supports(fill_mode) {
+    if state.config().renderer().engine() == "awww"
+        && crate::awww::supports(fill_mode)
+        && !state.config().display().background_for(output).blur
+        && (output != "*"
+            || crate::outputs::names().iter().all(|name| {
+                state.config().display().background_for(name)
+                    == state.config().display().background_for("*")
+            }))
+    {
         return Some(crate::awww::apply(state, output, path, fill_mode));
     }
     crate::awww::stop();

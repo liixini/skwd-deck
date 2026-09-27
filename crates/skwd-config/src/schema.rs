@@ -612,6 +612,8 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::transition::SAND_SHARP, false),
     SettingSpec::text(crate::keys::paper::ENGINE, "skwd-paper"),
     SettingSpec::text(crate::keys::display::FILL_MODE, "fill"),
+    SettingSpec::text(crate::keys::display::FILL_COLOR, "000000ff"),
+    SettingSpec::text(crate::keys::display::BACKGROUND_MODE, "color"),
     SettingSpec::text(crate::keys::display::THEME_OUTPUT, ""),
     SettingSpec::text(crate::keys::matugen::SCHEME_TYPE, "scheme-fidelity"),
     SettingSpec::text(crate::keys::matugen::MODE, "dark"),
@@ -888,7 +890,11 @@ pub fn value_kind(path: &str) -> Option<ValueKind> {
     {
         return Some(ValueKind::Boolean);
     }
-    if path.starts_with("display.fillModes.") || path.starts_with("transition.shaderScopes.") {
+    if path.starts_with("display.fillModes.")
+        || path.starts_with("transition.shaderScopes.")
+        || path.starts_with("display.backgroundModes.")
+        || path.starts_with("display.backgroundColors.")
+    {
         return Some(ValueKind::Text);
     }
     if path.ends_with("displayMode") {

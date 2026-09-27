@@ -2,6 +2,8 @@ use serde_json::Value;
 
 use super::Config;
 
+mod background;
+
 #[derive(Clone, Copy)]
 pub struct DisplayConfig<'a> {
     config: &'a Config,
@@ -73,13 +75,6 @@ impl<'a> DisplayConfig<'a> {
             .get(skwd_config::keys::display::OUTPUT_POLICIES)
             .and_then(Value::as_object)
             .cloned()
-            .unwrap_or_default()
-    }
-
-    pub fn fill_modes_signature(&self) -> String {
-        self.config
-            .get(skwd_config::keys::display::FILL_MODES)
-            .map(Value::to_string)
             .unwrap_or_default()
     }
 

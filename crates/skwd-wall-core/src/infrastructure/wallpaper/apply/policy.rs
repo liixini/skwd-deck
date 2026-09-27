@@ -116,6 +116,9 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
 pub fn independent_playback(state: &WallState) -> bool {
     let config = state.config();
     state.renderers().independent_playback()
+        || crate::outputs::names().iter().any(|output| {
+            config.display().background_for(output) != config.display().background_for("*")
+        })
         || (config.playback().window_pause_enabled()
             && config.playback().fullscreen_scope() == "display")
 }
@@ -187,7 +190,7 @@ pub(crate) fn record_native_scene_policies(state: &WallState) {
 
 pub fn renderer_policy_matches(state: &WallState, kind: &str) -> bool {
     match kind {
-        wall_proto::kind::VIDEO => paper_policy_matches(state),
+        wall_proto::kind::STATIC | wall_proto::kind::VIDEO => paper_policy_matches(state),
         wall_proto::kind::WE => {
             state.renderers().has_scene_papers() && native_scene_policy_matches(state)
         }

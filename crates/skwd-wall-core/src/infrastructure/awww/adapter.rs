@@ -107,7 +107,10 @@ pub fn img_args(state: &WallState, output: &str, path: &str, fill_mode: &str) ->
         "--resize".to_string(),
         resize.to_string(),
         "--fill-color".to_string(),
-        cfg.display().fill_color(),
+        {
+            let [r, g, b] = cfg.display().background_for(output).color;
+            format!("{r:02x}{g:02x}{b:02x}ff")
+        },
         "--filter".to_string(),
         cfg.renderer().awww_filter(),
     ];

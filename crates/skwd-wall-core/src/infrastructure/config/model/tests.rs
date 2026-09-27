@@ -918,3 +918,28 @@ fn bulk_overrides_reuse_owned_config_and_preserve_unrelated_data() {
     assert_eq!(overridden.theme().mode(), "light");
     assert_eq!(overridden.theme().matugen_color_index(), 2);
 }
+
+#[test]
+fn wallpaper_background_inheritance_and_saved_color() {
+    let config = Config::from_root(json!({"display": {
+        "fillColor": "123456ff", "backgroundMode": "blur",
+        "backgroundModes": {"DP-1": "color", "DP-2": "inherit", "DP-3": "blur"},
+        "backgroundColors": {"DP-1": "#abcdef", "DP-2": "#ff0000", "DP-3": "bad"}
+    }}));
+    assert_eq!(
+        config.display().background_for("DP-1"),
+        paper_control::Background { color: [171, 205, 239], blur: false }
+    );
+    assert_eq!(
+        config.display().background_for("DP-2"),
+        paper_control::Background { color: [18, 52, 86], blur: true }
+    );
+    assert_eq!(config.display().background_for("DP-3").color, [0; 3]);
+    assert_eq!(
+        config.display().background_for("DP-1,DP-4"),
+        config.display().background_for("DP-1")
+    );
+    let different =
+        Config::from_root(json!({"display": {"fillColor": "123456ff", "backgroundMode": "color"}}));
+    assert_ne!(config.display().fill_modes_signature(), different.display().fill_modes_signature());
+}

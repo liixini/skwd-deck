@@ -89,7 +89,11 @@ pub(super) fn apply_static_owned(
     let outputs = crate::outputs::names();
     let fills: Vec<String> =
         outputs.iter().map(|candidate| state.config().display().fill_mode_for(candidate)).collect();
-    let fills_uniform = fills.windows(2).all(|pair| pair[0] == pair[1]);
+    let fills_uniform = fills.windows(2).all(|pair| pair[0] == pair[1])
+        && outputs.iter().all(|output| {
+            state.config().display().background_for(output)
+                == state.config().display().background_for("*")
+        });
     let fill_mode =
         if fills_uniform { fills.first().map_or(fill_mode, String::as_str) } else { fill_mode };
     let want_transition = transition.enabled() && from.is_some_and(|previous| previous != path);
@@ -179,8 +183,16 @@ pub(super) fn apply_static_smart_with_outputs(
         .map(|(candidate, _)| state.config().display().fill_mode_for(candidate))
         .collect();
     let uniform = resolved.iter().all(|(_, assigned)| *assigned == resolved[0].1)
-        && fills.iter().all(|fill| *fill == fills[0]);
-    let reuse = ReusePolicy::WarmAllowed;
+        && fills.iter().all(|fill| *fill == fills[0])
+        && resolved.iter().all(|(output, _)| {
+            state.config().display().background_for(output)
+                == state.config().display().background_for("*")
+        });
+    let reuse = if super::policy::paper_policy_matches(state) {
+        ReusePolicy::WarmAllowed
+    } else {
+        ReusePolicy::ColdOnly
+    };
     if let Err(error) = spawn_resolved_stills(
         state,
         outputs,
@@ -297,7 +309,7 @@ pub(super) fn reconcile_static_multi<'a>(
     request: StaticMultiRequest<'_, 'a>,
 ) -> std::collections::HashSet<String> {
     let StaticMultiRequest { map, targets, keep_still, pending, reuse } = request;
-    let mut groups: std::collections::BTreeMap<(String, String), Vec<String>> =
+    let mut groups: std::collections::BTreeMap<(String, String, String), Vec<String>> =
         std::collections::BTreeMap::new();
     for output in targets {
         let Some(entry) = map.get(output) else { continue };
@@ -309,12 +321,17 @@ pub(super) fn reconcile_static_multi<'a>(
             continue;
         }
         groups
-            .entry((path.to_string(), state.config().display().fill_mode_for(output)))
+            .entry((
+                path.to_string(),
+                state.config().display().fill_mode_for(output),
+                serde_json::to_string(&state.config().display().background_for(output))
+                    .expect("background serializes"),
+            ))
             .or_default()
             .push(output.clone());
     }
     let mut handled = std::collections::HashSet::new();
-    for ((path, fill), mut outputs) in groups {
+    for ((path, fill, _background), mut outputs) in groups {
         if outputs.len() < 2 {
             continue;
         }
@@ -374,7 +391,7 @@ pub(super) fn reconcile_static<'a>(
     request: StaticReconcileRequest<'_>,
 ) -> anyhow::Result<Option<ReadyHandoff<'a>>> {
     let StaticReconcileRequest { output, path, previous, reuse } = request;
-    if previous == path && state.renderers().has_output_still(output) {
+    if reuse.allows_warm() && previous == path && state.renderers().has_output_still(output) {
         log::info!("reconcile {output}: static {path} (unchanged, keep)");
         return Ok(None);
     }

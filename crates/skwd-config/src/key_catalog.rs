@@ -13,6 +13,9 @@ pub mod keys {
         pub const VOLUME: &str = "wallpaperVolume";
     }
     pub mod display {
+        pub const BACKGROUND_MODE: &str = "display.backgroundMode";
+        pub const BACKGROUND_MODES: &str = "display.backgroundModes";
+        pub const BACKGROUND_COLORS: &str = "display.backgroundColors";
         pub const FILL_COLOR: &str = "display.fillColor";
         pub const FILL_MODE: &str = "display.fillMode";
         pub const FILL_MODES: &str = "display.fillModes";

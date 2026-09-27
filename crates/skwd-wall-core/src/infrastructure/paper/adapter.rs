@@ -55,14 +55,16 @@ impl PaperClientAdapter {
             kind => bail!("unsupported Paper source kind {kind}"),
         };
         let mute = source.effective_video_engine() == Some(VideoEngine::Tinier) || request.mute;
-        Ok(assignment_with_options(
+        let mut assignment = assignment_with_options(
             vec![request.output.to_string()],
             source,
             fill_mode(request.fill_mode),
             mute,
             request.volume,
             Layer::Background,
-        ))
+        );
+        assignment.background = self.config.display().background_for(request.output);
+        Ok(assignment)
     }
 }
 
@@ -89,6 +91,7 @@ pub(super) fn assignment_with_options(
         outputs,
         source,
         fill_mode,
+        background: paper_control::Background::default(),
         mute,
         volume: volume.min(100),
         layer,

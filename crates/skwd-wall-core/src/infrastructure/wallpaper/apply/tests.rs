@@ -310,7 +310,8 @@ impl Stub {
 
     fn with_video_multi(video_multi: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let state = Arc::new(stub_state(dir.path(), &serde_json::json!({}), video_multi));
+        let state =
+            Arc::new(stub_state(dir.path(), &serde_json::json!({}), video_multi, "skwd-paper"));
         Self { dir, state }
     }
 
@@ -338,10 +339,15 @@ impl Drop for Stub {
 }
 
 fn stub_state_with_display(dir: &Path, display: &serde_json::Value) -> WallState {
-    stub_state(dir, display, true)
+    stub_state(dir, display, true, "skwd-paper")
 }
 
-fn stub_state(dir: &Path, display: &serde_json::Value, video_multi: bool) -> WallState {
+fn stub_state(
+    dir: &Path,
+    display: &serde_json::Value,
+    video_multi: bool,
+    engine: &str,
+) -> WallState {
     let bin = dir.join("stub-renderer");
     let root = dir.display();
     let script = format!(
@@ -355,7 +361,7 @@ fn stub_state(dir: &Path, display: &serde_json::Value, video_multi: bool) -> Wal
     std::fs::create_dir_all(&cache).unwrap();
     WallState::test_new(serde_json::json!({
         "display": display,
-        "paper": {"videoEngine": "vulkan", "videoMultiProcess": video_multi},
+        "paper": {"engine": engine, "videoEngine": "vulkan", "videoMultiProcess": video_multi},
         "paths": {
             "cache": cache.display().to_string(),
             "paperStillBin": bin.display().to_string(),
@@ -1531,7 +1537,7 @@ fn policy_refresh_keeps_per_output() {
     assert_eq!(std::fs::read(&state_path).unwrap(), before);
     assert_eq!(st.renderers().assignments().get("DP-1").map(String::as_str), Some("/v/a.mp4"));
     assert_eq!(st.renderers().assignments().get("DP-2").map(String::as_str), Some("/w/b.png"));
-    assert_eq!(settled_spawns(st.path()).len(), 3);
+    assert_eq!(settled_spawns(st.path()).len(), 4);
     assert!(paper_policy_matches(&st));
 }
 
@@ -2296,4 +2302,65 @@ fn external_handoff_wildcard_requires_known_displays_and_preserves_unselected_on
     assert!(!st.renderers().has_video_paper("*"));
     assert!(release_outputs(&st, &[]).is_err());
     assert!(st.renderers().has_video_paper("DP-2"));
+}
+
+#[test]
+fn background_policy_refresh_replaces_same_path_still() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::with_display(&serde_json::json!({"fillMode":"center", "fillColor":"#123456"}));
+    let _ready = st.readiness();
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+    reconcile_ready(&st, "center", &["DP-1".into()], false, "", 0).unwrap();
+    let previous = st.renderers().wallpaper_pids();
+    st.renderers().set_policy(PAPER_POLICY_KEY, "previous-background");
+    reconcile_outputs(&st, &["DP-1".into()], &ReconcileIntent::PolicyRefresh).unwrap();
+    let current = st.renderers().wallpaper_pids();
+    assert!(!current.is_empty());
+    assert!(current.iter().all(|pid| !previous.contains(pid)));
+    for pid in current {
+        let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
+        let environment = String::from_utf8_lossy(&environment);
+        assert!(
+            environment.contains("SKWD_PAPER_BACKGROUND={\"color\":[18,52,86],\"blur\":false}")
+        );
+    }
+}
+
+#[test]
+fn background_overrides_split_shared_video_and_disable_awww_wildcard() {
+    let _guard = crate::outputs::enum_exclusive();
+    let dir = tempfile::tempdir().unwrap();
+    let state = Arc::new(stub_state(
+        dir.path(),
+        &serde_json::json!({
+            "fillMode":"center", "backgroundModes":{"DP-1":"blur","DP-2":"blur"}
+        }),
+        true,
+        "awww",
+    ));
+    let st = Stub { dir, state };
+    assert_eq!(st.config().renderer().engine(), "awww");
+    let fake = st.path().join("outputs");
+    std::fs::write(&fake, "DP-1:1920x1080,DP-2:1920x1080").unwrap();
+    let previous_env = std::env::var_os("SKWD_FAKE_OUTPUTS_FILE");
+    unsafe {
+        std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", &fake);
+    }
+    let _ready = st.readiness();
+    let independent = super::policy::independent_playback(&st);
+    let native = super::engine::apply_static_override(&st, "*", "/w/a.png", "center").is_none();
+    seed(&st, "*", "video", "/v/a.mp4", "", true, 50);
+    let refresh = refresh_renderer_policy(&st);
+    unsafe {
+        match previous_env {
+            Some(value) => std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", value),
+            None => std::env::remove_var("SKWD_FAKE_OUTPUTS_FILE"),
+        }
+    }
+    assert!(independent);
+    assert!(native);
+    refresh.unwrap();
+    assert!(st.renderers().has_video_paper("DP-1"));
+    assert!(st.renderers().has_video_paper("DP-2"));
+    assert!(!st.renderers().has_video_paper("*"));
 }

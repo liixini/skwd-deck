@@ -337,6 +337,7 @@ fn paper_assignment(
         outputs: vec![output.to_string()],
         source,
         fill_mode: state.config().display().fill_mode_for(output).parse().unwrap_or_default(),
+        background: state.config().display().background_for(output),
         mute: state.renderers().audio_ducked()
             || entry.get("mute").and_then(serde_json::Value::as_bool).unwrap_or(true),
         volume: entry.get("volume").and_then(serde_json::Value::as_u64).unwrap_or(80).min(100)

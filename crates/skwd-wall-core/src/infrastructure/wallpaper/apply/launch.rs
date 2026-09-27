@@ -289,6 +289,11 @@ impl RendererLaunchSpec {
             String::from("all")
         };
         let mut command = crate::proc::renderer(&executable);
+        command.env(
+            "SKWD_PAPER_BACKGROUND",
+            serde_json::to_string(&config.display().background_for(self.kind.output()))
+                .expect("background serializes"),
+        );
         command.env_remove("SKWD_PAPER_PREPARE_HIDDEN");
         if self.prepare_hidden {
             command.env("SKWD_PAPER_PREPARE_HIDDEN", "1");

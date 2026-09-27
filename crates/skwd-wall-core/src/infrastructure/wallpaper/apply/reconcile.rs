@@ -200,7 +200,11 @@ fn reconcile_outputs_inner(
                 })
         })
         .count();
-    let reuse = if desired_targets <= 1 { ReusePolicy::WarmAllowed } else { ReusePolicy::ColdOnly };
+    let reuse = if desired_targets <= 1 && super::policy::paper_policy_matches(state) {
+        ReusePolicy::WarmAllowed
+    } else {
+        ReusePolicy::ColdOnly
+    };
     let transition_primary =
         transition.and_then(|plan| transition_primary(state, &targets, plan.shader()));
     warn_unlisted_targets(monitors, &targets);

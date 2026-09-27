@@ -10,6 +10,9 @@ use super::resolver::resolve_current_video;
 use super::transaction::{ReadyHandoff, ReusePolicy};
 use super::transition::TransitionPlan;
 
+mod playback;
+use playback::VideoPlayback;
+
 #[allow(clippy::too_many_arguments)]
 pub fn apply_video_transition(
     state: &WallState,
@@ -277,21 +280,6 @@ pub(super) fn apply_video_vk(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum VideoPlayback<'a> {
-    Steady,
-    Transition { from: &'a str, plan: &'a super::transition::TransitionPlan },
-}
-
-impl VideoPlayback<'_> {
-    fn duration_ms(&self) -> Option<u64> {
-        match self {
-            Self::Steady => None,
-            Self::Transition { plan, .. } => Some(plan.duration_ms()),
-        }
-    }
-}
-
 const MULTI_KEY: &str = "multi";
 
 pub(super) struct VideoMultiRequest<'a, 'state> {
@@ -376,6 +364,12 @@ pub(super) fn reconcile_video_multi<'a>(
     }
     fills.sort();
     fills.dedup();
+    if pairs.iter().any(|(output, _)| {
+        state.config().display().background_for(output)
+            != state.config().display().background_for("*")
+    }) {
+        return false;
+    }
     if fills.len() > 1 {
         log::info!("multi video wall: mixed fill modes, using per-output renderers");
         return false;

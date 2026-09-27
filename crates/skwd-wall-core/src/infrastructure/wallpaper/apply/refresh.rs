@@ -22,6 +22,10 @@ pub fn refresh_renderer_policy(state: &WallState) -> anyhow::Result<()> {
         let volume =
             entry.get("volume").and_then(serde_json::Value::as_u64).unwrap_or(100).min(100) as u32;
         return match kind {
+            wall_proto::kind::STATIC if !path.is_empty() => {
+                let fill = state.config().display().fill_mode();
+                super::static_media::apply_static_smart(state, "*", path, &fill)
+            }
             wall_proto::kind::VIDEO if !path.is_empty() => {
                 let fill_mode = state.config().display().fill_mode();
                 apply_video_request(

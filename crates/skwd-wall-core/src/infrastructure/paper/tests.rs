@@ -152,6 +152,7 @@ fn response_goldens() {
         outputs: vec!["DP-1".into()],
         source,
         fill_mode: FillMode::Fill,
+        background: paper_control::Background::default(),
         mute: true,
         volume: 80,
         layer: Layer::Background,
@@ -267,6 +268,7 @@ fn client_apply_round_trip() {
                         outputs: vec!["DP-1".into()],
                         source,
                         fill_mode: FillMode::Fill,
+                        background: paper_control::Background::default(),
                         mute: true,
                         volume: 80,
                         layer: Layer::Background,
@@ -688,4 +690,33 @@ fn rejected_composition_no_retry() {
         .unwrap_err();
     assert!(error.to_string().contains("Paper apply_failed: rejected"));
     server.join().unwrap();
+}
+
+#[test]
+fn composition_wildcard_separates_backgrounds_and_preserves_uniform_override() {
+    let adapter = composition_adapter();
+    let state = json!({"*": crate::audio::entry("static", "/wall/a.png", "", true, 80)});
+    for modes in [json!({"DP-1":"color","DP-2":"blur"}), json!({"DP-1":"color","DP-2":"color"})] {
+        let config =
+            Config::from_root(json!({"display": {"fillMode":"center", "backgroundModes":modes,
+            "backgroundColors":{"DP-1":"#112233","DP-2":"#112233"}}}));
+        let request = replacement(
+            adapter
+                .composition_plan(&config, &state, &[output("DP-1", 60000), output("DP-2", 60000)])
+                .unwrap(),
+        );
+        assert!(
+            request
+                .assignments
+                .iter()
+                .all(|assignment| assignment.background.color == [17, 34, 51])
+        );
+        if config.display().background_for("DP-2").blur {
+            assert_eq!(request.assignments.len(), 2);
+            assert!(!request.assignments[0].background.blur);
+            assert!(request.assignments[1].background.blur);
+        } else {
+            assert_eq!(request.assignments.len(), 1);
+        }
+    }
 }

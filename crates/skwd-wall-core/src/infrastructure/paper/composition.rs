@@ -221,14 +221,21 @@ fn composition_assignment(
     } else {
         fill_mode(&config.display().fill_mode_for(output))
     };
-    Ok(assignment_with_options(
+    let mut assignment = assignment_with_options(
         vec![output.to_string()],
         source,
         fill_mode,
         mute,
         volume,
         Layer::Background,
-    ))
+    );
+    let background_output = if output == "*" {
+        live_outputs.first().map_or(output, |item| item.name.as_str())
+    } else {
+        output
+    };
+    assignment.background = config.display().background_for(background_output);
+    Ok(assignment)
 }
 
 pub(crate) fn tinier_or_default_source(wall: &WallState, path: &str) -> Result<Source> {
@@ -283,8 +290,12 @@ fn selected_entries(
 }
 
 fn has_uniform_fill(config: &Config, outputs: &[OutputInfo]) -> bool {
-    let mut fills =
-        outputs.iter().map(|output| fill_mode(&config.display().fill_mode_for(&output.name)));
+    let mut fills = outputs.iter().map(|output| {
+        (
+            fill_mode(&config.display().fill_mode_for(&output.name)),
+            config.display().background_for(&output.name),
+        )
+    });
     let Some(first) = fills.next() else {
         return true;
     };
