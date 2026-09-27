@@ -207,7 +207,8 @@ pub fn sync_lock_screen(
     if !running_on_plasma() {
         return Ok(false);
     }
-    match state.config().plasma_lock_screen_mode().as_str() {
+    let mode = state.config().plasma_lock_screen_mode();
+    match mode.as_str() {
         "static" => {
             let image = state.config().plasma_lock_screen_image();
             if image.is_empty() {

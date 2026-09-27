@@ -98,6 +98,16 @@ fn main() {
     }
     let Some(request) = parse(&args) else { std::process::exit(1) };
     if name == "kwriteconfig6" {
+        if request.key == "Assignment"
+            && let Some(gate) = std::env::var_os("SKWD_E2E_KCONFIG_GATE").map(PathBuf::from)
+            && !gate.join("entered").exists()
+        {
+            std::fs::write(gate.join("entered"), b"").expect("gate entered");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !gate.join("release").exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
         write(&request.file, &request);
         return;
     }

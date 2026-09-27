@@ -470,3 +470,32 @@ fn explicit_plasma_backend_disable_still_uses_native_renderer() {
     assert!(wait_until(|| !child_pids(walld.pid(), STUB).is_empty(), Duration::from_secs(5)));
     assert!(plasma.scripts().is_empty());
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_lock_screen_allows_config_reload_during_assignment() {
+    let (mut sandbox, _plasma) = plasma_session("plasma-lock-reload");
+    let image = still(&sandbox, "lock.png", "red");
+    let gate = sandbox.root.join("config-gate");
+    std::fs::create_dir(&gate).unwrap();
+    sandbox.set_env("SKWD_E2E_KCONFIG_GATE", gate.to_str().unwrap());
+    let mut config: Value =
+        serde_json::from_str(&std::fs::read_to_string(sandbox.config_path()).unwrap()).unwrap();
+    config["plasma"] = json!({"lockScreen": {"mode": "static", "image": image}});
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    assert!(wait_until(|| gate.join("entered").exists(), Duration::from_secs(3)));
+    set_lock_screen_mode(&sandbox, &mut config, "off");
+    let mut client = walld.client();
+    client.send("effects.list", json!({}), 91);
+    std::thread::sleep(Duration::from_millis(500));
+    std::fs::write(gate.join("release"), b"").unwrap();
+    let response = client.recv(Duration::from_secs(3)).expect("reload completes without deadlock");
+    assert_eq!(response["id"], 91);
+    assert!(response.get("result").is_some(), "{response}");
+    assert!(
+        walld.wait_log("synchronized KDE Plasma lock-screen wallpaper", Duration::from_secs(3))
+    );
+    assert!(wait_until(|| lock_screen_plugin(&sandbox).is_empty(), Duration::from_secs(3)));
+    call(&walld, &mut client, "effects.list", json!({}));
+}
