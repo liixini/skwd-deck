@@ -12,7 +12,8 @@ fn every_recipe_uses_custom_templates_and_reset_keeps_a_backup() {
         edit_template(&env, recipe.id, false).unwrap();
         let custom = template(&env, recipe.id, "")
             .unwrap()
-            .replace("{{colors.primary.default.hex}}", "#987654");
+            .replace("{{colors.primary.default.hex}}", "#987654")
+            .replace("{{colors.primary.default.hex_stripped}}", "987654");
         files::write(&path(&env, recipe.id), &custom).unwrap();
         manager::set_with(&env, &config, recipe.id, true, &palette("#123456"), true).unwrap();
         let status = manager::list_with(&env, &config)
@@ -25,7 +26,7 @@ fn every_recipe_uses_custom_templates_and_reset_keeps_a_backup() {
             files::read(std::path::Path::new(&status.output_path))
                 .unwrap()
                 .unwrap()
-                .contains("#987654"),
+                .contains("987654"),
             "{}",
             recipe.id
         );
@@ -34,7 +35,7 @@ fn every_recipe_uses_custom_templates_and_reset_keeps_a_backup() {
             files::read(std::path::Path::new(&status.output_path))
                 .unwrap()
                 .unwrap()
-                .contains("#987654")
+                .contains("987654")
         );
         edit_template(&env, recipe.id, true).unwrap();
         manager::apply_with(&env, &config, &palette("#abcdef"), true);
@@ -42,7 +43,7 @@ fn every_recipe_uses_custom_templates_and_reset_keeps_a_backup() {
             !files::read(std::path::Path::new(&status.output_path))
                 .unwrap()
                 .unwrap()
-                .contains("#987654")
+                .contains("987654")
         );
     }
     assert!(env.receipts.join("backups").read_dir().unwrap().count() >= catalogue::RECIPES.len());
@@ -80,7 +81,7 @@ fn all_recipes_disconnect_without_writes_and_reconnect_after_output_and_import_e
         assert!(status.can_reconnect && !status.enabled);
         manager::customize_with(&env, &config, recipe.id, "reconnect", &palette("#abcdef"), true)
             .unwrap();
-        assert!(files::read(&output).unwrap().unwrap().contains("#abcdef"));
+        assert!(files::read(&output).unwrap().unwrap().contains("abcdef"));
         manager::set_with(&env, &config, recipe.id, false, &Value::Null, true).unwrap();
         assert_eq!(
             files::read(&config_path).unwrap().unwrap(),
@@ -141,7 +142,7 @@ sys.exit(1 if 'invalid old colours' in text else 0)
     std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700)).unwrap();
     env.reload = true;
     manager::customize_with(&env, &config, "niri", "reconnect", &palette("#abcdef"), true).unwrap();
-    assert!(files::read(&output).unwrap().unwrap().contains("#abcdef"));
+    assert!(files::read(&output).unwrap().unwrap().contains("abcdef"));
     assert!(
         files::read(&env.config.join("niri/config.kdl"))
             .unwrap()

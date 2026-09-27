@@ -90,6 +90,14 @@ jobs:
           python3 -m venv "$SKWD_VERIFY_TEST_ENV"
           "$SKWD_VERIFY_TEST_ENV/bin/python" -m pip install --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: -r "$SKWD_VERIFY_ROOT/scripts/requirements-ci.txt"
 
+      - name: Install Neovim for theme integration tests
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends neovim
+          nvim --version
+          nvim --headless -u NONE -i NONE -c 'lua if not vim.api.nvim_get_hl then vim.cmd("cquit 1") end' -c quit
+
       - name: Verify system-test repository
         working-directory: skwd-verify
         continue-on-error: true

@@ -10,6 +10,16 @@ Turning the switch off removes the owned imports and generated file. It preserve
 
 The overlay covers standard Waybar selectors. Unusual selectors with higher specificity, background images, and colour animations may retain parts of their original appearance. Read-only explicit stylesheets require a writable user configuration. The integration does not rewrite arbitrary CSS or execute generated scripts.
 
+# Foot colours
+
+The Foot app-theme switch connects `foot/foot.ini` to `foot/skwd-colors.ini`. It applies foreground, background, selection and the first 16 ANSI colours. Font, cursor and transparency settings stay under your control. If no user configuration exists, the managed setup includes the existing system configuration. Foot checks generated configurations before they are installed.
+
+Regular Foot windows using the same configuration receive colour changes live. Sessions launched with a custom configuration, overrides, server mode or an attached PTY receive no live writes. Reopen those sessions to read configuration changes where applicable.
+
+Turning the switch off restores the configuration and resets running windows to their startup colours. Windows opened while Skwd theming was enabled need reopening to read the restored configuration. Colours changed by another application after startup are not a saved baseline. Foot's manual dark/light switch also returns to its startup palette; use **Refresh colours** to reapply Skwd's palette.
+
+Editable Foot templates use native INI syntax. Live updates require matching dark and light sections with the default 20 colour fields. Other valid mappings take effect when a new window opens.
+
 # Fish colours
 
 The Fish app-theme switch adds a managed source block at the end of `fish/config.fish` and generates `fish/skwd-colors.fish`. It sets syntax, prompt and completion colours from the current palette, independently of the terminal's palette.
@@ -43,4 +53,4 @@ The template created by Skwd contains every default mapping. Changing a role cha
 
 The ordinary on/off switch still restores the settings from before setup where ownership is intact. Disconnect is the alternative when current colours or manual edits should remain. Read-only and declaratively managed application files still require changes in their owning configuration; disconnect itself needs only writable Skwd state.
 
-The audit covers all eleven managed integrations. Their previous lockouts came from generated-file equality checks, missing import blocks, changed structured colour fields, or a different KDE selection. Those ownership checks remain in automatic updates; all eleven now have explicit disconnect/reconnect and customization paths. Custom output integrations already use user-selected templates, and shell providers own their settings independently; neither uses these managed receipts.
+Managed integrations detect external changes through generated-file equality checks, import blocks, structured colour fields, or the selected KDE scheme. Automatic updates keep those ownership checks. Explicit disconnect/reconnect and customization paths remain available. Custom output integrations already use user-selected templates, and shell providers own their settings independently; neither uses these managed receipts.

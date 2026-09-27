@@ -8,7 +8,25 @@ pub(super) struct Recipe {
     pub signal: Option<i32>,
 }
 
-pub(super) const RECIPES: [Recipe; 7] = [
+pub(super) const RECIPES: [Recipe; 9] = [
+    Recipe {
+        id: "foot",
+        name: "Foot",
+        config: "foot/foot.ini",
+        output: "skwd-colors.ini",
+        directive: "",
+        template: include_str!("../../../../../../data/app-themes/foot.ini"),
+        signal: None,
+    },
+    Recipe {
+        id: "nvim",
+        name: "Neovim",
+        config: "nvim/after/plugin/skwd.lua",
+        output: "skwd-colors.json",
+        directive: include_str!("../../../../../../data/app-themes/neovim.lua"),
+        template: include_str!("../../../../../../data/app-themes/neovim.json"),
+        signal: None,
+    },
     Recipe {
         id: "fish",
         name: "Fish",

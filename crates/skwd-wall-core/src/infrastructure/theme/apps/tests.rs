@@ -42,6 +42,8 @@ fn every_recipe_enables_updates_and_restores_unrelated_edits() {
             "update_ms = 2000\ncolor_theme = \"Default\"\n"
         } else if recipe.id == "niri" {
             "layout { gaps 12; }\n"
+        } else if recipe.id == "foot" {
+            "font=monospace:size=14\n"
         } else {
             "font-size = 14\n"
         };
@@ -51,14 +53,14 @@ fn every_recipe_enables_updates_and_restores_unrelated_edits() {
         let status = statuses.apps.iter().find(|app| app.id == recipe.id).unwrap();
         assert!(status.enabled && status.can_disable, "{status:?}");
         let first = std::fs::read_to_string(&status.output_path).unwrap();
-        assert!(first.contains("#123456"));
+        assert!(first.contains("123456"));
         assert!(!first.contains("{{"));
         let enabled = std::fs::read_to_string(&path).unwrap();
         manager::set_with(&env, &config, recipe.id, true, &palette("#123456"), true).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), enabled);
         std::fs::write(&path, format!("{enabled}\n# later edit\n")).unwrap();
         manager::apply_with(&env, &config, &palette("#abcdef"), false);
-        assert!(std::fs::read_to_string(&status.output_path).unwrap().contains("#abcdef"));
+        assert!(std::fs::read_to_string(&status.output_path).unwrap().contains("abcdef"));
         manager::set_with(&env, &config, recipe.id, false, &Value::Null, true).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("{original}\n# later edit\n"));
         assert!(!std::path::Path::new(&status.output_path).exists());

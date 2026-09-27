@@ -1,0 +1,280 @@
+{
+  "Normal": {
+    "fg": "{{colors.on_surface.default.hex}}",
+    "bg": "{{colors.background.default.hex}}"
+  },
+  "NormalNC": {
+    "fg": "{{colors.on_surface.default.hex}}",
+    "bg": "{{colors.background.default.hex}}"
+  },
+  "NormalFloat": {
+    "fg": "{{colors.on_surface.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "Pmenu": {
+    "fg": "{{colors.on_surface.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "FloatBorder": {
+    "fg": "{{colors.outline.default.hex}}"
+  },
+  "WinSeparator": {
+    "fg": "{{colors.outline.default.hex}}"
+  },
+  "Comment": {
+    "fg": "{{colors.on_surface_variant.default.hex}}",
+    "italic": true
+  },
+  "Constant": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Number": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Boolean": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Float": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "String": {
+    "fg": "{{colors.ansi_green.default.hex}}"
+  },
+  "Character": {
+    "fg": "{{colors.ansi_green.default.hex}}"
+  },
+  "Identifier": {
+    "fg": "{{colors.on_surface.default.hex}}"
+  },
+  "Function": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "Statement": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "Conditional": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "Repeat": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "Keyword": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "Exception": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "PreProc": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Include": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Define": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Macro": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "PreCondit": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Type": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "StorageClass": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Structure": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Typedef": {
+    "fg": "{{colors.secondary.default.hex}}"
+  },
+  "Special": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "SpecialChar": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Tag": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Delimiter": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Debug": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "Operator": {
+    "fg": "{{colors.on_surface_variant.default.hex}}"
+  },
+  "Error": {
+    "fg": "{{colors.error.default.hex}}"
+  },
+  "ErrorMsg": {
+    "fg": "{{colors.error.default.hex}}"
+  },
+  "WarningMsg": {
+    "fg": "{{colors.ansi_yellow.default.hex}}"
+  },
+  "Todo": {
+    "fg": "{{colors.on_primary.default.hex}}",
+    "bg": "{{colors.primary.default.hex}}",
+    "bold": true
+  },
+  "LineNr": {
+    "fg": "{{colors.outline.default.hex}}"
+  },
+  "NonText": {
+    "fg": "{{colors.outline.default.hex}}"
+  },
+  "Whitespace": {
+    "fg": "{{colors.outline.default.hex}}"
+  },
+  "CursorLineNr": {
+    "fg": "{{colors.primary.default.hex}}",
+    "bold": true
+  },
+  "CursorLine": {
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "ColorColumn": {
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "Visual": {
+    "fg": "{{colors.on_secondary_container.default.hex}}",
+    "bg": "{{colors.secondary_container.default.hex}}"
+  },
+  "Search": {
+    "fg": "{{colors.on_tertiary_container.default.hex}}",
+    "bg": "{{colors.tertiary_container.default.hex}}"
+  },
+  "IncSearch": {
+    "fg": "{{colors.on_primary.default.hex}}",
+    "bg": "{{colors.primary.default.hex}}"
+  },
+  "CurSearch": {
+    "fg": "{{colors.on_primary.default.hex}}",
+    "bg": "{{colors.primary.default.hex}}"
+  },
+  "PmenuSel": {
+    "fg": "{{colors.on_primary.default.hex}}",
+    "bg": "{{colors.primary.default.hex}}"
+  },
+  "StatusLine": {
+    "fg": "{{colors.on_primary_container.default.hex}}",
+    "bg": "{{colors.primary_container.default.hex}}"
+  },
+  "TabLineSel": {
+    "fg": "{{colors.on_primary_container.default.hex}}",
+    "bg": "{{colors.primary_container.default.hex}}"
+  },
+  "StatusLineNC": {
+    "fg": "{{colors.on_surface_variant.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "TabLine": {
+    "fg": "{{colors.on_surface_variant.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "MatchParen": {
+    "fg": "{{colors.on_tertiary_container.default.hex}}",
+    "bg": "{{colors.tertiary_container.default.hex}}",
+    "bold": true
+  },
+  "DiagnosticError": {
+    "fg": "{{colors.error.default.hex}}"
+  },
+  "DiagnosticSignError": {
+    "fg": "{{colors.error.default.hex}}"
+  },
+  "DiagnosticWarn": {
+    "fg": "{{colors.ansi_yellow.default.hex}}"
+  },
+  "DiagnosticSignWarn": {
+    "fg": "{{colors.ansi_yellow.default.hex}}"
+  },
+  "DiagnosticInfo": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "DiagnosticSignInfo": {
+    "fg": "{{colors.primary.default.hex}}"
+  },
+  "DiagnosticHint": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "DiagnosticSignHint": {
+    "fg": "{{colors.tertiary.default.hex}}"
+  },
+  "DiffAdd": {
+    "fg": "{{colors.ansi_green.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "DiffDelete": {
+    "fg": "{{colors.error.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "DiffChange": {
+    "fg": "{{colors.primary.default.hex}}",
+    "bg": "{{colors.surface_container.default.hex}}"
+  },
+  "DiffText": {
+    "fg": "{{colors.on_primary_container.default.hex}}",
+    "bg": "{{colors.primary_container.default.hex}}",
+    "bold": true
+  },
+  "@comment": {
+    "link": "Comment"
+  },
+  "@string": {
+    "link": "String"
+  },
+  "@number": {
+    "link": "Number"
+  },
+  "@boolean": {
+    "link": "Boolean"
+  },
+  "@variable": {
+    "link": "Identifier"
+  },
+  "@variable.builtin": {
+    "link": "Special"
+  },
+  "@function": {
+    "link": "Function"
+  },
+  "@function.call": {
+    "link": "Function"
+  },
+  "@keyword": {
+    "link": "Keyword"
+  },
+  "@type": {
+    "link": "Type"
+  },
+  "@operator": {
+    "link": "Operator"
+  },
+  "@punctuation": {
+    "link": "Delimiter"
+  },
+  "@constant": {
+    "link": "Constant"
+  },
+  "@markup.heading": {
+    "link": "Title"
+  },
+  "@markup.link": {
+    "link": "Underlined"
+  },
+  "Title": {
+    "fg": "{{colors.primary.default.hex}}",
+    "bold": true
+  },
+  "Underlined": {
+    "fg": "{{colors.primary.default.hex}}",
+    "underline": true
+  }
+}

@@ -2,6 +2,7 @@ mod catalogue;
 mod customization;
 mod documents;
 mod files;
+mod foot;
 mod manager;
 mod plasma;
 mod reload;

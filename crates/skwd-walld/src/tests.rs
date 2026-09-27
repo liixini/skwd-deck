@@ -101,6 +101,7 @@ fn automatic_and_regular_user_applies_skip_a_locked_output() {
     std::fs::write(&wall, b"png").unwrap();
     let path = wall.to_string_lossy().into_owned();
     let (state, subscribers, stats) = harness();
+    skwd_wall_core::audio::write_state(&state.config().cache_dir(), &json!({}));
 
     let skipped = rr(call(
         &state,

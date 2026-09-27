@@ -71,7 +71,11 @@ impl Environment {
         if recipe.id == "ghostty" && self.config.join("ghostty/config.ghostty").exists() {
             config = self.config.join("ghostty/config.ghostty");
         }
-        let output = config.parent().unwrap_or(&self.config).join(recipe.output);
+        let output = if recipe.id == "nvim" {
+            self.config.join("nvim").join(recipe.output)
+        } else {
+            config.parent().unwrap_or(&self.config).join(recipe.output)
+        };
         (config, output, self.receipts.join(format!("{}.json", recipe.id)))
     }
 
@@ -234,6 +238,9 @@ fn validate(
     text: &str,
     generated: Option<&str>,
 ) -> Result<()> {
+    if recipe.id == "foot" && env.reload {
+        return super::foot::validate(env, path, text, generated);
+    }
     if recipe.id != "niri" || !env.reload {
         return Ok(());
     }
@@ -347,6 +354,7 @@ pub(super) fn migratable(config: &crate::config::Config, recipe: &Recipe) -> boo
     !matching.is_empty()
         && matching.iter().all(|entry| {
             let expected = match recipe.id {
+                "foot" | "nvim" => return false,
                 "btop" => "btop.theme",
                 "niri" => "niri-colors.kdl",
                 "ghostty" => "ghostty.conf",
@@ -415,7 +423,11 @@ pub(super) fn set_with(
         );
         let original = files::read(&path)?;
         let text = original.as_deref().unwrap_or_default();
-        let (before, after) = files::patch(recipe, text)?;
+        let (before, after) = if recipe.id == "foot" {
+            super::foot::patch(env, original.as_deref(), &output)?
+        } else {
+            files::patch(recipe, text)?
+        };
         let next = files::changed(text, &before, &after)?;
         let mut receipt = Receipt {
             version: 1,
@@ -481,6 +493,7 @@ pub(super) fn set_with(
         }
         receipt.enabled = false;
         receipt.pending = false;
+        files::save(&receipt_path, &receipt)?;
         receipt.result = reload(env, recipe);
         files::save(&receipt_path, &receipt)?;
     }
@@ -608,7 +621,9 @@ pub(super) fn customize_with(
                         .split_inclusive('\n')
                         .filter(|line| {
                             let line = line.trim();
-                            line != recipe.directive
+                            (recipe.directive.is_empty() || line != recipe.directive)
+                                && (recipe.id != "foot"
+                                    || !super::foot::owns_include(line, &output))
                                 && !matches!(
                                     line,
                                     "# Skwd app theme"
@@ -618,7 +633,11 @@ pub(super) fn customize_with(
                                 )
                         })
                         .collect();
-                    let (before, after) = files::patch(recipe, &base)?;
+                    let (before, after) = if recipe.id == "foot" {
+                        super::foot::patch(env, Some(&base), &output)?
+                    } else {
+                        files::patch(recipe, &base)?
+                    };
                     let next = files::changed(&base, &before, &after)?;
                     receipt.original = Some(base);
                     receipt.before = before;
@@ -639,6 +658,7 @@ pub(super) fn customize_with(
                 files::write(&path, &next)?;
                 receipt.enabled = true;
                 receipt.pending = false;
+                files::save(&saved, &receipt)?;
                 receipt.result = reload(env, recipe);
                 files::save(&saved, &receipt)?;
             }

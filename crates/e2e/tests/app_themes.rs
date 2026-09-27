@@ -51,6 +51,8 @@ fn managed_themes_migrate_and_restore_through_rpc() {
     let tools = sandbox.root.join("bin");
     std::fs::create_dir_all(&tools).unwrap();
     for name in [
+        "foot",
+        "nvim",
         "fish",
         "kitty",
         "btop",
@@ -163,6 +165,8 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         })
         .collect();
     for id in [
+        "foot",
+        "nvim",
         "fish",
         "kitty",
         "btop",
@@ -265,6 +269,8 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
     assert_eq!(saved["integrations"][0]["template"], "kitty.conf");
     assert!(state_home.join("skwd-wall-v2/app-themes/kitty-migration.json").exists());
     for id in [
+        "foot",
+        "nvim",
         "fish",
         "kitty",
         "btop",

@@ -90,6 +90,7 @@ pub(super) fn patch(recipe: &Recipe, original: &str) -> Result<(String, String)>
         }
     }
     let (open, close) = match recipe.id {
+        "nvim" => ("-- ", ""),
         "niri" | "rofi" => ("// ", ""),
         "waybar" => ("/* ", " */"),
         _ => ("# ", ""),

@@ -9,6 +9,9 @@ pub(super) fn reload(env: &Environment, recipe: &Recipe) -> String {
     if !env.reload {
         return "configured".into();
     }
+    if recipe.id == "foot" {
+        return super::foot::reload(env, recipe);
+    }
     if recipe.id == "fish" {
         return fish(env);
     }
