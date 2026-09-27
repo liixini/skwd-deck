@@ -3,6 +3,34 @@
 use super::{TEMPLATES, seed};
 
 #[test]
+fn previous_factory_templates_upgrade_without_touching_custom_templates_or_links() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    for name in ["kitty.conf", "yazi-theme.toml"] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        let previous = skwd_wall_core::static_templates::legacy::template(name).unwrap();
+        std::fs::write(&path, previous).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
+        seed(dir.path());
+        let current = TEMPLATES.iter().find(|(key, _)| *key == name).unwrap().1;
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), current);
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o640);
+        assert_eq!(seed(dir.path()), 0);
+        let edited = format!("{previous}\n# Keep this change\n");
+        std::fs::write(&path, &edited).unwrap();
+        seed(dir.path());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+        std::fs::remove_file(&path).unwrap();
+        let target = dir.path().join("owned-elsewhere");
+        std::fs::write(&target, previous).unwrap();
+        symlink(&target, &path).unwrap();
+        seed(dir.path());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), previous);
+        assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink());
+    }
+}
+
+#[test]
 fn seed_once_no_clobber() {
     let dir = tempfile::tempdir().unwrap();
     let written = seed(dir.path());

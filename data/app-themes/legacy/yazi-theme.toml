@@ -16,7 +16,7 @@ sep_right = { open = "", close = "" }
 perm_type  = { fg = "{{colors.primary.default.hex}}", bold = true }
 perm_read  = { fg = "{{colors.tertiary.default.hex}}" }
 perm_write = { fg = "{{colors.secondary.default.hex}}" }
-perm_exec  = { fg = "{{colors.primary.default.hex}}" }
+perm_exec  = { fg = "{{colors.error.default.hex}}" }
 perm_sep   = { fg = "{{colors.outline.default.hex}}" }
 
 progress_label  = { fg = "{{colors.on_background.default.hex}}", bold = true }

@@ -192,6 +192,24 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
         assert_eq!(row["enabled"], true, "{row}");
         let output = row["output_path"].as_str().unwrap();
         assert!(!std::fs::read_to_string(output).unwrap().contains("{{"));
+        if id == "kitty" {
+            let text = std::fs::read_to_string(output).unwrap();
+            for slot in ["color1", "color9"] {
+                let color = text
+                    .lines()
+                    .find_map(|line| {
+                        let mut fields = line.split_whitespace();
+                        (fields.next() == Some(slot)).then(|| fields.next().unwrap())
+                    })
+                    .unwrap();
+                assert!(!["#ffb4ab", "#f2b8b5"].contains(&color), "{slot}: {color}");
+            }
+        }
+        if id == "yazi" {
+            let text = std::fs::read_to_string(output).unwrap();
+            assert!(text.contains("perm_exec"));
+            assert!(!text.contains("#ffb4ab") && !text.contains("#f2b8b5"));
+        }
         if id == "kde" {
             let failure = sandbox.root.join("config/kde-fail");
             std::fs::write(&failure, "").unwrap();

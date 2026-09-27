@@ -35,7 +35,28 @@ pub fn seed(dir: &std::path::Path) -> usize {
     let mut written = 0;
     for (name, content) in TEMPLATES {
         let dest = dir.join(name);
-        if dest.exists() {
+        if let Ok(metadata) = std::fs::symlink_metadata(&dest) {
+            if let Some(previous) = skwd_wall_core::static_templates::legacy::template(name)
+                && metadata.is_file()
+                && !metadata.permissions().readonly()
+                && !dest.ancestors().any(|path| {
+                    std::fs::symlink_metadata(path)
+                        .is_ok_and(|entry| entry.file_type().is_symlink())
+                })
+                && std::fs::read_to_string(&dest).is_ok_and(|text| text == previous)
+            {
+                use std::os::unix::fs::PermissionsExt;
+                match skwd_wall_core::paths::atomic_write_mode(
+                    &dest,
+                    content.as_bytes(),
+                    Some(metadata.permissions().mode() & 0o777),
+                ) {
+                    Ok(()) => written += 1,
+                    Err(err) => {
+                        log::warn!("template seed: update {} failed: {err}", dest.display());
+                    }
+                }
+            }
             continue;
         }
         match std::fs::write(&dest, content) {

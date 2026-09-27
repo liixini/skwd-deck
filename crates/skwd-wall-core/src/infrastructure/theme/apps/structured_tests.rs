@@ -47,6 +47,104 @@ fn original(app: &App) -> &'static str {
 }
 
 #[test]
+fn yazi_generated_permissions_migrate_update_and_restore() {
+    let (_root, env, _) = fixture();
+    let app = APPS.iter().find(|app| app.id == "yazi").unwrap();
+    let path = app.paths(&env).0;
+    let source = crate::static_templates::legacy::template("yazi-theme.toml").unwrap();
+    let doc = crate::material::document("#226688", true).unwrap();
+    let original = crate::static_templates::render_doc(source, &doc);
+    let config = crate::config::Config::from_root(
+        json!({"integrations": [{"name": "yazi", "enabled": false}]}),
+    );
+    files::write(&path, &original).unwrap();
+    let permission = ["status".into(), "perm_exec".into(), "fg".into()];
+    for color in ["#123456", "#abcdef"] {
+        app.set(&env, &config, true, &palette(color), true).unwrap();
+        let text = files::read(&path).unwrap().unwrap();
+        let document = Document::parse(&text, false).unwrap();
+        assert_eq!(document.get(&permission).unwrap().unwrap().trim(), format!("\"{color}\""));
+        assert!(text.contains("progress_error  = { fg = \"#ffb4ab\""));
+    }
+    app.set(&env, &config, false, &Value::Null, true).unwrap();
+    assert_eq!(files::read(&path).unwrap().unwrap(), original);
+}
+
+#[test]
+fn yazi_previously_managed_generated_permissions_join_existing_receipt() {
+    let (_root, env, _) = fixture();
+    let app = APPS.iter().find(|app| app.id == "yazi").unwrap();
+    let path = app.paths(&env).0;
+    let doc = crate::material::document("#226688", true).unwrap();
+    let original = crate::static_templates::render_doc(
+        crate::static_templates::legacy::template("yazi-theme.toml").unwrap(),
+        &doc,
+    );
+    let config = crate::config::Config::from_root(
+        json!({"integrations": [{"name": "yazi", "enabled": false}]}),
+    );
+    files::write(&path, &original).unwrap();
+    let mapping = env.config.join("skwd-wall-v2/app-themes/yazi.template");
+    files::write(&mapping, &super::super::customization::defaults("yazi").unwrap()).unwrap();
+    app.set(&env, &config, true, &palette("#123456"), true).unwrap();
+    let before = app.load(&env).unwrap().unwrap();
+    assert!(!before.edits.iter().any(|edit| edit.path.iter().any(|part| part == "perm_exec")));
+    std::fs::remove_file(&mapping).unwrap();
+    app.set(&env, &config, true, &palette("#abcdef"), true).unwrap();
+    let receipt = app.load(&env).unwrap().unwrap();
+    assert!(receipt.edits.iter().any(
+        |edit| edit.path.iter().any(|part| part == "perm_exec") && edit.after == "\"#abcdef\""
+    ));
+    super::super::customization::edit_template(&env, "yazi", false).unwrap();
+    assert!(files::read(&mapping).unwrap().unwrap().contains("perm_exec"));
+    app.set(&env, &config, true, &palette("#fedcba"), true).unwrap();
+    assert!(app.load(&env).unwrap().unwrap().edits.iter().any(|edit| {
+        edit.path.iter().any(|part| part == "perm_exec") && edit.after == "\"#fedcba\""
+    }));
+    files::write(&mapping, &super::super::customization::defaults("yazi").unwrap()).unwrap();
+    app.set(&env, &config, true, &palette("#abcdef"), true).unwrap();
+    let text = files::read(&path).unwrap().unwrap();
+    assert!(text.contains("perm_exec  = { fg = \"#ffb4ab\" }"));
+    app.set(&env, &config, false, &Value::Null, true).unwrap();
+    assert_eq!(files::read(&path).unwrap().unwrap(), original);
+}
+
+#[test]
+fn yazi_existing_custom_permissions_and_mapping_scope_are_preserved() {
+    let (_root, env, config) = fixture();
+    let app = APPS.iter().find(|app| app.id == "yazi").unwrap();
+    let path = app.paths(&env).0;
+    for color in ["#ffb4ab", "#f2b8b5", "#123abc"] {
+        let original = format!("[status]\nperm_exec = {{ fg = '{color}', bold = true }}\n");
+        files::write(&path, &original).unwrap();
+        app.set(&env, &config, true, &palette("#abcdef"), true).unwrap();
+        assert!(files::read(&path).unwrap().unwrap().contains(&original));
+        app.set(&env, &config, false, &Value::Null, true).unwrap();
+        assert_eq!(files::read(&path).unwrap().unwrap(), original);
+    }
+    files::write(&env.config.join("skwd-wall-v2/app-themes/yazi.template"), "[]").unwrap();
+    std::fs::remove_file(&path).unwrap();
+    app.set(&env, &config, true, &palette("#abcdef"), true).unwrap();
+    assert!(!files::read(&path).unwrap().unwrap_or_default().contains("perm_exec"));
+}
+
+#[test]
+fn yazi_new_permissions_are_owned_and_user_edits_stop_updates() {
+    let (_root, env, config) = fixture();
+    let app = APPS.iter().find(|app| app.id == "yazi").unwrap();
+    let path = app.paths(&env).0;
+    app.set(&env, &config, true, &palette("#123456"), true).unwrap();
+    let text = files::read(&path).unwrap().unwrap();
+    let mut document = Document::parse(&text, false).unwrap();
+    let permission = ["status".into(), "perm_exec".into(), "fg".into()];
+    assert_eq!(document.get(&permission).unwrap().unwrap().trim(), "\"#123456\"");
+    document.set(&permission, Some("\"#987654\"")).unwrap();
+    files::write(&path, &document.text()).unwrap();
+    assert!(app.set(&env, &config, true, &palette("#abcdef"), true).is_err());
+    assert_eq!(files::read(&path).unwrap().unwrap(), document.text());
+}
+
+#[test]
 fn every_app_updates_and_restores_original_bytes() {
     let (_root, env, config) = fixture();
     for app in &APPS {

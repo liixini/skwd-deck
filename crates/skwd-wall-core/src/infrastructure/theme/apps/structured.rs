@@ -269,7 +269,19 @@ impl App {
                 edits: Vec::new(),
             }
         };
-        let mappings = super::customization::mappings(env, self.id)?;
+        let mut mappings = super::customization::mappings(env, self.id)?;
+        let permission = vec!["status".into(), "perm_exec".into(), "fg".into()];
+        if self.id == "yazi"
+            && !env.config.join("skwd-wall-v2/app-themes/yazi.template").exists()
+            && (receipt.edits.iter().any(|edit| edit.path == permission)
+                || receipt.original.as_deref().is_none_or(str::is_empty)
+                || receipt.original.as_deref().is_some_and(|original| {
+                    crate::static_templates::legacy::generated("yazi-theme.toml", original)
+                }))
+        {
+            mappings
+                .push(super::customization::Mapping { path: permission, role: "primary".into() });
+        }
         for edit in &receipt.edits {
             if !mappings.iter().any(|mapping| mapping.path == edit.path) {
                 document.set(&edit.path, edit.before.as_deref())?;
@@ -316,6 +328,14 @@ fn owns(document: &Document, edits: &[Edit]) -> Result<bool> {
         }
     }
     Ok(true)
+}
+
+pub(super) fn owns_yazi_permission(env: &Environment) -> Result<bool> {
+    let app = APPS.iter().find(|app| app.id == "yazi").unwrap();
+    Ok(app.load(env)?.is_some_and(|receipt| {
+        receipt.enabled
+            && receipt.edits.iter().any(|edit| edit.path == ["status", "perm_exec", "fg"])
+    }))
 }
 
 pub(super) fn roles(id: &str) -> Vec<(Vec<&'static str>, &'static str)> {

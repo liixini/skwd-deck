@@ -173,7 +173,16 @@ pub(super) fn edit_template(env: &Environment, id: &str, reset: bool) -> Result<
         files::writable(&path)?;
         std::fs::remove_file(path)?;
     } else if !reset && !path.exists() {
-        files::write(&path, &defaults(id)?)?;
+        let mut text = defaults(id)?;
+        if id == "yazi" && structured::owns_yazi_permission(env)? {
+            let mut mappings: Vec<Mapping> = serde_json::from_str(&text)?;
+            mappings.push(Mapping {
+                path: vec!["status".into(), "perm_exec".into(), "fg".into()],
+                role: "primary".into(),
+            });
+            text = serde_json::to_string_pretty(&mappings)? + "\n";
+        }
+        files::write(&path, &text)?;
     }
     Ok(())
 }
