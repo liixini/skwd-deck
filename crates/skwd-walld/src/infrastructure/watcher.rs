@@ -96,12 +96,53 @@ fn is_transient(path: &std::path::Path) -> bool {
 pub(crate) struct ConfigWatch {
     path: std::path::PathBuf,
     target: std::path::PathBuf,
+    effects: Option<ConfigEffects>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ConfigEffects {
+    backdrop: serde_json::Value,
+    lock_screen: (String, String, bool),
+    semantic: (bool, String, String),
+}
+
+#[derive(Debug, PartialEq)]
+struct ConfigEffectChanges {
+    backdrop: bool,
+    lock_screen: bool,
+    semantic: bool,
 }
 
 impl ConfigWatch {
     pub(crate) fn new(path: std::path::PathBuf) -> Self {
         let target = Self::resolve(&path);
-        Self { path, target }
+        Self { path, target, effects: None }
+    }
+
+    fn update_effects(&mut self, config: &skwd_wall_core::config::Config) -> ConfigEffectChanges {
+        let next = ConfigEffects {
+            backdrop: super::overview_backdrop::settings(config),
+            lock_screen: (
+                config.plasma_lock_screen_mode(),
+                config.plasma_lock_screen_image(),
+                config.plasma_lock_screen_live(),
+            ),
+            semantic: (
+                config.semantic_enabled(),
+                config.semantic_manifest(),
+                config.semantic_index_profile(),
+            ),
+        };
+        let changed = ConfigEffectChanges {
+            backdrop: self.effects.as_ref().is_none_or(|last| last.backdrop != next.backdrop),
+            lock_screen: self
+                .effects
+                .as_ref()
+                .is_none_or(|last| last.lock_screen != next.lock_screen),
+            semantic: self.effects.as_ref().is_none_or(|last| last.semantic != next.semantic),
+        };
+        self.effects = Some(next);
+        changed
     }
 
     fn resolve(path: &std::path::Path) -> std::path::PathBuf {
@@ -671,50 +712,20 @@ fn absorb_and_hold(
     event.paths.retain(|path| skwd_wall_core::theme_provider::provider_for_path(path).is_none());
     if absorb_watch_event(event, cfg, pending, removed) {
         cfg.refresh(watcher);
-        let backdrop_before = super::overview_backdrop::settings(&state.config());
-        let (lock_screen_before, semantic_before) = {
-            let config = state.config();
-            (
-                (
-                    config.plasma_lock_screen_mode(),
-                    config.plasma_lock_screen_image(),
-                    config.plasma_lock_screen_live(),
-                ),
-                (
-                    config.semantic_enabled(),
-                    config.semantic_manifest(),
-                    config.semantic_index_profile(),
-                ),
-            )
-        };
         state.reload_config();
         let backdrop_config = state.config().clone();
-        if backdrop_before != super::overview_backdrop::settings(&backdrop_config) {
+        let changed = cfg.update_effects(&backdrop_config);
+        if changed.backdrop {
             tokio::task::spawn_blocking(move || {
                 if let Err(error) = super::overview_backdrop::refresh_from_disk(&backdrop_config) {
                     log::warn!("overview-backdrop: {error}");
                 }
             });
         }
-        let (lock_screen_after, semantic_after) = {
-            let config = state.config();
-            (
-                (
-                    config.plasma_lock_screen_mode(),
-                    config.plasma_lock_screen_image(),
-                    config.plasma_lock_screen_live(),
-                ),
-                (
-                    config.semantic_enabled(),
-                    config.semantic_manifest(),
-                    config.semantic_index_profile(),
-                ),
-            )
-        };
-        if lock_screen_before != lock_screen_after {
+        if changed.lock_screen {
             crate::infrastructure::lock_screen::request_sync(state);
         }
-        if semantic_before != semantic_after {
+        if changed.semantic {
             crate::infrastructure::semantic_index::settings_changed();
         }
         publisher.publish(ev::CONFIG_CHANGED, json!({}));

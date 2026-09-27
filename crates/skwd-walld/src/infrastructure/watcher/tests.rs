@@ -433,3 +433,63 @@ fn config_watch_refresh_rearms_real_watcher() {
     assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn config_effects_survive_another_reader_reloading_first() {
+    let (_guard, _) = crate::testenv::lock();
+    crate::testenv::write_config(json!({"plasma": {"lockScreen": {"mode": "static"}}}));
+    let (state, _, _) = crate::testenv::harness();
+    let mut cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    assert!(cfg.update_effects(&state.config()).lock_screen);
+
+    crate::testenv::write_config(json!({"plasma": {"lockScreen": {"mode": "off"}}}));
+    state.reload_config();
+    assert_eq!(state.config().plasma_lock_screen_mode(), "off");
+    state.reload_config();
+    assert_eq!(
+        cfg.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: false, lock_screen: true, semantic: false }
+    );
+    assert_eq!(
+        cfg.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: false, lock_screen: false, semantic: false }
+    );
+}
+
+#[test]
+fn config_effects_reconcile_changes_before_watcher_installation() {
+    let (_guard, _) = crate::testenv::lock();
+    crate::testenv::write_config(json!({"plasma": {"lockScreen": {"mode": "static"}}}));
+    let (state, _, _) = crate::testenv::harness();
+    crate::testenv::write_config(json!({"plasma": {"lockScreen": {"mode": "off"}}}));
+    state.reload_config();
+    let mut cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    assert_eq!(
+        cfg.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: true, lock_screen: true, semantic: true }
+    );
+}
+
+#[test]
+fn config_effects_filter_unrelated_edits_and_track_other_effects() {
+    let (_guard, _) = crate::testenv::lock();
+    crate::testenv::write_config(json!({}));
+    let (state, _, _) = crate::testenv::harness();
+    let mut cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    cfg.update_effects(&state.config());
+    crate::testenv::write_config(json!({"general": {"notifyOnWallpaperChange": true}}));
+    state.reload_config();
+    assert_eq!(
+        cfg.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: false, lock_screen: false, semantic: false }
+    );
+    crate::testenv::write_config(json!({
+        "niri": {"overviewBackdropBlur": 37},
+        "semantic": {"enabled": false}
+    }));
+    state.reload_config();
+    assert_eq!(
+        cfg.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: true, lock_screen: false, semantic: true }
+    );
+}
