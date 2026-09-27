@@ -11,8 +11,17 @@ use wall_proto::AppThemeStatus;
 use super::catalogue::KDE_RECIPE;
 use super::files;
 use super::manager::{self, Environment};
+use super::plasma_settings::{self, Accent};
 
 const NAMES: [&str; 2] = ["SkwdManaged", "SkwdManagedAlt"];
+
+#[derive(Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RestoreStage {
+    #[default]
+    Scheme,
+    WallpaperAccent,
+}
 
 #[derive(Deserialize, Serialize)]
 struct Receipt {
@@ -30,6 +39,10 @@ struct Receipt {
     pending_selection: Option<String>,
     #[serde(default)]
     disabling: bool,
+    #[serde(default)]
+    accent: Option<Accent>,
+    #[serde(default)]
+    restore_stage: RestoreStage,
 }
 
 fn selected(env: &Environment) -> Result<String> {
@@ -89,7 +102,8 @@ fn owned(receipt: &Receipt, current: &str) -> bool {
 pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppThemeStatus {
     let path = env.config.join("kdeglobals");
     let output = env.data.join("color-schemes/SkwdManaged.colors");
-    let installed = env.executable("plasma-apply-colorscheme").is_some();
+    let installed = env.executable("plasma-apply-colorscheme").is_some()
+        && env.executable("kwriteconfig6").is_some();
     let mut status = AppThemeStatus {
         id: "kde".into(),
         name: "KDE Plasma".into(),
@@ -118,13 +132,23 @@ pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppT
     let check = (|| -> Result<()> {
         if let Some(receipt) = check()?.filter(|r| r.enabled || r.pending) {
             let current = selected(env)?;
+            let accent_owned = receipt.accent.as_ref().map_or(Ok(true), |accent| {
+                if receipt.restore_stage == RestoreStage::WallpaperAccent {
+                    accent.wallpaper_owned(env)
+                } else {
+                    accent.owned(env, receipt.pending)
+                }
+            })?;
             status.enabled = receipt.enabled;
             status.can_enable = false;
-            status.can_disable =
-                installed && owned(&receipt, &current) && scheme_exists(env, &receipt.previous);
+            status.can_disable = installed
+                && owned(&receipt, &current)
+                && accent_owned
+                && scheme_exists(env, &receipt.previous);
             status.state = if receipt.pending {
                 "interrupted"
             } else if !owned(&receipt, &current)
+                || !accent_owned
                 || receipt.outputs.iter().any(|(name, text)| {
                     files::read(&receipt.directory.join(format!("{name}.colors")))
                         .ok()
@@ -140,6 +164,11 @@ pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppT
             .into();
             status.output_path =
                 receipt.directory.join(format!("{}.colors", receipt.active)).display().to_string();
+            if !accent_owned {
+                status.detail = "The Plasma accent changed outside Skwd. Reconnect to use Skwd colours, or disconnect to keep your changes.".into();
+            } else if receipt.accent.is_some() && status.state == "applied" {
+                status.detail = plasma_settings::panel_detail(env)?;
+            }
         } else if let Some(owner) =
             manager::conflict(config, &KDE_RECIPE, &files::read(&path)?.unwrap_or_default())
         {
@@ -149,6 +178,7 @@ pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppT
             status.can_adopt =
                 status.detail == "custom-output" && manager::migratable(config, &KDE_RECIPE);
         } else if installed {
+            Accent::capture(env)?;
             ensure!(
                 scheme_exists(env, &selected(env)?),
                 "The previous Plasma colour scheme cannot be found; select an installed scheme first"
@@ -170,15 +200,15 @@ pub(super) fn inspect(env: &Environment, config: &crate::config::Config) -> AppT
     status
 }
 
-fn apply_scheme(env: &Environment, name: &str) -> Result<()> {
-    let program = env
-        .executable("plasma-apply-colorscheme")
-        .context("Plasma colour tools are not installed")?;
+pub(super) fn run_tool(env: &Environment, tool: &str, args: &[&str]) -> Result<()> {
+    let program = env.executable(tool).context("Plasma colour tools are not installed")?;
     let mut child = crate::proc::tool(program)
-        .arg(name)
+        .args(args)
+        .env("HOME", &env.home)
         .env("XDG_CONFIG_HOME", &env.config)
         .env("XDG_DATA_HOME", &env.data)
         .env("XDG_DATA_DIRS", std::env::join_paths(&env.data_dirs)?)
+        .env("XDG_CONFIG_DIRS", std::env::join_paths(&env.config_dirs)?)
         .env("QT_QPA_PLATFORM", "offscreen")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -188,7 +218,6 @@ fn apply_scheme(env: &Environment, name: &str) -> Result<()> {
     loop {
         if let Some(status) = child.try_wait()? {
             ensure!(status.success(), "Plasma could not apply the colour scheme");
-            ensure!(selected(env)? == name, "Plasma did not select the requested colour scheme");
             return Ok(());
         }
         if Instant::now() >= deadline {
@@ -198,6 +227,12 @@ fn apply_scheme(env: &Environment, name: &str) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+fn apply_scheme(env: &Environment, name: &str) -> Result<()> {
+    run_tool(env, "plasma-apply-colorscheme", &[name])?;
+    ensure!(selected(env)? == name, "Plasma did not select the requested colour scheme");
+    Ok(())
 }
 
 fn output(receipt: &Receipt, name: &str) -> PathBuf {
@@ -246,8 +281,15 @@ fn resume(env: &Environment, receipt: &mut Receipt) -> Result<()> {
             "The generated Plasma theme was changed outside Skwd"
         );
     }
+    if receipt.accent.is_none() {
+        receipt.accent = Some(Accent::capture(env)?);
+        save(env, receipt)?;
+    }
+    let accent = receipt.accent.as_ref().context("The saved Plasma accent settings are missing")?;
+    accent.apply(env, false)?;
     files::write(&output(receipt, &receipt.active), &text)?;
     apply_scheme(env, &receipt.active)?;
+    ensure!(accent.owned(env, false)?, "The Plasma accent changed while applying colours");
     receipt.outputs.insert(receipt.active.clone(), text);
     receipt.enabled = true;
     receipt.pending = false;
@@ -275,13 +317,24 @@ pub(super) fn set(
             receipt.pending = true;
             receipt.disabling = true;
             save(env, &receipt)?;
-            apply_scheme(env, &receipt.previous)?;
+            if receipt.restore_stage == RestoreStage::Scheme {
+                if let Some(accent) = &receipt.accent {
+                    accent.apply(env, true)?;
+                }
+                apply_scheme(env, &receipt.previous)?;
+                receipt.restore_stage = RestoreStage::WallpaperAccent;
+                save(env, &receipt)?;
+            }
+            if let Some(accent) = &receipt.accent {
+                accent.restore_wallpaper(env)?;
+            }
             remove_outputs(&receipt)?;
             receipt.enabled = false;
             receipt.pending = false;
             receipt.pending_text = None;
             receipt.pending_selection = None;
             receipt.disabling = false;
+            receipt.restore_stage = RestoreStage::Scheme;
             save(env, &receipt)?;
         }
         return Ok(());
@@ -306,6 +359,8 @@ pub(super) fn set(
             pending_text: None,
             pending_selection: None,
             disabling: false,
+            accent: None,
+            restore_stage: RestoreStage::Scheme,
         },
     };
     let name = if selected(env)? == NAMES[0] { NAMES[1] } else { NAMES[0] };
@@ -379,6 +434,10 @@ pub(super) fn reconnect(
     receipt.pending_text = Some(rendered);
     receipt.pending_selection = Some(current);
     receipt.disabling = false;
+    receipt.restore_stage = RestoreStage::Scheme;
+    if let Some(accent) = &mut receipt.accent {
+        accent.reconnect(env)?;
+    }
     save(env, &receipt)?;
     resume(env, &mut receipt)
 }

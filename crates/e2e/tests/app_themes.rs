@@ -94,18 +94,35 @@ fn managed_themes_migrate_and_restore_through_rpc() {
     std::fs::write(data.join("color-schemes/BreezeDark.colors"), "[General]\nName=BreezeDark\n")
         .unwrap();
     let kdeglobals = sandbox.root.join("config/kdeglobals");
-    std::fs::write(&kdeglobals, "[General]\nColorScheme=BreezeDark\n").unwrap();
-    let kde_tool = tools.join("plasma-apply-colorscheme");
     std::fs::write(
-        &kde_tool,
-        r#"#!/bin/sh
-[ ! -f "$XDG_CONFIG_HOME/kde-fail" ] || exit 1
-sleep 0.1
-printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
-"#,
+        &kdeglobals,
+        "[General]\nColorScheme=BreezeDark\nAccentColor=12,34,56\naccentColorFromWallpaper=true\n",
     )
     .unwrap();
-    std::fs::set_permissions(&kde_tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+    for tool in ["plasma-apply-colorscheme", "kwriteconfig6"] {
+        let kde_tool = tools.join(tool);
+        std::fs::write(
+            &kde_tool,
+            r"#!/usr/bin/python3
+import configparser,os,sys,time
+from pathlib import Path
+root=Path(os.environ['XDG_CONFIG_HOME'])
+if (root/'kde-fail').exists():sys.exit(1)
+time.sleep(0.02)
+path=root/'kdeglobals';c=configparser.ConfigParser();c.optionxform=str
+if path.exists():c.read(path)
+if not c.has_section('General'):c.add_section('General')
+if '--key' in sys.argv:
+ key=sys.argv[sys.argv.index('--key')+1]
+ if '--delete' in sys.argv:c.remove_option('General',key)
+ else:c['General'][key]=sys.argv[-1]
+else:c['General']['ColorScheme']=sys.argv[1]
+with path.open('w') as f:c.write(f,space_around_delimiters=False)
+",
+        )
+        .unwrap();
+        std::fs::set_permissions(&kde_tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     let kitty = sandbox.root.join("config/kitty/kitty.conf");
     std::fs::create_dir_all(kitty.parent().unwrap()).unwrap();
     std::fs::write(&kitty, "font_size 13\n").unwrap();
@@ -215,6 +232,9 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
             assert!(!text.contains("#ffb4ab") && !text.contains("#f2b8b5"));
         }
         if id == "kde" {
+            let text = std::fs::read_to_string(&kdeglobals).unwrap();
+            assert!(text.contains("AccentColor=0,0,0,0"));
+            assert!(text.contains("accentColorFromWallpaper=false"));
             let failure = sandbox.root.join("config/kde-fail");
             std::fs::write(&failure, "").unwrap();
             client.call("wall.retheme", json!({}), 7).unwrap();
@@ -265,7 +285,10 @@ printf '[General]\nColorScheme=%s\n' "$1" > "$XDG_CONFIG_HOME/kdeglobals"
     assert_eq!(saved["integrations"][1]["enabled"], false);
     assert_eq!(saved["integrations"][2]["enabled"], false);
     assert_eq!(saved["integrations"][3]["enabled"], false);
-    assert!(std::fs::read_to_string(kdeglobals).unwrap().contains("ColorScheme=BreezeDark"));
+    let restored = std::fs::read_to_string(kdeglobals).unwrap();
+    assert!(restored.contains("ColorScheme=BreezeDark"));
+    assert!(restored.contains("AccentColor=12,34,56"));
+    assert!(restored.contains("accentColorFromWallpaper=true"));
     assert_eq!(saved["integrations"][0]["template"], "kitty.conf");
     assert!(state_home.join("skwd-wall-v2/app-themes/kitty-migration.json").exists());
     for id in [

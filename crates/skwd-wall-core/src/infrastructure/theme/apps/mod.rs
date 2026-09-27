@@ -5,6 +5,7 @@ mod files;
 mod foot;
 mod manager;
 mod plasma;
+mod plasma_settings;
 mod reload;
 mod structured;
 mod waybar;
