@@ -19,7 +19,10 @@ fn try_read_root(path: &Path) -> Option<Value> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
-    std::fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok())
+    let mut root: Value =
+        std::fs::read_to_string(path).ok().and_then(|text| serde_json::from_str(&text).ok())?;
+    skwd_config::canonicalize_backdrop_blur(&mut root);
+    Some(root)
 }
 
 impl Config {

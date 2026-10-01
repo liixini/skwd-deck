@@ -14,7 +14,6 @@ impl<'a> PlaybackConfig<'a> {
     }
     skwd_config::getters! {
         full_width_pause: bool(skwd_config::keys::niri::FULL_WIDTH_PAUSE, false);
-        overview_only: bool(skwd_config::keys::niri::OVERVIEW_ONLY_PLAYBACK, false);
         process_pause_enabled: bool(skwd_config::keys::playback::PROCESS_ENABLED, false);
         pause_processes: str(skwd_config::keys::playback::PROCESSES, "");
         fullscreen_pause: bool(skwd_config::keys::playback::FULLSCREEN, false);
@@ -22,6 +21,15 @@ impl<'a> PlaybackConfig<'a> {
         fullscreen_scope: str(skwd_config::keys::playback::FULLSCREEN_SCOPE, "all");
         mute_on_other_audio: bool(skwd_config::keys::playback::MUTE_ON_OTHER_AUDIO, false);
     }
+    pub fn overview_only(&self) -> bool {
+        !self.config.niri_stationary_wallpaper()
+            && skwd_config::bool_at(
+                self.root(),
+                skwd_config::keys::niri::OVERVIEW_ONLY_PLAYBACK,
+                false,
+            )
+    }
+
     pub fn window_pause_enabled(&self) -> bool {
         self.fullscreen_pause() || self.maximized_pause() || self.full_width_pause()
     }

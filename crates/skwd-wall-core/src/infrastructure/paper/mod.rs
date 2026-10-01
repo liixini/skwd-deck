@@ -1,11 +1,16 @@
 mod adapter;
 mod client;
 mod composition;
+mod stationary;
+pub(crate) use stationary::configure_stationary;
+pub use stationary::{restore_tinier, set_stationary_overview, stationary_surface};
 
 pub use adapter::PaperClientAdapter;
 pub use client::{PaperClient, paper_socket_path, socket_at};
 pub(crate) use composition::tinier_or_default_source;
-pub use composition::{PaperCompositionPlan, PaperCompositionResult, renderer_policy};
+pub use composition::{
+    PaperCompositionPlan, PaperCompositionResult, renderer_policy, stationary_wallpaper,
+};
 pub use paper_control::{
     ApplyRequest, ApplyResult, Assignment, AssignmentStatus, CapabilitiesResult,
     ControlCapabilities, FillMode, Layer, PROTOCOL_NAME, PROTOCOL_VERSION, RendererCapability,

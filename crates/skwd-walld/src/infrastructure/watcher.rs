@@ -716,8 +716,9 @@ fn absorb_and_hold(
         let backdrop_config = state.config().clone();
         let changed = cfg.update_effects(&backdrop_config);
         if changed.backdrop {
+            let backdrop_state = Arc::clone(state);
             tokio::task::spawn_blocking(move || {
-                if let Err(error) = super::overview_backdrop::refresh_from_disk(&backdrop_config) {
+                if let Err(error) = super::overview_backdrop::refresh_from_disk(&backdrop_state) {
                     log::warn!("overview-backdrop: {error}");
                 }
             });

@@ -32,6 +32,9 @@ impl<'a> RendererConfig<'a> {
     }
 
     pub fn wallpaper_layer(&self) -> String {
+        if self.config.niri_stationary_active() {
+            return "background".into();
+        }
         match self.config.str_at(skwd_config::keys::paper::WALLPAPER_LAYER, "bottom").as_str() {
             "background" => "background",
             "top" => "top",
@@ -42,6 +45,9 @@ impl<'a> RendererConfig<'a> {
     }
 
     pub fn video_engine(&self) -> String {
+        if self.config.niri_stationary_active() {
+            return "vulkan".to_string();
+        }
         match self.config.str_at(skwd_config::keys::paper::VIDEO_ENGINE, "vulkan").as_str() {
             "tinier" => "tinier".to_string(),
             _ => "vulkan".to_string(),
@@ -49,6 +55,9 @@ impl<'a> RendererConfig<'a> {
     }
 
     pub fn engine(&self) -> String {
+        if self.config.niri_stationary_active() {
+            return "skwd-paper".into();
+        }
         skwd_config::paper_engine(self.root())
     }
 

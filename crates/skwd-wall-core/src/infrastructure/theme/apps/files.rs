@@ -31,12 +31,16 @@ pub(super) fn read(path: &Path) -> Result<Option<String>> {
 }
 
 pub(super) fn writable(path: &Path) -> Result<()> {
+    writable_under(&std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default(), path)
+}
+
+pub(super) fn writable_under(home: &Path, path: &Path) -> Result<()> {
     let mut checked_permissions = false;
     for ancestor in path.ancestors() {
         match std::fs::symlink_metadata(ancestor) {
             Ok(meta) => {
                 ensure!(
-                    !meta.file_type().is_symlink(),
+                    home.starts_with(ancestor) || !meta.file_type().is_symlink(),
                     "Config is managed through a symlink: {}",
                     ancestor.display()
                 );

@@ -104,6 +104,7 @@ impl Config {
         let mut data = self.data.clone();
         skwd_config::canonicalize_paper_engine(&mut data);
         skwd_config::canonicalize_we_renderer(&mut data);
+        skwd_config::canonicalize_backdrop_blur(&mut data);
         let text = serde_json::to_string_pretty(&data).map_err(std::io::Error::other)?;
         if let Some(directory) = self.path.parent() {
             std::fs::create_dir_all(directory)?;

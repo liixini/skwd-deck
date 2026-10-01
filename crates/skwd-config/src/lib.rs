@@ -24,10 +24,10 @@ pub use power::{
     set_power_source_snapshot,
 };
 pub use settings::{
-    cache_dir_of, canonicalize_paper_engine, canonicalize_we_renderer, locale, paper_engine,
-    pexels_api_key, steam_enabled, theme_authority, theme_backend, theme_engine, theme_mode,
-    theme_policy, unsplash_access_key, video_dir, video_preview_delay_ms, video_preview_enabled,
-    wallhaven_enabled, wallpaper_dir, wallpaper_mute, wallpaper_volume,
+    cache_dir_of, canonicalize_backdrop_blur, canonicalize_paper_engine, canonicalize_we_renderer,
+    locale, paper_engine, pexels_api_key, steam_enabled, theme_authority, theme_backend,
+    theme_engine, theme_mode, theme_policy, unsplash_access_key, video_dir, video_preview_delay_ms,
+    video_preview_enabled, wallhaven_enabled, wallpaper_dir, wallpaper_mute, wallpaper_volume,
 };
 pub use value::{
     arr_ref, bool_at, bool_false_unless_true, bool_true_unless_false, f64_ref, get, i64_ref,

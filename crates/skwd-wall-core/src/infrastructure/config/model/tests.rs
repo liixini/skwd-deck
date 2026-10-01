@@ -472,19 +472,24 @@ fn flags_default_true() {
 
 #[test]
 fn niri_backdrop_getters() {
+    use paper_control::SourceKind;
     let defaults = Config::from_root(json!({}));
     assert!(!defaults.niri_overview_backdrop());
-    assert!(defaults.niri_backdrop_blur_enabled());
     assert!(defaults.niri_backdrop_follow_wallpaper());
-    assert_eq!(defaults.niri_backdrop_blur(), 20.0);
+    assert_eq!(defaults.niri_backdrop_blur(SourceKind::Static), 20);
+    assert_eq!(defaults.niri_backdrop_blur(SourceKind::Video), 0);
+    assert_eq!(defaults.niri_backdrop_blur(SourceKind::WallpaperEngine), 0);
     assert_eq!(defaults.niri_backdrop_dim(), 0);
     let cfg = Config::from_root(json!({"niri": {
-        "overviewBackdrop": true, "overviewBackdropBlurEnabled": false,
-        "overviewBackdropBlur": 35.0, "backdropFollowWallpaper": false, "backdropDim": 40.0
+        "overviewBackdrop": true, "backdropBlurStatic": false, "backdropBlurStaticRadius": 60,
+        "backdropBlurVideo": true, "backdropBlurVideoRadius": 35,
+        "backdropBlurWe": true, "backdropBlurWeRadius": 400,
+        "backdropFollowWallpaper": false, "backdropDim": 40.0
     }}));
     assert!(cfg.niri_overview_backdrop());
-    assert!(!cfg.niri_backdrop_blur_enabled());
-    assert_eq!(cfg.niri_backdrop_blur(), 35.0);
+    assert_eq!(cfg.niri_backdrop_blur(SourceKind::Static), 0);
+    assert_eq!(cfg.niri_backdrop_blur(SourceKind::Video), 35);
+    assert_eq!(cfg.niri_backdrop_blur(SourceKind::WallpaperEngine), 100);
     assert!(!cfg.niri_backdrop_follow_wallpaper());
     assert_eq!(cfg.niri_backdrop_dim(), 40);
     assert_eq!(Config::from_root(json!({"niri": {"backdropDim": 999.0}})).niri_backdrop_dim(), 100,);
@@ -545,6 +550,22 @@ fn read_root_garbage() {
         let path = dir.path().join("bad.json");
         std::fs::write(&path, garbage).unwrap();
         assert_eq!(read_root(&path), Value::Null);
+    }
+}
+
+#[test]
+fn read_root_splits_legacy_backdrop_blur() {
+    use paper_control::SourceKind;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    std::fs::write(
+        &path,
+        r#"{"niri": {"overviewBackdropBlurEnabled": true, "overviewBackdropBlur": 9}}"#,
+    )
+    .unwrap();
+    let cfg = Config::from_root(read_root(&path));
+    for kind in [SourceKind::Static, SourceKind::Video, SourceKind::WallpaperEngine] {
+        assert_eq!(cfg.niri_backdrop_blur(kind), 9);
     }
 }
 
@@ -942,4 +963,19 @@ fn wallpaper_background_inheritance_and_saved_color() {
     let different =
         Config::from_root(json!({"display": {"fillColor": "123456ff", "backgroundMode": "color"}}));
     assert_ne!(config.display().fill_modes_signature(), different.display().fill_modes_signature());
+}
+
+#[test]
+fn stationary_overview_mode_is_opt_in_and_preserves_backdrop_settings() {
+    let cfg = Config::from_root(json!({"niri":{"overviewBackdrop":true}}));
+    assert!(!cfg.niri_stationary_wallpaper());
+    let cfg = Config::from_root(
+        json!({"niri":{"overviewBackdrop":true,"overviewMode":"stationary","backdrop":"/wall/fixed.png","backdropFollowWallpaper":false}}),
+    );
+    assert!(cfg.niri_stationary_wallpaper());
+    assert_eq!(cfg.niri_backdrop_source(), "/wall/fixed.png");
+    assert!(!cfg.niri_backdrop_follow_wallpaper());
+    let cfg =
+        Config::from_root(json!({"niri":{"overviewBackdrop":false,"overviewMode":"stationary"}}));
+    assert!(!cfg.niri_stationary_wallpaper());
 }

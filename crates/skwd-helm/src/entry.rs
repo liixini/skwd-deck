@@ -58,7 +58,7 @@ VERBS:\n\
   watch [--exec 'cmd %path%']     stream daemon events as JSON; run a hook per event\n\
   ui <cmd>                        drive the RUNNING picker UI:\n\
   toggle | show | hide | close | dismiss\n\
-                                    mode <slices|hex|wall|sandy>\n\
+                                    mode <slices|depth|hex|wall|sandy|hand|collection>\n\
                                     filter <text> | clear\n\
   open <settings|effects|mixer|downloads|tags|playlists|schedule|theme|theme-bar>\n\
   playlist <id>                    select a playlist in the open workbench\n\

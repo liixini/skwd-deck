@@ -7,6 +7,7 @@ use skwd_config::home;
 use super::source::read_root;
 
 mod display;
+mod niri;
 mod playback;
 mod renderer;
 mod theme;
@@ -80,7 +81,6 @@ impl Config {
         image_optimize_preset: str(skwd_config::keys::performance::IMAGE_OPTIMIZE_PRESET, "balanced");
         image_optimize_resolution: str(skwd_config::keys::performance::IMAGE_OPTIMIZE_RESOLUTION, "2k");
         niri_backdrop_auto_theme: off_unless_on(skwd_config::keys::niri::BACKDROP_AUTO_THEME);
-        niri_backdrop_blur_enabled: on_unless_off(skwd_config::keys::niri::OVERVIEW_BACKDROP_BLUR_ENABLED);
         niri_backdrop_follow_wallpaper: on_unless_off(skwd_config::keys::niri::BACKDROP_FOLLOW_WALLPAPER);
         niri_backdrop_theme: str(skwd_config::keys::niri::BACKDROP_THEME, "");
         niri_overview_backdrop: off_unless_on(skwd_config::keys::niri::OVERVIEW_BACKDROP);
@@ -322,22 +322,6 @@ impl Config {
             return PathBuf::from(self.resolve(&ws));
         }
         self.steam_dir().join("steamapps/workshop/content/431960")
-    }
-
-    pub fn niri_backdrop_blur(&self) -> f32 {
-        self.get(skwd_config::keys::niri::OVERVIEW_BACKDROP_BLUR)
-            .and_then(Value::as_f64)
-            .map_or(20.0, |val| val.clamp(0.0, 200.0) as f32)
-    }
-
-    pub fn niri_backdrop_dim(&self) -> u32 {
-        self.get(skwd_config::keys::niri::BACKDROP_DIM)
-            .and_then(Value::as_f64)
-            .map_or(0, |val| val.clamp(0.0, 100.0) as u32)
-    }
-
-    pub fn niri_backdrop_source(&self) -> String {
-        self.resolve(&self.str_at(skwd_config::keys::niri::BACKDROP, ""))
     }
 
     pub fn post_processing(&self) -> Vec<(String, String)> {

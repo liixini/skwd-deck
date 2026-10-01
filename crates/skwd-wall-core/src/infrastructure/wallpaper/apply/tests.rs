@@ -401,6 +401,9 @@ fn paper_policy_signature_fields() {
     let st = Stub::new();
     let base = current_paper_policy(&st);
     let mut changed = base.clone();
+    changed.stationary = !base.stationary;
+    assert_ne!(base.signature(), changed.signature());
+    changed = base.clone();
     changed.load_timeout_ms = 60_000;
     assert_ne!(base.signature(), changed.signature());
     changed = base.clone();
@@ -440,6 +443,7 @@ fn native_scene_policy_normal() {
             fill_mode: String::new(),
             assets_dir: String::new(),
             layer: "bottom".to_string(),
+            stationary: false,
             fps: 75,
             disable_particles: false,
             max_dimension: None,
@@ -458,6 +462,7 @@ fn native_scene_policy_performance() {
             fill_mode: String::new(),
             assets_dir: String::new(),
             layer: "bottom".to_string(),
+            stationary: false,
             fps: PERF_SCENE_FPS,
             disable_particles: false,
             max_dimension: Some(PERF_SCENE_MAX_DIMENSION),
@@ -475,11 +480,11 @@ fn native_scene_signature_fields() {
     assert_ne!(selected.signature(), native_scene_policy(60, false, false).signature());
     assert_eq!(
         native_scene_policy(60, false, false).signature(),
-        "v8:auto:::bottom:60:false:0:0:0"
+        "v9:false:auto:::bottom:60:false:0:0:0"
     );
     assert_eq!(
         native_scene_policy(120, true, false).signature(),
-        "v8:auto:::bottom:30:false:2048:4:8"
+        "v9:false:auto:::bottom:30:false:2048:4:8"
     );
     assert_ne!(
         native_scene_policy(60, false, false).signature(),

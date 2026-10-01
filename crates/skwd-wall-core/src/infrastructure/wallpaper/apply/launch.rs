@@ -22,6 +22,7 @@ pub(super) struct NativeScenePolicy {
     pub fill_mode: String,
     pub assets_dir: String,
     pub layer: String,
+    pub stationary: bool,
     pub fps: u32,
     pub disable_particles: bool,
     pub max_dimension: Option<u32>,
@@ -32,7 +33,8 @@ pub(super) struct NativeScenePolicy {
 impl NativeScenePolicy {
     pub(super) fn signature(&self) -> String {
         format!(
-            "v8:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "v9:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            self.stationary,
             self.gpu_device,
             self.fill_mode,
             self.assets_dir,
@@ -56,6 +58,7 @@ pub(super) fn native_scene_policy(
         fill_mode: String::new(),
         assets_dir: String::new(),
         layer: "bottom".to_string(),
+        stationary: false,
         fps: if performance_mode { configured_fps.min(PERF_SCENE_FPS) } else { configured_fps },
         disable_particles,
         max_dimension: performance_mode.then_some(PERF_SCENE_MAX_DIMENSION),
@@ -74,6 +77,7 @@ pub(super) fn current_native_scene_policy(state: &WallState) -> NativeScenePolic
     policy.fill_mode = state.config().renderer().we_scene_fill_mode();
     policy.assets_dir = state.config().we_assets_dir();
     policy.layer = state.config().renderer().wallpaper_layer();
+    policy.stationary = crate::infrastructure::paper::stationary_wallpaper(&state.config());
     policy
 }
 
@@ -362,6 +366,19 @@ impl RendererLaunchSpec {
             command.env("SKWD_PAPER_OUTPUT_FPS", crate::outputs::fps_map(policy.fps, &outputs));
             apply_native_scene_policy(&mut command, &policy);
         }
+        crate::infrastructure::paper::configure_stationary(
+            &mut command,
+            &config,
+            match self.kind {
+                RendererLaunchKind::SharedStatic
+                | RendererLaunchKind::PerOutputStatic { .. }
+                | RendererLaunchKind::MultiOutputStatic { .. } => paper_control::SourceKind::Static,
+                RendererLaunchKind::NativeScene { .. } => {
+                    paper_control::SourceKind::WallpaperEngine
+                }
+                _ => paper_control::SourceKind::Video,
+            },
+        );
         command
     }
 

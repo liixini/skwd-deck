@@ -86,7 +86,7 @@ fn spawn_restore(ctx: &Ctx) {
         }
         if restore_backdrop
             && let Err(error) =
-                crate::infrastructure::overview_backdrop::refresh_from_disk(&restore_state.config())
+                crate::infrastructure::overview_backdrop::refresh_from_disk(&restore_state)
         {
             log::warn!("overview-backdrop: {error}");
         }

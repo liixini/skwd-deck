@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{
-    Mutex,
+    Arc, Mutex, Weak,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -12,7 +12,10 @@ use skwd_wall_core::infrastructure::paper::{
 };
 
 const NAMESPACE: &str = "skwd-paper-backdrop";
+static RETRY_SURFACE: AtomicBool = AtomicBool::new(false);
 static OPEN: AtomicBool = AtomicBool::new(false);
+static STATIONARY: Mutex<Option<Weak<skwd_wall_core::state::WallState>>> = Mutex::new(None);
+static STATIONARY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static BACKDROP: Mutex<Backdrop> = Mutex::new(Backdrop { client: None, paused: None });
 
 struct Backdrop {
@@ -124,7 +127,27 @@ fn pause(backdrop: &mut Backdrop) -> Result<()> {
 }
 
 pub fn set_overview(open: Option<bool>) {
-    OPEN.store(open == Some(true), Ordering::Release);
+    let changed = OPEN.swap(open == Some(true), Ordering::AcqRel) != (open == Some(true));
+    skwd_wall_core::infrastructure::paper::set_stationary_overview(open == Some(true));
+    let state = STATIONARY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(Weak::upgrade);
+    if (changed || RETRY_SURFACE.swap(false, Ordering::AcqRel))
+        && let Some(state) = state
+    {
+        let _apply = state.apply().lock();
+        let config = state.config().clone();
+        if skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config)
+            && let Err(error) = state.renderers().set_surface(|kind| {
+                skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
+            })
+        {
+            RETRY_SURFACE.store(true, Ordering::Release);
+            log::warn!("overview-wallpaper: {error}");
+        }
+    }
     let mut backdrop = BACKDROP.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Err(error) = pause(&mut backdrop) {
         log::warn!("overview-backdrop: {error}");
@@ -170,10 +193,35 @@ fn stop_legacy() {
     }
 }
 
-pub fn refresh_from_disk(config: &Config) -> Result<()> {
+pub fn refresh_from_disk(state: &Arc<skwd_wall_core::state::WallState>) -> Result<()> {
+    let _apply = state.apply().lock();
+    let config = state.config().clone();
+    *STATIONARY.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some(Arc::downgrade(state));
+    let active = skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config);
+    if active != STATIONARY_ACTIVE.load(Ordering::Acquire) {
+        let tinier = !active && skwd_wall_core::infrastructure::paper::restore_tinier(state)?;
+        if !tinier {
+            skwd_wall_core::apply::refresh_renderer_policy_locked(state)?;
+        }
+        let socket = skwd_wall_core::infrastructure::paper::paper_socket_path();
+        if !tinier && socket.exists() {
+            PaperClient::configured(&config).stop(Vec::new())?;
+        }
+        STATIONARY_ACTIVE.store(active, Ordering::Release);
+    }
+    if active {
+        state.renderers().set_surface(|kind| {
+            skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
+        })?;
+    }
+    refresh_backdrop(&config)
+}
+
+fn refresh_backdrop(config: &Config) -> Result<()> {
     let mut backdrop = BACKDROP.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let client = client(config);
-    if !is_niri() || !config.niri_overview_backdrop() {
+    if !is_niri() || !config.niri_overview_backdrop() || config.niri_stationary_wallpaper() {
         stop_legacy();
         let socket = skwd_wall_core::infrastructure::paper::paper_socket_path()
             .with_file_name("overview-backdrop.sock");
@@ -195,11 +243,7 @@ pub fn refresh_from_disk(config: &Config) -> Result<()> {
     policy.transitions_enabled = Some(false);
     policy.surface = Some(Box::new(SurfacePolicy {
         namespace: NAMESPACE.into(),
-        blur: if config.niri_backdrop_blur_enabled() {
-            config.niri_backdrop_blur().clamp(0.0, 100.0) as u32
-        } else {
-            0
-        },
+        blur: config.niri_backdrop_blur(source.kind),
         dim: config.niri_backdrop_dim().min(100),
     }));
     let mut assignment = Assignment::new(vec!["*".into()], source);
@@ -226,19 +270,31 @@ pub fn refresh_from_disk(config: &Config) -> Result<()> {
 pub fn settings(config: &Config) -> serde_json::Value {
     serde_json::json!([
         config.niri_overview_backdrop(),
+        config.niri_stationary_wallpaper(),
         config.niri_backdrop_source(),
         config.niri_backdrop_follow_wallpaper(),
-        config.niri_backdrop_blur_enabled(),
-        config.niri_backdrop_blur(),
+        config.niri_backdrop_blur(SourceKind::Static),
+        config.niri_backdrop_blur(SourceKind::Video),
+        config.niri_backdrop_blur(SourceKind::WallpaperEngine),
         config.niri_backdrop_dim(),
         config.niri_backdrop_auto_theme(),
         config.niri_backdrop_theme()
     ])
 }
 
-pub fn on_apply(config: &Config) {
-    if config.niri_backdrop_follow_wallpaper()
-        && let Err(error) = refresh_from_disk(config)
+pub fn on_apply(state: &Arc<skwd_wall_core::state::WallState>) {
+    let config = state.config().clone();
+    *STATIONARY.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some(Arc::downgrade(state));
+    if skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config) {
+        if let Err(error) = state.renderers().set_surface(|kind| {
+            skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
+        }) {
+            RETRY_SURFACE.store(true, Ordering::Release);
+            log::warn!("overview-wallpaper: {error}");
+        }
+    } else if config.niri_backdrop_follow_wallpaper()
+        && let Err(error) = refresh_backdrop(&config)
     {
         log::warn!("overview-backdrop: {error}");
     }

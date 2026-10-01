@@ -147,3 +147,38 @@ fn localized_default_and_existing_library() {
     let chosen = root.path().join("壁紙/夜の空 🌙");
     assert_eq!(wallpaper_dir(&json!({"paths":{"wallpaper":chosen}})), chosen.to_string_lossy());
 }
+
+#[test]
+fn legacy_backdrop_blur_splits_per_wallpaper_type() {
+    let mut root = json!({"niri": {
+        "overviewBackdropBlurEnabled": false,
+        "overviewBackdropBlur": 35,
+        "backdropBlurVideo": true
+    }});
+    assert!(canonicalize_backdrop_blur(&mut root));
+    assert_eq!(
+        root["niri"],
+        json!({
+            "backdropBlurStatic": false, "backdropBlurStaticRadius": 35,
+            "backdropBlurVideo": true, "backdropBlurVideoRadius": 35,
+            "backdropBlurWe": false, "backdropBlurWeRadius": 35
+        })
+    );
+    assert!(!canonicalize_backdrop_blur(&mut root));
+    let mut radius_only = json!({"niri": {"overviewBackdropBlur": 12}});
+    assert!(canonicalize_backdrop_blur(&mut radius_only));
+    assert_eq!(radius_only["niri"]["backdropBlurWeRadius"], 12);
+    for toggle in ["backdropBlurStatic", "backdropBlurVideo", "backdropBlurWe"] {
+        assert_eq!(radius_only["niri"][toggle], true);
+    }
+    let mut override_video = json!({"niri": {
+        "overviewBackdropBlur": 12,
+        "backdropBlurVideo": false
+    }});
+    assert!(canonicalize_backdrop_blur(&mut override_video));
+    assert_eq!(override_video["niri"]["backdropBlurVideo"], false);
+    assert_eq!(override_video["niri"]["backdropBlurStatic"], true);
+    assert_eq!(override_video["niri"]["backdropBlurWe"], true);
+    assert!(!canonicalize_backdrop_blur(&mut json!({})));
+    assert!(!canonicalize_backdrop_blur(&mut json!({"niri": {"backdropDim": 10}})));
+}

@@ -164,7 +164,7 @@ impl CommittedApply {
                 false,
             ),
             PostCommitStep::Overview => {
-                crate::infrastructure::overview_backdrop::on_apply(&config);
+                crate::infrastructure::overview_backdrop::on_apply(state);
             }
             PostCommitStep::LockScreen => {
                 crate::infrastructure::lock_screen::request_follow_sync(state);

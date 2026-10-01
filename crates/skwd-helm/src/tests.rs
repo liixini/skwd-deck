@@ -463,6 +463,26 @@ fn config_persist_keeps_symlink() {
 }
 
 #[test]
+fn config_persist_splits_legacy_backdrop_blur() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let config = super::config::Config::from_data_at(
+        json!({"niri": {"overviewBackdropBlurEnabled": true, "overviewBackdropBlur": 12}}),
+        path.clone(),
+    );
+    config.persist().unwrap();
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        saved["niri"],
+        json!({
+            "backdropBlurStatic": true, "backdropBlurStaticRadius": 12,
+            "backdropBlurVideo": true, "backdropBlurVideoRadius": 12,
+            "backdropBlurWe": true, "backdropBlurWeRadius": 12
+        })
+    );
+}
+
+#[test]
 fn static_apply_uses_catalog_source_path() {
     let item: wall_proto::WallpaperItem = serde_json::from_value(json!({
         "key": "static:new.png", "type": "static", "path": "/data/壁纸/new.png"

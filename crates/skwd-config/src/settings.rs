@@ -93,6 +93,31 @@ pub fn canonicalize_we_renderer(root: &mut Value) -> bool {
     true
 }
 
+pub fn canonicalize_backdrop_blur(root: &mut Value) -> bool {
+    use crate::keys::niri;
+    let leaf = |key: &'static str| key.trim_start_matches("niri.");
+    let Some(section) = root.get_mut("niri").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    let enabled = section.remove(leaf(niri::LEGACY_OVERVIEW_BACKDROP_BLUR_ENABLED));
+    let radius = section.remove(leaf(niri::LEGACY_OVERVIEW_BACKDROP_BLUR));
+    if enabled.is_none() && radius.is_none() {
+        return false;
+    }
+    let enabled = enabled.unwrap_or(Value::Bool(true));
+    for (toggle, level) in [
+        (niri::BACKDROP_BLUR_STATIC, niri::BACKDROP_BLUR_STATIC_RADIUS),
+        (niri::BACKDROP_BLUR_VIDEO, niri::BACKDROP_BLUR_VIDEO_RADIUS),
+        (niri::BACKDROP_BLUR_WE, niri::BACKDROP_BLUR_WE_RADIUS),
+    ] {
+        section.entry(leaf(toggle)).or_insert_with(|| enabled.clone());
+        if let Some(value) = &radius {
+            section.entry(leaf(level)).or_insert_with(|| value.clone());
+        }
+    }
+    true
+}
+
 pub fn unsplash_access_key(root: &Value) -> String {
     str_at(root, crate::keys::sources::UNSPLASH_ACCESS_KEY, "")
 }

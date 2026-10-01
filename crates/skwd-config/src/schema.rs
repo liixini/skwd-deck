@@ -216,6 +216,8 @@ pub mod setting {
             Setting::boolean(keys::general::CLOSE_ON_SELECTION, false);
         pub const FILTER_BAR_ALWAYS_VISIBLE: Setting<bool> =
             Setting::boolean(keys::general::FILTER_BAR_ALWAYS_VISIBLE, true);
+        pub const HOVER_SELECTS: Setting<bool> =
+            Setting::boolean(keys::general::HOVER_SELECTS, true);
         pub const MAX_FPS: Setting<f64> =
             Setting::bounded_number(keys::general::MAX_FPS, 120.0, 1.0, 1_000.0);
         pub const OPEN_FADE_FROM: Setting<f64> =
@@ -438,6 +440,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::general::APPLY_ON_PICKER_MONITOR.spec(),
     setting::general::CLOSE_ON_SELECTION.spec(),
     setting::general::FILTER_BAR_ALWAYS_VISIBLE.spec(),
+    setting::general::HOVER_SELECTS.spec(),
     setting::general::MAX_FPS.spec(),
     setting::general::OPEN_FADE_FROM.spec(),
     setting::general::RANDOM_INTERVAL.spec(),
@@ -568,7 +571,9 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::features::WALLHAVEN, true),
     SettingSpec::boolean(crate::keys::library::POLLING_FALLBACK, false),
     SettingSpec::boolean(crate::keys::wallpaper::MUTE, true),
-    SettingSpec::boolean(crate::keys::niri::OVERVIEW_BACKDROP_BLUR_ENABLED, true),
+    SettingSpec::boolean(crate::keys::niri::BACKDROP_BLUR_STATIC, true),
+    SettingSpec::boolean(crate::keys::niri::BACKDROP_BLUR_VIDEO, false),
+    SettingSpec::boolean(crate::keys::niri::BACKDROP_BLUR_WE, false),
     SettingSpec::boolean(crate::keys::niri::BACKDROP_FOLLOW_WALLPAPER, true),
     SettingSpec::boolean(crate::keys::general::RANDOM_INCLUDE_STATIC, true),
     SettingSpec::boolean(crate::keys::general::RANDOM_INCLUDE_VIDEO, true),
@@ -606,6 +611,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::workspace::ENABLED, false),
     SettingSpec::boolean(crate::keys::niri::BACKDROP_AUTO_THEME, false),
     SettingSpec::boolean(crate::keys::niri::OVERVIEW_BACKDROP, false),
+    SettingSpec::text(crate::keys::niri::OVERVIEW_MODE, "separate"),
     SettingSpec::boolean(crate::keys::selector::SANDY_OUTGOING_LIVE, true),
     SettingSpec::boolean(crate::keys::selector::SANDY_SWAP_LOOP, false),
     SettingSpec::boolean(crate::keys::paper::AWWW_INVERT_Y, false),
@@ -725,13 +731,19 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::keybind::FOLDER_NEXT, ""),
     SettingSpec::text(crate::keys::keybind::FOLDER_TOGGLE, ""),
     SettingSpec::text(crate::keys::keybind::HIDDEN_FOLDERS, ""),
+    SettingSpec::text(crate::keys::keybind::JUMP_FIRST, ""),
+    SettingSpec::text(crate::keys::keybind::JUMP_LAST, ""),
     SettingSpec::text(crate::keys::keybind::FLIP, ""),
     SettingSpec::text(crate::keys::keybind::REVEAL, ""),
     SettingSpec::text(crate::keys::keybind::HELP, ""),
+    SettingSpec::text(crate::keys::keybind::MODE_NEXT, ""),
+    SettingSpec::text(crate::keys::keybind::MODE_PREV, ""),
     SettingSpec::text(crate::keys::keybind::NAV_DOWN, ""),
     SettingSpec::text(crate::keys::keybind::NAV_LEFT, ""),
     SettingSpec::text(crate::keys::keybind::NAV_RIGHT, ""),
     SettingSpec::text(crate::keys::keybind::NAV_UP, ""),
+    SettingSpec::text(crate::keys::keybind::PAGE_BACK, ""),
+    SettingSpec::text(crate::keys::keybind::PAGE_FORWARD, ""),
     SettingSpec::text(crate::keys::keybind::PLAYLISTS, ""),
     SettingSpec::text(crate::keys::keybind::SCENE_PROPERTIES, ""),
     SettingSpec::text(crate::keys::keybind::SELECT, ""),
@@ -741,6 +753,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::keybind::TAG_MODE, ""),
     SettingSpec::text(crate::keys::keybind::THEME_PANEL, ""),
     SettingSpec::text(crate::keys::keybind::DOWNLOADS, ""),
+    SettingSpec::text(crate::keys::keybind::RANDOM_APPLY, ""),
     SettingSpec::text(crate::keys::keybind::RANDOM_ROTATE, ""),
     SettingSpec::text(crate::keys::keybind::SEARCH_MODE, ""),
     SettingSpec::text(crate::keys::keybind::SORT_NEXT, ""),
@@ -862,7 +875,9 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::number(crate::keys::sources::YOUTUBE_MAX_HEIGHT, 2160.0),
     SettingSpec::number(crate::keys::sources::YOUTUBE_MAX_MINUTES, 3.0),
     SettingSpec::number(crate::keys::transition::SAND_FPS, 0.0),
-    SettingSpec::bounded_number(crate::keys::niri::OVERVIEW_BACKDROP_BLUR, 20.0, 0.0, 200.0),
+    SettingSpec::bounded_number(crate::keys::niri::BACKDROP_BLUR_STATIC_RADIUS, 20.0, 0.0, 100.0),
+    SettingSpec::bounded_number(crate::keys::niri::BACKDROP_BLUR_VIDEO_RADIUS, 20.0, 0.0, 100.0),
+    SettingSpec::bounded_number(crate::keys::niri::BACKDROP_BLUR_WE_RADIUS, 20.0, 0.0, 100.0),
     SettingSpec::bounded_number(crate::keys::niri::BACKDROP_DIM, 0.0, 0.0, 100.0),
     SettingSpec::array(crate::keys::filter_bar::RESOLUTION_PRESETS),
     SettingSpec::array(crate::keys::integrations::LIST),

@@ -114,6 +114,10 @@ impl PaperClientAdapter {
     }
 }
 
+pub fn stationary_wallpaper(config: &Config) -> bool {
+    config.niri_stationary_active()
+}
+
 pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolicy {
     let performance_mode = config.renderer().performance_mode();
     let configured_fps = config.renderer().we_fps();
@@ -134,7 +138,13 @@ pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolic
         .collect();
     RendererPolicy {
         load_timeout_ms: Some(config.renderer().load_timeout().as_millis() as u64),
-        surface: None,
+        surface: stationary_wallpaper(config).then(|| {
+            Box::new(paper_control::SurfacePolicy {
+                namespace: "skwd-paper-stationary".into(),
+                blur: 0,
+                dim: 0,
+            })
+        }),
         idle_seconds: Some(config.renderer().idle_pause_seconds()),
         transitions_enabled: Some(config.transition().active()),
         transition_fps: Some(config.transition().fps() as u16),

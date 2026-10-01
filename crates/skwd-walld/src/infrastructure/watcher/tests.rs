@@ -500,7 +500,7 @@ fn config_effects_filter_unrelated_edits_and_track_other_effects() {
         super::ConfigEffectChanges { backdrop: false, lock_screen: false, semantic: false }
     );
     write_effects_config(json!({
-        "niri": {"overviewBackdropBlur": 37},
+        "niri": {"backdropBlurStaticRadius": 37},
         "semantic": {"enabled": false}
     }));
     state.reload_config();

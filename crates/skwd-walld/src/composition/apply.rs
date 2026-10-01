@@ -35,29 +35,12 @@ pub(crate) struct TransitionOverride {
     pub(crate) duration_ms: Option<u64>,
 }
 
-struct RendererApplyWindow<'a> {
-    renderers: &'a skwd_wall_core::infrastructure::renderers::RendererSupervisor,
-}
-
 struct ApplyPolicyWindow<'a> {
     state: &'a WallState,
 }
 
 fn theme_delay() -> std::time::Duration {
     std::time::Duration::ZERO
-}
-
-impl<'a> RendererApplyWindow<'a> {
-    fn new(renderers: &'a skwd_wall_core::infrastructure::renderers::RendererSupervisor) -> Self {
-        renderers.begin_apply();
-        Self { renderers }
-    }
-}
-
-impl Drop for RendererApplyWindow<'_> {
-    fn drop(&mut self) {
-        self.renderers.end_apply();
-    }
 }
 
 impl<'a> ApplyPolicyWindow<'a> {
@@ -397,7 +380,7 @@ fn apply_core_locked(
         return Ok(json!({"applied": applied, "noop": true}));
     }
     let library_key = applied_library_key(state, kind, path, we_id);
-    let _renderer_apply = RendererApplyWindow::new(state.renderers());
+    let _renderer_apply = state.renderers().apply_window();
     state.apply().set_render_fill(&fill);
     if pick_only && state.config().post_processing().is_empty() {
         log::warn!(

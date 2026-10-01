@@ -7,7 +7,9 @@ mod metrics;
 mod process_map;
 mod readiness;
 mod supervisor;
+mod surface;
 
+pub use commands::RendererApplyWindow;
 pub use readiness::ReadyWaiter;
 pub use supervisor::{HeldRenderer, RendererSupervisor, WeRender, kill_held_renderer};
 #[cfg(test)]

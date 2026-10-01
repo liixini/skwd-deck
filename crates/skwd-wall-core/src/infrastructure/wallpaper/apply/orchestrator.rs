@@ -27,7 +27,7 @@ pub use super::policy::{
     paper_policy_matches, renderer_policy_matches, scene_properties_signature,
 };
 pub use super::reconcile::apply_independent_video;
-pub use super::refresh::refresh_renderer_policy;
+pub use super::refresh::{refresh_renderer_policy, refresh_renderer_policy_locked};
 pub use super::resolver::{resolve_current_image, resolve_current_video, resolve_we_from_state};
 pub use super::static_media::{apply_static_smart, apply_static_transition};
 pub use super::video_media::{apply_video, apply_video_transition};

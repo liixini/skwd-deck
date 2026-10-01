@@ -65,6 +65,12 @@ impl PaperClient {
         Ok(())
     }
 
+    pub fn set_surface(&self, surface: paper_control::SurfacePolicy) -> Result<()> {
+        surface.validate()?;
+        self.exchange::<paper_control::SurfacePolicy>(RequestParams::SurfaceSet(surface))?;
+        Ok(())
+    }
+
     pub fn status(&self) -> Result<StatusResult> {
         self.exchange(RequestParams::Status(StatusRequest {}))
     }

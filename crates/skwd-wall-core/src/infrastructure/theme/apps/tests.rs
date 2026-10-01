@@ -111,6 +111,30 @@ fn rejects_symlinks_conflicts_and_invalid_palettes_without_writing() {
 }
 
 #[test]
+fn symlinked_home_is_writable_but_symlinks_inside_it_are_not() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("var/home/user/.config/kitty")).unwrap();
+    std::os::unix::fs::symlink("var/home", root.path().join("home")).unwrap();
+    let home = root.path().join("home/user");
+    let kdeglobals = home.join(".config/kdeglobals");
+    files::writable_under(&home, &kdeglobals).unwrap();
+    files::writable_under(&home, &home.join(".config/kitty/kitty.conf")).unwrap();
+    assert!(files::writable_under(&root.path().join("elsewhere"), &kdeglobals).is_err());
+
+    std::fs::create_dir_all(root.path().join("dotfiles/foot")).unwrap();
+    std::os::unix::fs::symlink(root.path().join("dotfiles/foot"), home.join(".config/foot"))
+        .unwrap();
+    assert!(files::writable_under(&home, &home.join(".config/foot/foot.ini")).is_err());
+    std::fs::write(root.path().join("dotfiles/kitty.conf"), "").unwrap();
+    std::os::unix::fs::symlink(
+        root.path().join("dotfiles/kitty.conf"),
+        home.join(".config/kitty/kitty.conf"),
+    )
+    .unwrap();
+    assert!(files::writable_under(&home, &home.join(".config/kitty/kitty.conf")).is_err());
+}
+
+#[test]
 fn changed_theme_selection_is_not_overwritten_when_disabling() {
     let (_root, env, config) = fixture();
     files::write(&env.config.join("btop/btop.conf"), "color_theme = \"Default\"\n").unwrap();

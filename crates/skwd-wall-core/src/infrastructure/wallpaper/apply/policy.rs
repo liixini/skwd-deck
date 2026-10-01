@@ -18,6 +18,7 @@ pub(super) struct PaperPolicy {
     pub(super) renderer_identity: String,
     pub(super) video_engine: String,
     pub(super) layer: String,
+    pub(super) stationary: bool,
     pub(super) multi_process: bool,
     pub(super) independent_playback: bool,
     pub(super) fill_mode: String,
@@ -35,7 +36,8 @@ pub(super) struct PaperPolicy {
 impl PaperPolicy {
     pub(super) fn signature(&self) -> String {
         serde_json::json!([
-            "v6",
+            "v7",
+            self.stationary,
             self.load_timeout_ms,
             self.gpu_device,
             self.performance_mode,
@@ -98,6 +100,7 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         renderer_identity,
         video_engine: config.renderer().video_engine(),
         layer: config.renderer().wallpaper_layer(),
+        stationary: crate::infrastructure::paper::stationary_wallpaper(&config),
         multi_process: config.renderer().video_multi_process(),
         independent_playback: independent_playback(state),
         fill_mode: config.display().fill_mode(),

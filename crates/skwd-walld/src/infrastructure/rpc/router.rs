@@ -196,8 +196,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         }
         rpc::WALL_REFRESH_OVERVIEW_BACKDROP => {
             state.reload_config();
-            let cfg = state.config().clone();
-            match overview_backdrop::refresh_from_disk(&cfg) {
+            match overview_backdrop::refresh_from_disk(state) {
                 Ok(()) => Response::ok(req.id, json!({"ok": true})),
                 Err(error) => fail(stats, req.id, error),
             }

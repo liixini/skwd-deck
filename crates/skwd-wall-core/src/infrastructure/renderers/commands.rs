@@ -7,7 +7,22 @@ use crate::lock;
 
 use super::supervisor::{PausePolicy, RendererSupervisor, SceneFreezeHandle};
 
+pub struct RendererApplyWindow<'a> {
+    renderers: &'a RendererSupervisor,
+}
+
+impl Drop for RendererApplyWindow<'_> {
+    fn drop(&mut self) {
+        self.renderers.end_apply();
+    }
+}
+
 impl RendererSupervisor {
+    pub fn apply_window(&self) -> RendererApplyWindow<'_> {
+        self.begin_apply();
+        RendererApplyWindow { renderers: self }
+    }
+
     pub(super) fn write_pause(stdin: &mut std::process::ChildStdin, paused: bool) {
         let line = PaperCommand::pause(paused).line();
         let _ = stdin.write_all(line.as_bytes());

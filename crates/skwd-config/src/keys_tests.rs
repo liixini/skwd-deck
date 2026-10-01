@@ -37,6 +37,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::filter_bar::STICKY, "filterBar.sticky");
     assert_eq!(keys::filter_bar::VISUAL_STYLE, "filterBar.visualStyle");
     assert_eq!(keys::general::CLOSE_ON_SELECTION, "general.closeOnSelection");
+    assert_eq!(keys::general::HOVER_SELECTS, "general.hoverSelects");
     assert_eq!(keys::general::FILTER_BAR_ALWAYS_VISIBLE, "general.filterBarAlwaysVisible");
     assert_eq!(keys::general::LOCALE, "general.locale");
     assert_eq!(keys::general::MAX_FPS, "general.maxFps");
@@ -60,12 +61,21 @@ fn wire_strings_pinned() {
     assert_eq!(keys::matugen::SCHEME_TYPE, "matugen.schemeType");
     assert_eq!(keys::niri::BACKDROP, "niri.backdrop");
     assert_eq!(keys::niri::BACKDROP_AUTO_THEME, "niri.backdropAutoTheme");
+    assert_eq!(keys::niri::BACKDROP_BLUR_STATIC, "niri.backdropBlurStatic");
+    assert_eq!(keys::niri::BACKDROP_BLUR_STATIC_RADIUS, "niri.backdropBlurStaticRadius");
+    assert_eq!(keys::niri::BACKDROP_BLUR_VIDEO, "niri.backdropBlurVideo");
+    assert_eq!(keys::niri::BACKDROP_BLUR_VIDEO_RADIUS, "niri.backdropBlurVideoRadius");
+    assert_eq!(keys::niri::BACKDROP_BLUR_WE, "niri.backdropBlurWe");
+    assert_eq!(keys::niri::BACKDROP_BLUR_WE_RADIUS, "niri.backdropBlurWeRadius");
     assert_eq!(keys::niri::BACKDROP_DIM, "niri.backdropDim");
     assert_eq!(keys::niri::BACKDROP_FOLLOW_WALLPAPER, "niri.backdropFollowWallpaper");
     assert_eq!(keys::niri::BACKDROP_THEME, "niri.backdropTheme");
     assert_eq!(keys::niri::OVERVIEW_BACKDROP, "niri.overviewBackdrop");
-    assert_eq!(keys::niri::OVERVIEW_BACKDROP_BLUR, "niri.overviewBackdropBlur");
-    assert_eq!(keys::niri::OVERVIEW_BACKDROP_BLUR_ENABLED, "niri.overviewBackdropBlurEnabled");
+    assert_eq!(keys::niri::LEGACY_OVERVIEW_BACKDROP_BLUR, "niri.overviewBackdropBlur");
+    assert_eq!(
+        keys::niri::LEGACY_OVERVIEW_BACKDROP_BLUR_ENABLED,
+        "niri.overviewBackdropBlurEnabled"
+    );
     assert_eq!(keys::noctalia::HOVER_PREVIEW, "noctalia.hoverPreview");
     assert_eq!(keys::paper::AWWW_INVERT_Y, "paper.awww.invertY");
     assert_eq!(keys::paper::AWWW_TRANSITION_ANGLE, "paper.awww.transitionAngle");
@@ -489,10 +499,16 @@ fn wire_strings_pinned() {
     assert_eq!(keys::keybind::FLIP, "keys.flip");
     assert_eq!(keys::keybind::REVEAL, "keys.reveal");
     assert_eq!(keys::keybind::HELP, "keys.help");
+    assert_eq!(keys::keybind::MODE_NEXT, "keys.modeNext");
+    assert_eq!(keys::keybind::MODE_PREV, "keys.modePrev");
     assert_eq!(keys::keybind::NAV_DOWN, "keys.navDown");
     assert_eq!(keys::keybind::NAV_LEFT, "keys.navLeft");
     assert_eq!(keys::keybind::NAV_RIGHT, "keys.navRight");
     assert_eq!(keys::keybind::NAV_UP, "keys.navUp");
+    assert_eq!(keys::keybind::PAGE_BACK, "keys.pageBack");
+    assert_eq!(keys::keybind::PAGE_FORWARD, "keys.pageForward");
+    assert_eq!(keys::keybind::JUMP_FIRST, "keys.jumpFirst");
+    assert_eq!(keys::keybind::JUMP_LAST, "keys.jumpLast");
     assert_eq!(keys::keybind::PLAYLISTS, "keys.playlists");
     assert_eq!(keys::keybind::SCENE_PROPERTIES, "keys.sceneProperties");
     assert_eq!(keys::keybind::SELECT, "keys.select");
@@ -502,6 +518,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::keybind::TAG_MODE, "keys.tagMode");
     assert_eq!(keys::keybind::THEME_PANEL, "keys.themePanel");
     assert_eq!(keys::keybind::DOWNLOADS, "keys.downloads");
+    assert_eq!(keys::keybind::RANDOM_APPLY, "keys.randomApply");
     assert_eq!(keys::keybind::RANDOM_ROTATE, "keys.randomRotate");
     assert_eq!(keys::keybind::SEARCH_MODE, "keys.searchMode");
     assert_eq!(keys::keybind::SORT_NEXT, "keys.sortNext");

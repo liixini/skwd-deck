@@ -67,6 +67,7 @@ pub mod keys {
         pub const APPLY_ON_PICKER_MONITOR: &str = "general.applyOnPickerMonitor";
         pub const CLOSE_ON_SELECTION: &str = "general.closeOnSelection";
         pub const FILTER_BAR_ALWAYS_VISIBLE: &str = "general.filterBarAlwaysVisible";
+        pub const HOVER_SELECTS: &str = "general.hoverSelects";
         pub const LOCALE: &str = "general.locale";
         pub const LANGUAGE: &str = "general.language";
         pub const MAX_FPS: &str = "general.maxFps";
@@ -123,12 +124,19 @@ pub mod keys {
         pub const OVERVIEW_ONLY_PLAYBACK: &str = "niri.overviewOnlyPlayback";
         pub const BACKDROP: &str = "niri.backdrop";
         pub const BACKDROP_AUTO_THEME: &str = "niri.backdropAutoTheme";
+        pub const BACKDROP_BLUR_STATIC: &str = "niri.backdropBlurStatic";
+        pub const BACKDROP_BLUR_STATIC_RADIUS: &str = "niri.backdropBlurStaticRadius";
+        pub const BACKDROP_BLUR_VIDEO: &str = "niri.backdropBlurVideo";
+        pub const BACKDROP_BLUR_VIDEO_RADIUS: &str = "niri.backdropBlurVideoRadius";
+        pub const BACKDROP_BLUR_WE: &str = "niri.backdropBlurWe";
+        pub const BACKDROP_BLUR_WE_RADIUS: &str = "niri.backdropBlurWeRadius";
         pub const BACKDROP_DIM: &str = "niri.backdropDim";
         pub const BACKDROP_FOLLOW_WALLPAPER: &str = "niri.backdropFollowWallpaper";
         pub const BACKDROP_THEME: &str = "niri.backdropTheme";
+        pub const OVERVIEW_MODE: &str = "niri.overviewMode";
         pub const OVERVIEW_BACKDROP: &str = "niri.overviewBackdrop";
-        pub const OVERVIEW_BACKDROP_BLUR: &str = "niri.overviewBackdropBlur";
-        pub const OVERVIEW_BACKDROP_BLUR_ENABLED: &str = "niri.overviewBackdropBlurEnabled";
+        pub const LEGACY_OVERVIEW_BACKDROP_BLUR: &str = "niri.overviewBackdropBlur";
+        pub const LEGACY_OVERVIEW_BACKDROP_BLUR_ENABLED: &str = "niri.overviewBackdropBlurEnabled";
     }
     pub mod noctalia {
         pub const HOVER_PREVIEW: &str = "noctalia.hoverPreview";
@@ -562,9 +570,13 @@ pub mod keys {
         pub const FOLDER_NEXT: &str = "keys.folderNext";
         pub const FOLDER_TOGGLE: &str = "keys.folderToggle";
         pub const HIDDEN_FOLDERS: &str = "keys.hiddenFolders";
+        pub const JUMP_FIRST: &str = "keys.jumpFirst";
+        pub const JUMP_LAST: &str = "keys.jumpLast";
         pub const FLIP: &str = "keys.flip";
         pub const REVEAL: &str = "keys.reveal";
         pub const HELP: &str = "keys.help";
+        pub const MODE_NEXT: &str = "keys.modeNext";
+        pub const MODE_PREV: &str = "keys.modePrev";
         pub const SCENE_PROPERTIES: &str = "keys.sceneProperties";
         pub const SELECT: &str = "keys.select";
         pub const STUDIO: &str = "keys.studio";
@@ -572,12 +584,15 @@ pub mod keys {
         pub const NAV_LEFT: &str = "keys.navLeft";
         pub const NAV_RIGHT: &str = "keys.navRight";
         pub const NAV_UP: &str = "keys.navUp";
+        pub const PAGE_BACK: &str = "keys.pageBack";
+        pub const PAGE_FORWARD: &str = "keys.pageForward";
         pub const PLAYLISTS: &str = "keys.playlists";
         pub const SETTINGS: &str = "keys.settings";
         pub const TAG_CLOUD: &str = "keys.tagCloud";
         pub const TAG_MODE: &str = "keys.tagMode";
         pub const THEME_PANEL: &str = "keys.themePanel";
         pub const DOWNLOADS: &str = "keys.downloads";
+        pub const RANDOM_APPLY: &str = "keys.randomApply";
         pub const RANDOM_ROTATE: &str = "keys.randomRotate";
         pub const SEARCH_MODE: &str = "keys.searchMode";
         pub const SORT_NEXT: &str = "keys.sortNext";

@@ -606,12 +606,15 @@ fn apply_window_releases_pause() {
     let (old_child, old_stdin) = capture_child(&old_output);
     st.set_video_paper("DP-1", old_child, old_stdin);
     st.set_session_paused(11, true);
-    st.begin_apply();
-    st.begin_apply();
-    let (new_child, new_stdin) = capture_child(&new_output);
-    st.set_video_paper("DP-2", new_child, new_stdin);
-    st.end_apply();
-    st.end_apply();
+    let outer = st.apply_window();
+    let register_then_fail = || -> Result<(), ()> {
+        let _inner = st.apply_window();
+        let (new_child, new_stdin) = capture_child(&new_output);
+        st.set_video_paper("DP-2", new_child, new_stdin);
+        Err(())
+    };
+    assert!(register_then_fail().is_err());
+    drop(outer);
     st.set_session_paused(11, false);
     for (mut child, stdin) in st.take_all_video_papers() {
         drop(stdin);
@@ -840,4 +843,46 @@ fn rejection_does_not_delay_next_selection() {
     registry.signal(7);
     assert!(registry.wait_result(7, Duration::from_secs(10)).is_ok());
     assert!(start.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn surface_effects_reach_healthy_outputs_after_a_broken_pipe() {
+    let dir = tempfile::tempdir().unwrap();
+    let st = state();
+    let (child, stdin) = exited_child();
+    st.set_paper_stdin(stdin);
+    st.swap_paper(child);
+    let video = dir.path().join("video");
+    let scene = dir.path().join("scene");
+    let still = dir.path().join("still");
+    let (child, stdin) = capture_child(&video);
+    st.set_video_paper("DP-1", child, stdin);
+    let (child, stdin) = capture_child(&scene);
+    st.set_video_paper("DP-3", child, stdin);
+    st.mark_scene_paper("DP-3", true);
+    let (child, stdin) = capture_child(&still);
+    st.set_output_still("DP-2", child, stdin);
+    let surface = |kind| paper_control::SurfacePolicy {
+        namespace: "skwd-paper-stationary".into(),
+        blur: match kind {
+            paper_control::SourceKind::Static => 11,
+            paper_control::SourceKind::Video => 22,
+            paper_control::SourceKind::WallpaperEngine => 33,
+        },
+        dim: 10,
+    };
+    assert!(st.set_surface(surface).is_err());
+    for (mut child, stdin) in st.take_all_video_papers() {
+        drop(stdin);
+        child.wait().unwrap();
+    }
+    for (mut child, stdin) in st.take_all_output_stills() {
+        drop(stdin);
+        child.wait().unwrap();
+    }
+    assert_eq!(json_lines(&video)[0]["surface"]["blur"], 22);
+    assert_eq!(json_lines(&scene)[0]["surface"]["blur"], 33);
+    assert_eq!(json_lines(&still)[0]["surface"]["blur"], 11);
+    drop(st.take_paper_stdin());
+    drop(st.take_paper());
 }
