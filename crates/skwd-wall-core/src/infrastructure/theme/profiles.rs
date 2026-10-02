@@ -86,18 +86,7 @@ pub fn remember_applied(state: &WallState, source: &str) -> anyhow::Result<()> {
     let mut result = identity(state, source);
     let bytes = std::fs::read(std::path::Path::new(&config.cache_dir()).join("colors.json"))?;
     let mut palette: Value = serde_json::from_slice(&bytes)?;
-    for (key, alias) in [
-        ("primaryText", "on_primary"),
-        ("surfaceText", "on_surface"),
-        ("surfaceVariant", "surface_variant"),
-        ("surfaceContainer", "surface_container"),
-    ] {
-        if palette.get(key).is_none()
-            && let Some(value) = palette.get(alias).cloned()
-        {
-            palette[key] = value;
-        }
-    }
+    super::alias_ui_keys(&mut palette);
     anyhow::ensure!(valid_palette(&palette), "the applied palette is incomplete");
     result["palette"] = palette;
     if let Ok(bytes) = std::fs::read(super::scheme_path(&config))

@@ -31,6 +31,31 @@ fn swatch_missing_keys() {
 }
 
 #[test]
+fn swatch_accepts_backend_snake_case() {
+    let palette = json!({
+        "primary": "#111111",
+        "tertiary": "#222222",
+        "surface_variant": "#333333",
+        "surface_container": "#444444",
+        "surface": "#555555",
+        "outline": "#666666",
+    });
+    assert_eq!(
+        swatch_from_palette(&palette),
+        ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"]
+    );
+
+    let mut palette = json!({
+        "on_primary": "#aaaaaa", "on_surface": "#bbbbbb", "surface_variant": "#333333"
+    });
+    alias_ui_keys(&mut palette);
+    assert_eq!(palette["primaryText"], "#aaaaaa");
+    assert_eq!(palette["surfaceText"], "#bbbbbb");
+    assert_eq!(palette["surfaceVariant"], "#333333");
+    assert_eq!(palette["surface_variant"], "#333333");
+}
+
+#[test]
 fn backend_defaults_ignore_matugen() {
     let default = Config::from_root(json!({}));
     assert_eq!(default.theme().backend(), "skwd-iris");

@@ -147,6 +147,34 @@ fn sanitize_skips_preview() {
     );
 }
 
+#[test]
+fn preview_scheme_prefers_the_configured_override() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("noctalia");
+    std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' 'custom skwd-wall'\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let paths = || serde_json::json!({ "cache": dir.path(), "noctaliaBin": &script });
+
+    let configured = Config::from_root(
+        serde_json::json!({ "paths": paths(), "theme": { "noctaliaScheme": "muted" } }),
+    );
+    // The configured scheme wins over the live shell state and over a stored original.
+    assert_eq!(preview_scheme(&configured, None), "muted");
+    let stored = ("custom".to_string(), "skwd-wall".to_string());
+    assert_eq!(preview_scheme(&configured, Some(&stored)), "muted");
+
+    // Without an override the shell decides, and `custom skwd-wall` is not the
+    // `wallpaper <name>` shape parse_scheme understands, so it falls back.
+    let plain = Config::from_root(serde_json::json!({ "paths": paths(), "theme": {} }));
+    assert_eq!(preview_scheme(&plain, None), FALLBACK_SCHEME);
+    assert_eq!(
+        preview_scheme(&plain, Some(&("wallpaper".to_string(), "nord".to_string()))),
+        "nord"
+    );
+}
+
 fn marker_config(dir: &std::path::Path) -> Config {
     Config::from_root(serde_json::json!({
         "paths": { "cache": dir.to_string_lossy() },

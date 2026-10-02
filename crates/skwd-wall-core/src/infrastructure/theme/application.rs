@@ -196,10 +196,50 @@ pub fn picker_palette_json(cols: &[String]) -> Option<serde_json::Value> {
 pub const SWATCH_KEYS: [&str; 6] =
     ["primary", "tertiary", "surfaceVariant", "surfaceContainer", "surface", "outline"];
 
+/// camelCase UI palette keys that external backends print in snake_case.
+/// Same mapping `remember_applied` and `decode_palette` already accept.
+const UI_KEY_ALIASES: [(&str, &str); 4] = [
+    ("primaryText", "on_primary"),
+    ("surfaceText", "on_surface"),
+    ("surfaceVariant", "surface_variant"),
+    ("surfaceContainer", "surface_container"),
+];
+
+fn snake_alias(key: &str) -> Option<&'static str> {
+    UI_KEY_ALIASES.iter().find(|(camel, _)| *camel == key).map(|(_, snake)| *snake)
+}
+
+/// Add the camelCase spellings a backend only printed in snake_case, keeping
+/// the originals, so every preview consumer reads the keys the applied palette
+/// uses.
+pub(super) fn alias_ui_keys(palette: &mut serde_json::Value) {
+    for (key, alias) in UI_KEY_ALIASES {
+        if palette.get(key).is_none()
+            && let Some(value) = palette.get(alias).cloned()
+        {
+            palette[key] = value;
+        }
+    }
+}
+
+/// Frontier for backends whose CLI prints snake_case roles: alias the UI keys
+/// once, before anything downstream reads the palette.
+fn aliased_preview(palette: Option<serde_json::Value>) -> Option<serde_json::Value> {
+    palette.map(|mut palette| {
+        alias_ui_keys(&mut palette);
+        palette
+    })
+}
+
 pub fn swatch_from_palette(val: &serde_json::Value) -> Vec<String> {
     SWATCH_KEYS
         .iter()
-        .filter_map(|key| val.get(*key).and_then(serde_json::Value::as_str).map(String::from))
+        .filter_map(|key| {
+            val.get(*key)
+                .or_else(|| snake_alias(key).and_then(|alias| val.get(alias)))
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
+        })
         .collect()
 }
 
@@ -619,8 +659,10 @@ pub fn preview_palette(config: &Config, image: &str) -> Option<serde_json::Value
     match resolve_backend(config).as_str() {
         "static" => return static_palette_value(config, dark),
         "off" => return None,
-        "noctalia" => return crate::noctalia::preview_palette(config, image, dark),
-        "dms" => return crate::dms::preview_palette(config, image, dark),
+        "noctalia" => {
+            return aliased_preview(crate::noctalia::preview_palette(config, image, dark));
+        }
+        "dms" => return aliased_preview(crate::dms::preview_palette(config, image, dark)),
         _ => {}
     }
     if let Some((palette, _)) = direct_palette(config, image, dark) {
