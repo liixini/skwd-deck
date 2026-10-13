@@ -26,6 +26,7 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
         Arc::clone(&ctx.tasks),
     );
     ensure_media_dirs(&state.config());
+    crate::infrastructure::steam_subscriptions::reconcile(state, ctx.events.as_ref());
     crate::infrastructure::templates_seed::seed(&state.config().theme().templates_dir());
     ctx.stats.set_task("scanning");
     ctx.tasks.update(wall_proto::TaskStatus::running("scan", "scan", "Scanning wallpapers"));
@@ -53,9 +54,11 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
     crate::composition::runtime::rotation::start_rotation(ctx.clone());
     crate::composition::runtime::schedule::start_scheduler(ctx.clone());
     crate::composition::runtime::playlist::start(ctx.clone());
+    crate::composition::runtime::weather::start(ctx.clone());
     crate::infrastructure::workspaces::start(ctx.clone());
     crate::infrastructure::vitals::start(ctx.clone());
     crate::infrastructure::hotplug::start_output_watch(ctx.clone());
+    crate::infrastructure::activities::start(ctx.clone());
 
     if debug {
         spawn_heartbeat(ctx);
@@ -65,32 +68,21 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
 }
 
 fn spawn_restore(ctx: &Ctx) {
-    let Ctx { state, wallpaper, history, events, stats, .. } = ctx;
-    let restore_state = Arc::clone(state);
-    let application = Arc::clone(wallpaper);
-    let history = Arc::clone(history);
-    let events = Arc::clone(events);
-    let restore_stats = Arc::clone(stats);
-    let restore_wallpaper = state.config().restore_on_startup();
-    let restore_backdrop = state.config().niri_overview_backdrop();
-    thread::spawn(move || {
-        if restore_wallpaper {
-            crate::infrastructure::hotplug::restore_last(
-                &restore_state,
-                application.as_ref(),
-                history.as_ref(),
-                events.as_ref(),
-                &restore_stats,
-                ApplySource::Restore,
-            );
-        }
-        if restore_backdrop
-            && let Err(error) =
-                crate::infrastructure::overview_backdrop::refresh_from_disk(&restore_state)
-        {
-            log::warn!("overview-backdrop: {error}");
-        }
-    });
+    if ctx.state.config().restore_on_startup() {
+        let ctx = ctx.clone();
+        thread::spawn(move || {
+            crate::infrastructure::hotplug::restore_last(&ctx, ApplySource::Restore);
+        });
+    }
+    if ctx.state.config().niri_overview_backdrop() {
+        let state = Arc::clone(&ctx.state);
+        thread::spawn(move || {
+            if let Err(error) = crate::infrastructure::overview_backdrop::refresh_from_disk(&state)
+            {
+                log::warn!("overview-backdrop: {error}");
+            }
+        });
+    }
 }
 
 fn spawn_heartbeat(ctx: &Ctx) {
@@ -138,7 +130,7 @@ pub(crate) fn vram_mb(renderers: &dyn RendererSupervision) -> u64 {
 }
 
 fn ensure_media_dirs(config: &skwd_wall_core::config::Config) {
-    for directory in [config.wallpaper_dir(), config.video_dir()] {
+    for directory in config.library_folders() {
         if directory.is_empty() || std::path::Path::new(&directory).is_dir() {
             continue;
         }

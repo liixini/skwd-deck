@@ -17,7 +17,7 @@ fn declared() -> Vec<(String, String)> {
 #[test]
 fn all_lists_declared_methods() {
     let declared = declared();
-    assert_eq!(declared.len(), 89, "declared method count changed");
+    assert_eq!(declared.len(), 101, "declared method count changed");
     assert_eq!(rpc::ALL.len(), declared.len());
     for (name, value) in &declared {
         assert!(rpc::ALL.contains(&value.as_str()), "{name} ({value})");
@@ -51,6 +51,7 @@ fn pinned_wire_strings() {
     assert_eq!(rpc::THEME_APP_CUSTOMIZE, "theme.app.customize");
     assert_eq!(rpc::WALL_APPLY, "wall.apply");
     assert_eq!(rpc::WALL_LIST, "wall.list");
+    assert_eq!(rpc::WALL_MIRROR, "wall.mirror");
     assert_eq!(rpc::PAPER_READY, "paper.ready");
     assert_eq!(rpc::STATUS, "status");
     assert_eq!(rpc::SUBSCRIBE, "subscribe");

@@ -44,6 +44,27 @@ fn fill_mode_per_output() {
 }
 
 #[test]
+fn covered_backgrounds_share() {
+    for mode in ["fill", "stretch", "span", "tile"] {
+        let config = Config::from_root(json!({"display": {
+            "fillMode": "fit",
+            "fillModes": {"DP-1": mode},
+            "backgroundModes": {"DP-1": "blur"}
+        }}));
+        assert!(!config.display().background_differs_for("DP-1"));
+        assert!(config.display().background_for("DP-1").blur);
+    }
+    for mode in ["fit", "center"] {
+        let config = Config::from_root(json!({"display": {
+            "fillMode": "fill",
+            "fillModes": {"DP-1": mode},
+            "backgroundModes": {"DP-1": "blur"}
+        }}));
+        assert!(config.display().background_differs_for("DP-1"));
+    }
+}
+
+#[test]
 fn output_locks_default_off() {
     let defaults = Config::from_root(json!({}));
     assert!(!defaults.display().output_locked("DP-1"));
@@ -168,7 +189,10 @@ fn feature_facades_preserve_legacy_aliases_and_serialized_root() {
     assert!(config.display().output_locked("DP-2"));
     assert_eq!(config.renderer().engine(), "awww");
     assert_eq!(config.renderer().video_engine(), "tinier");
-    assert_eq!(config.renderer().we_scene_fill_mode(), "center");
+    assert_eq!(
+        config.renderer().we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS),
+        "center"
+    );
     assert_eq!(config.renderer().we_fps(), 48);
     assert!(!config.renderer().mute());
     assert_eq!(config.renderer().volume(), 35);
@@ -347,6 +371,26 @@ fn transition_getters() {
 }
 
 #[test]
+fn outdoors_apply_settings() {
+    let defaults = Config::from_root(json!({}));
+    assert_eq!(defaults.outdoors_transition_shader(), "crossfade");
+    assert!(!defaults.outdoors_retheme());
+    let selected = Config::from_root(json!({
+        "transition":{"shader":"inkwell-drop"},
+        "theme":{"policy":"off"},
+        "weather":{"outdoors":{"transitionShader":"random","retheme":true}}
+    }));
+    assert_eq!(selected.outdoors_transition_shader(), "random");
+    assert!(selected.outdoors_retheme());
+    assert_eq!(selected.transition().shader(), "inkwell-drop");
+    assert_eq!(selected.theme().policy(), "off");
+    let invalid = Config::from_root(json!({
+        "weather":{"outdoors":{"transitionShader":"missing"}}
+    }));
+    assert_eq!(invalid.outdoors_transition_shader(), "crossfade");
+}
+
+#[test]
 fn awww_arg_coercion() {
     let defaults = Config::from_root(json!({}));
     assert_eq!(defaults.renderer().awww_filter(), "Lanczos3");
@@ -403,7 +447,10 @@ fn matugen_getters() {
 fn we_render_getters() {
     let defaults = Config::from_root(json!({}));
     assert_eq!(defaults.renderer().we_scaling(), "default");
-    assert_eq!(defaults.renderer().we_scene_fill_mode(), "fill");
+    assert_eq!(
+        defaults.renderer().we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS),
+        "fill"
+    );
     assert_eq!(defaults.renderer().we_fps(), 30);
     assert!(!defaults.renderer().we_disable_particles());
     let cfg = Config::from_root(json!({
@@ -411,7 +458,8 @@ fn we_render_getters() {
         "weRender": {"scaling": "center", "fps": 30, "disableParticles": true}
     }));
     assert_eq!(cfg.renderer().we_scaling(), "center");
-    assert_eq!(cfg.renderer().we_scene_fill_mode(), "center");
+    assert_eq!(cfg.renderer().we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS), "center");
+    assert_eq!(cfg.renderer().we_scene_fill_mode("DP-2"), "center");
     assert_eq!(cfg.renderer().we_fps(), 30);
     assert!(cfg.renderer().we_disable_particles());
     assert_eq!(
@@ -419,15 +467,21 @@ fn we_render_getters() {
             "display": {"fillMode": "fit"}, "weRender": {"scaling": "default"}
         }))
         .renderer()
-        .we_scene_fill_mode(),
+        .we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS),
         "fit"
     );
+    let per_output = Config::from_root(json!({
+        "display": {"fillMode": "fill", "fillModes": {"DP-2": "fit"}},
+        "weRender": {"scaling": "default"}
+    }));
+    assert_eq!(per_output.renderer().we_scene_fill_mode("DP-1"), "fill");
+    assert_eq!(per_output.renderer().we_scene_fill_mode("DP-2"), "fit");
     assert_eq!(
         Config::from_root(json!({
             "display": {"fillMode": "span"}, "weRender": {"scaling": "invalid"}
         }))
         .renderer()
-        .we_scene_fill_mode(),
+        .we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS),
         "span"
     );
     let float_fps = Config::from_root(json!({"weRender": {"fps": 30.0}}));
@@ -616,10 +670,10 @@ fn corrupt_config_defaults() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");
     std::fs::write(&path, "{\"transition\": {\"shader\": ").unwrap();
-    let (cfg, _) = Config::load_path_if_changed(&path, None).expect("mtime readable");
+    let cfg = Config::from_root(super::super::source::read_root(&path));
     assert_eq!(cfg.display().fill_mode(), "fill");
     assert_eq!(cfg.transition().shader(), "random");
-    assert!(Config::load_path_if_changed(&dir.path().join("absent.json"), None).is_none(),);
+    assert!(Config::load_path_if_changed(&dir.path().join("absent.json"), &[]).is_none(),);
 }
 
 #[test]
@@ -655,24 +709,22 @@ fn history_clamps() {
 }
 
 #[test]
-fn load_skips_same_mtime() {
-    let dir = std::env::temp_dir().join(format!("skwd-cfg-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("config.json");
-    std::fs::write(&path, r#"{"wallpaper":{"mute":true}}"#).unwrap();
-
-    let (cfg, mtime) = Config::load_path_if_changed(&path, None).expect("first load");
-    assert!(cfg.renderer().mute());
-
-    assert!(Config::load_path_if_changed(&path, Some(mtime)).is_none(),);
-
-    let earlier = mtime.checked_sub(std::time::Duration::from_secs(1)).unwrap();
-    let (reloaded, remtime) =
-        Config::load_path_if_changed(&path, Some(earlier)).expect("mtime mismatch must reload");
-    assert_eq!(remtime, mtime);
-    assert!(reloaded.renderer().mute());
-
-    std::fs::remove_dir_all(&dir).ok();
+fn reload_compares_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, r#"{"display":{"fillMode":"fill"}}"#).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let (config, bytes) = Config::load_path_if_changed(&path, &[]).unwrap();
+    assert_eq!(config.display().fill_mode(), "fill");
+    assert!(Config::load_path_if_changed(&path, &bytes).is_none());
+    let changed = br#"{"display":{"fillMode":"none"}}"#;
+    assert_eq!(bytes.len(), changed.len());
+    std::fs::write(&path, changed).unwrap();
+    std::fs::File::options().write(true).open(&path).unwrap().set_modified(modified).unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), modified);
+    let (reloaded, snapshot) = Config::load_path_if_changed(&path, &bytes).unwrap();
+    assert_eq!(reloaded.display().fill_mode(), "none");
+    assert_eq!(snapshot, changed);
 }
 
 #[test]
@@ -680,18 +732,13 @@ fn reload_retries_invalid_write() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");
     std::fs::write(&path, r#"{"pickOnlyMode":false}"#).unwrap();
-    let (_, original_mtime) =
-        Config::load_valid_path_if_changed(&path, None).expect("initial config");
-    let changed_mtime = original_mtime + std::time::Duration::from_secs(1);
-
+    let (_, original) = Config::load_path_if_changed(&path, &[]).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     std::fs::write(&path, "").unwrap();
-    std::fs::File::options().write(true).open(&path).unwrap().set_modified(changed_mtime).unwrap();
-    assert!(Config::load_valid_path_if_changed(&path, Some(original_mtime)).is_none());
-
+    assert!(Config::load_path_if_changed(&path, &original).is_none());
     std::fs::write(&path, r#"{"pickOnlyMode":true}"#).unwrap();
-    std::fs::File::options().write(true).open(&path).unwrap().set_modified(changed_mtime).unwrap();
-    let (reloaded, _) =
-        Config::load_valid_path_if_changed(&path, Some(original_mtime)).expect("valid rewrite");
+    std::fs::File::options().write(true).open(&path).unwrap().set_modified(modified).unwrap();
+    let (reloaded, _) = Config::load_path_if_changed(&path, &original).unwrap();
     assert!(reloaded.pick_only_mode());
 }
 
@@ -978,4 +1025,40 @@ fn stationary_overview_mode_is_opt_in_and_preserves_backdrop_settings() {
     let cfg =
         Config::from_root(json!({"niri":{"overviewBackdrop":false,"overviewMode":"stationary"}}));
     assert!(!cfg.niri_stationary_wallpaper());
+}
+
+#[test]
+fn library_import_destination() {
+    let mut root = serde_json::json!({"paths":{"wallpaper":"/walls","videoWallpaper":"/videos"},"library":{"folders":["/extra","/walls","/videos"]}});
+    let config = Config::from_root(root.clone());
+    assert_eq!(config.library_destination(false).as_deref(), Some("/walls"));
+    assert_eq!(config.library_destination(true).as_deref(), Some("/videos"));
+    root["library"]["folders"] = serde_json::json!(["/extra"]);
+    assert_eq!(
+        Config::from_root(root.clone()).library_destination(false).as_deref(),
+        Some("/extra")
+    );
+    root["library"]["folders"] = serde_json::json!([]);
+    assert!(Config::from_root(root).library_destination(false).is_none());
+}
+
+#[test]
+fn reload_repairs_permissions() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, "{}").unwrap();
+    let (_, bytes) = Config::load_path_if_changed(&path, &[]).unwrap();
+    for content in ["{}", "{"] {
+        std::fs::write(&path, content).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(Config::load_path_if_changed(&path, &bytes).is_none());
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let link = dir.path().join("linked.json");
+    symlink(&path, &link).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(Config::load_path_if_changed(&link, &bytes).is_none());
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o644);
 }

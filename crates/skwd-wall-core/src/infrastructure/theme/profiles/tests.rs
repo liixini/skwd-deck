@@ -67,12 +67,34 @@ fn pinned_variant_reaches_apply_and_preview_without_mutating_global_settings() {
     )).unwrap();
     assert_eq!(super::palette(&state, "/x.jpg"), Some(light.clone()));
     assert_eq!(crate::bridge_preview::cached_palette(&state, "/x.jpg"), Some(light));
-    assert!(apply(&state, "/x.jpg"));
-    remember_applied(&state, "/x.jpg").unwrap();
+    assert!(apply(&state, "/x.jpg", &configuration(&state, "/x.jpg")));
+    remember_applied(&state, "/x.jpg", &configuration(&state, "/x.jpg")).unwrap();
     let applied = current(&state).unwrap();
     assert_eq!(applied["palette"]["primary"], "#abcdef");
     assert_eq!(applied["dark"], false);
     assert_eq!(state.config().theme().mode(), "dark");
+}
+
+#[test]
+fn weather_palette_overrides_policy() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = WallState::test_new(json!({
+        "paths": {"cache": directory.path()},
+        "theme": {"policy": "off", "mode": "dark", "wallpaperProfiles": [{
+            "key": "wallpaper-x", "enabled": true, "dark": palette(),
+            "settingsPinned": true, "settings": {"theme.policy": "fixed"}
+        }]}
+    }));
+    state.with_db(|db| db.execute(
+        "INSERT INTO meta (key, name, type, thumb) VALUES ('wallpaper-x', 'X', 'static', '/x.jpg')", []
+    )).unwrap();
+    assert_eq!(configuration(&state, "/x.jpg").theme().policy(), "fixed");
+    let config = configuration(&state, "/x.jpg")
+        .with_override(skwd_config::keys::theme::POLICY, json!("wallpaper"));
+    assert!(apply(&state, "/x.jpg", &config));
+    remember_applied(&state, "/x.jpg", &config).unwrap();
+    assert_eq!(current(&state).unwrap()["palette"]["primary"], "#123456");
+    assert_eq!(state.config().theme().policy(), "off");
 }
 
 #[test]
@@ -83,12 +105,46 @@ fn current_snapshot_ignores_hover_and_pending_wallpaper() {
     );
     let path = directory.path().join("colors.json");
     std::fs::write(&path, palette().to_string()).unwrap();
-    remember_applied(&state, "/applied.jpg").unwrap();
+    remember_applied(&state, "/applied.jpg", &configuration(&state, "/applied.jpg")).unwrap();
     state.theme().set_source("/pending.jpg");
     std::fs::write(&path, "{}").unwrap();
     let snapshot = current(&state).unwrap();
     assert_eq!(snapshot["source"], "/applied.jpg");
     assert_eq!(snapshot["palette"], palette());
+}
+
+#[test]
+fn remembers_backend_roles() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = "{{colors.on_primary.default.hex}} {{colors.on_surface.default.hex}} {{colors.surface_variant.default.hex}} {{colors.surface_container.default.hex}}";
+    for primary_text in [None, Some("#abcdef")] {
+        let state = WallState::test_new(json!({"paths": {"cache": dir.path()}}));
+        let mut colors = json!({
+            "primary": "#111111", "tertiary": "#222222", "surface_variant": "#333333",
+            "surface_container": "#444444", "surface": "#555555", "outline": "#666666",
+            "background": "#777777", "on_primary": "#aaaaaa", "on_surface": "#bbbbbb"
+        });
+        if let Some(text) = primary_text {
+            colors["primaryText"] = json!(text);
+        }
+        std::fs::write(dir.path().join("colors.json"), colors.to_string()).unwrap();
+        remember_applied(&state, "/applied.png", &configuration(&state, "/applied.png")).unwrap();
+        let snapshot = current(&state).unwrap();
+        let applied = &snapshot["palette"];
+        let text = primary_text.unwrap_or("#aaaaaa");
+        assert_eq!(applied["primaryText"], text);
+        assert_eq!(applied["surfaceText"], "#bbbbbb");
+        assert_eq!(applied["surfaceVariant"], "#333333");
+        assert_eq!(applied["surfaceContainer"], "#444444");
+        assert_eq!(applied["on_primary"], "#aaaaaa");
+        assert_eq!(
+            crate::static_templates::render(
+                template,
+                &crate::static_templates::material_map(applied, true)
+            ),
+            format!("{text} #bbbbbb #333333 #444444")
+        );
+    }
 }
 
 #[test]
@@ -143,7 +199,7 @@ fn all_edited_roles_reach_templates_and_the_current_snapshot() {
     let error = crate::material::role(&doc, "error", "light").unwrap();
     write!(expected, "{secondary}\n{error}").unwrap();
     assert_eq!(std::fs::read_to_string(directory.path().join("full.out")).unwrap(), expected);
-    remember_applied(&state, "/wallpaper.jpg").unwrap();
+    remember_applied(&state, "/wallpaper.jpg", &configuration(&state, "/wallpaper.jpg")).unwrap();
     let current = current(&state).unwrap();
     for key in crate::material::ROLE_KEYS {
         for mode in ["dark", "light"] {
@@ -166,7 +222,7 @@ fn matugen_snapshot_keeps_the_resolved_smart_mode() {
         let palette = crate::material::ui_palette(&document).unwrap();
         std::fs::write(directory.path().join("colors.json"), palette.to_string()).unwrap();
         std::fs::write(directory.path().join("scheme.json"), document.to_string()).unwrap();
-        remember_applied(&state, "/smart.jpg").unwrap();
+        remember_applied(&state, "/smart.jpg", &configuration(&state, "/smart.jpg")).unwrap();
         let snapshot = current(&state).unwrap();
         assert_eq!(snapshot["dark"], dark);
         assert_eq!(snapshot["palette"], palette);

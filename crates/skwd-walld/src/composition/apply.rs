@@ -15,6 +15,7 @@ use crate::infrastructure::media_paths::{VideoRoute, static_thumb, video_route, 
 use crate::infrastructure::stats::Stats;
 
 mod phases;
+use crate::composition::runtime::outdoors::ManualChoice;
 use phases::{ApplyDecision, ExecutionReceipt, MediaKind};
 
 #[derive(Debug)]
@@ -111,7 +112,7 @@ pub(crate) fn apply_core(
     notify: bool,
     no_transition: bool,
     transition_override: Option<&TransitionOverride>,
-    expected_generation: Option<u64>,
+    expected_generation: Option<ExpectedApply>,
 ) -> anyhow::Result<serde_json::Value> {
     if let Some(id) = output.strip_prefix("@monitor:") {
         let _apply = state.apply().lock();
@@ -124,8 +125,11 @@ pub(crate) fn apply_core(
             log::info!("apply: skipped locked remembered output {connector}");
             return Ok(json!({"applied": "", "noop": true, "locked": connector}));
         }
+        let choice = ManualChoice::begin(state, source)?;
         crate::infrastructure::restore_policy::assign_remembered_monitor(id, kind, path, we_id)
             .ok_or_else(|| anyhow::anyhow!("remembered monitor is unavailable"))?;
+        crate::composition::runtime::weather::note_apply(state, source, &[connector], None);
+        choice.commit(publisher);
         publisher
             .publish(ev::OUTPUTS_CHANGED, json!({ "outputs": skwd_wall_core::outputs::names() }));
         log::info!("apply: remembered wallpaper for offline monitor {id}");
@@ -145,6 +149,7 @@ pub(crate) fn apply_core(
                 split_locked_outputs(skwd_wall_core::outputs::names(), &locked);
             if !preserved.is_empty() {
                 let _apply = state.apply().lock();
+                let _activity = skwd_wall_core::plasma::activities::sync_current(state)?;
                 return apply_locked_fanout(
                     state,
                     application,
@@ -168,6 +173,7 @@ pub(crate) fn apply_core(
         }
     }
     let _apply = state.apply().lock();
+    let _activity = skwd_wall_core::plasma::activities::sync_current(state)?;
     apply_core_locked(
         state,
         application,
@@ -207,7 +213,7 @@ fn apply_locked_fanout(
     notify: bool,
     no_transition: bool,
     transition_override: Option<&TransitionOverride>,
-    expected_generation: Option<u64>,
+    expected_generation: Option<ExpectedApply>,
 ) -> anyhow::Result<serde_json::Value> {
     if unlocked.is_empty() {
         return Ok(json!({"applied": [], "locked": preserved}));
@@ -300,15 +306,31 @@ fn restore_renderer_snapshot(
     })
 }
 
-#[derive(Clone, Copy)]
-enum GenerationRequest {
-    Claim(Option<u64>),
+pub(crate) enum ExpectedApply {
+    Generation(u64),
+    Intent(skwd_wall_core::backend::wallpaper::ApplyIntent),
+}
+
+impl ExpectedApply {
+    pub(crate) fn current(&self, state: &WallState) -> bool {
+        match self {
+            Self::Generation(generation) => state.apply().generation() == *generation,
+            Self::Intent(intent) => state.apply().intent_current(intent),
+        }
+    }
+}
+
+pub(crate) enum GenerationRequest {
+    Claim(Option<ExpectedApply>),
     Reserved(u64),
 }
 
-fn claim_generation(state: &WallState, expected: Option<u64>) -> anyhow::Result<u64> {
+fn claim_generation(state: &WallState, expected: Option<ExpectedApply>) -> anyhow::Result<u64> {
     match expected {
-        Some(expected) => state
+        Some(ExpectedApply::Intent(intent)) => {
+            state.apply().claim_intent(&intent).ok_or_else(|| anyhow::Error::new(SupersededApply))
+        }
+        Some(ExpectedApply::Generation(expected)) => state
             .apply()
             .claim_generation(expected)
             .ok_or_else(|| anyhow::Error::new(SupersededApply)),
@@ -316,7 +338,7 @@ fn claim_generation(state: &WallState, expected: Option<u64>) -> anyhow::Result<
     }
 }
 
-fn apply_core_locked(
+pub(crate) fn apply_core_locked(
     state: &Arc<WallState>,
     application: &dyn WallpaperApplication,
     history: &dyn HistoryRepository,
@@ -335,6 +357,51 @@ fn apply_core_locked(
     generation_request: GenerationRequest,
     committed_outputs: Option<&[String]>,
 ) -> anyhow::Result<serde_json::Value> {
+    let library_key = applied_library_key(state, kind, path, we_id);
+    if let ApplySource::Weather { playlist_id, revision } = source
+        && !crate::composition::runtime::weather::allows(
+            state,
+            output,
+            Some(playlist_id),
+            revision,
+            &library_key,
+        )
+    {
+        return Err(SupersededApply.into());
+    }
+    if let ApplySource::WeatherSemantic { revision } = source
+        && !crate::composition::runtime::weather::allows(
+            state,
+            output,
+            None,
+            revision,
+            &library_key,
+        )
+    {
+        return Err(SupersededApply.into());
+    }
+    if let ApplySource::OutdoorsRestore { revision } = source
+        && !crate::composition::runtime::outdoors::restore_allows(
+            state,
+            output,
+            revision,
+            &library_key,
+        )
+    {
+        return Err(SupersededApply.into());
+    }
+    if crate::composition::runtime::outdoors::active(&state.config())
+        && matches!(source, ApplySource::Schedule | ApplySource::Rotation | ApplySource::Workspace)
+    {
+        return Err(SupersededApply.into());
+    }
+    match source {
+        ApplySource::Restore if state.apply().restore_cancelled(None) => {
+            return Err(SupersededApply.into());
+        }
+        ApplySource::Restore | ApplySource::Hotplug => {}
+        _ => state.apply().cancel_restore(None),
+    }
     let generation = match generation_request {
         GenerationRequest::Claim(expected) => claim_generation(state, expected)?,
         GenerationRequest::Reserved(generation) => generation,
@@ -375,11 +442,18 @@ fn apply_core_locked(
     {
         let applied = if kind == wall_proto::kind::WE { we_id } else { path };
         log::info!("apply: no-op, {kind} {applied} already applied");
+        let choice = ManualChoice::begin(state, source)?;
         crate::composition::history::note_apply_source(source);
+        crate::composition::runtime::weather::note_apply(
+            state,
+            source,
+            &[output.to_owned()],
+            Some(&library_key),
+        );
+        choice.commit(publisher);
         crate::infrastructure::lock_screen::request_follow_sync(state);
         return Ok(json!({"applied": applied, "noop": true}));
     }
-    let library_key = applied_library_key(state, kind, path, we_id);
     let _renderer_apply = state.renderers().apply_window();
     state.apply().set_render_fill(&fill);
     if pick_only && state.config().post_processing().is_empty() {
@@ -409,6 +483,7 @@ fn apply_core_locked(
         library_key,
         prior_entry,
     };
+    let choice = ManualChoice::begin(state, source)?;
     let execution = match kind {
         wall_proto::kind::STATIC => apply_static_arm(
             state,
@@ -435,7 +510,9 @@ fn apply_core_locked(
     if pick_only {
         application.release_outputs(&decision.committed_outputs)?;
     }
-    Ok(execution.commit(state)?.publish(state, history, publisher, stats))
+    let committed = execution.commit(state)?;
+    choice.commit(publisher);
+    Ok(committed.publish(state, history, publisher, stats))
 }
 
 fn apply_static_arm(
@@ -763,21 +840,14 @@ fn applied_library_key(state: &WallState, kind: &str, path: &str, we_id: &str) -
     if kind == wall_proto::kind::WE && !we_id.is_empty() {
         return format!("we:{we_id}");
     }
-    let key = {
-        let config = state.config();
-        skwd_wall_core::paths::key_for_path(
-            std::path::Path::new(path),
-            &config.wallpaper_dir(),
-            &config.video_dir(),
-        )
-    };
+    let key = state.library_key(std::path::Path::new(path));
     key.or_else(|| {
         state
             .with_db(|connection| skwd_wall_core::db::key_for_video_file(connection, path))
             .ok()
             .flatten()
     })
-    .unwrap_or_default()
+    .unwrap_or_else(|| format!("{kind}:{path}"))
 }
 
 pub(crate) fn key_apply_args(
@@ -788,13 +858,13 @@ pub(crate) fn key_apply_args(
     if let Some(relative) = key.strip_prefix("static:") {
         (
             wall_proto::kind::STATIC,
-            format!("{}/{}", wallpaper_dir.trim_end_matches('/'), relative),
+            std::path::Path::new(wallpaper_dir).join(relative).to_string_lossy().into_owned(),
             String::new(),
         )
     } else if let Some(relative) = key.strip_prefix("video:") {
         (
             wall_proto::kind::VIDEO,
-            format!("{}/{}", video_dir.trim_end_matches('/'), relative),
+            std::path::Path::new(video_dir).join(relative).to_string_lossy().into_owned(),
             String::new(),
         )
     } else if let Some(id) = key.strip_prefix("we:") {
@@ -826,6 +896,26 @@ pub(crate) fn apply_by_key(
         );
         (kind, path, we_id, mute, volume)
     };
+    let path = if kind == wall_proto::kind::VIDEO {
+        state
+            .with_db(|connection| skwd_wall_core::db::video_file_for_key(connection, key))
+            .ok()
+            .flatten()
+            .unwrap_or(path)
+    } else {
+        path
+    };
+    let weather_transition = if matches!(source, ApplySource::WeatherSemantic { .. })
+        && crate::composition::runtime::outdoors::active(&state.config())
+    {
+        Some(TransitionOverride {
+            enabled: Some(true),
+            shader: Some(state.config().outdoors_transition_shader()),
+            duration_ms: None,
+        })
+    } else {
+        None
+    };
     match apply_core(
         state,
         application,
@@ -841,7 +931,7 @@ pub(crate) fn apply_by_key(
         output,
         notify,
         false,
-        None,
+        weather_transition.as_ref(),
         None,
     ) {
         Ok(_) => true,

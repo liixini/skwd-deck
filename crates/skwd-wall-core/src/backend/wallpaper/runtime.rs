@@ -1,10 +1,24 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
+pub struct ApplyIntent {
+    scope: (String, String),
+    token: u64,
+}
+
+#[derive(Default)]
+struct Intents {
+    next: u64,
+    targets: std::collections::HashMap<(String, String), u64>,
+}
+
 #[derive(Default)]
 pub struct ApplyRuntime {
     lock: Mutex<()>,
     generation: AtomicU64,
+    intents: Mutex<Intents>,
+    restore_cancelled: AtomicBool,
+    restore_activities: Mutex<std::collections::HashSet<String>>,
     no_transition: AtomicBool,
     swap_slide: Mutex<Option<(String, u64)>>,
     render_fill: Mutex<String>,
@@ -17,6 +31,7 @@ impl ApplyRuntime {
     }
 
     pub fn next_generation(&self) -> u64 {
+        self.intents.lock().unwrap_or_else(std::sync::PoisonError::into_inner).targets.clear();
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
     }
 
@@ -30,6 +45,60 @@ impl ApplyRuntime {
             .compare_exchange(expected, claimed, Ordering::SeqCst, Ordering::SeqCst)
             .ok()
             .map(|_| claimed)
+    }
+
+    pub fn cancel_restore(&self, activity: Option<&str>) {
+        if let Some(activity) = activity {
+            self.restore_activities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(activity.to_owned());
+        } else {
+            self.restore_cancelled.store(true, Ordering::SeqCst);
+        }
+    }
+
+    pub fn restore_cancelled(&self, activity: Option<&str>) -> bool {
+        self.restore_cancelled.load(Ordering::SeqCst)
+            || activity.is_some_and(|activity| {
+                self.restore_activities
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains(activity)
+            })
+    }
+
+    pub fn intent(&self, activity: &str, output: &str) -> ApplyIntent {
+        let mut intents = self.intents.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        intents.targets.retain(|(scope, target), _| {
+            scope != activity
+                || (output != wall_proto::apply_fields::ALL_OUTPUTS
+                    && target != wall_proto::apply_fields::ALL_OUTPUTS
+                    && target != output)
+        });
+        intents.next += 1;
+        let intent =
+            ApplyIntent { scope: (activity.to_owned(), output.to_owned()), token: intents.next };
+        intents.targets.insert(intent.scope.clone(), intent.token);
+        intent
+    }
+
+    pub fn intent_current(&self, intent: &ApplyIntent) -> bool {
+        self.intents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .targets
+            .get(&intent.scope)
+            == Some(&intent.token)
+    }
+
+    pub fn claim_intent(&self, intent: &ApplyIntent) -> Option<u64> {
+        let mut intents = self.intents.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if intents.targets.get(&intent.scope) != Some(&intent.token) {
+            return None;
+        }
+        intents.targets.remove(&intent.scope);
+        Some(self.generation.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
     pub fn set_no_transition(&self, disabled: bool) {

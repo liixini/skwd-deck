@@ -6,6 +6,7 @@ mod playlists;
 mod tags;
 #[cfg(test)]
 mod test_support;
+mod visibility;
 mod wallpapers;
 mod we_properties;
 
@@ -24,14 +25,16 @@ pub use playlists::{
 pub use tags::{
     backfill_effect_tags, effect_tag, merge_tag, parse_effect_tag, set_effect_tag, stem_key,
 };
+pub use visibility::{entry_path, key_kind, library_visible, reconcile_library};
 pub use wallpapers::{
-    TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET, bump_apply_count, clear_cache, color_rows,
-    delete_by_name, delete_entries, has_entry, invalidate_source_mtimes,
+    RandomEntry, TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET, bump_apply_count, clear_cache,
+    color_rows, delete_by_name, delete_entries, has_entry, invalidate_source_mtimes,
     invalidate_thumbnail_cache, item_count, key_for_video_file, known_keys, known_we_meta,
     list_wallpapers, list_wallpapers_json, random_pick, retire_video_converts, set_favourite,
-    thumb_for_key, thumb_for_video, thumbnail_cache, tinier_convert_delete, tinier_convert_entry,
-    tinier_convert_record, tinier_convert_src, update_colors, update_duration,
-    update_thumbnail_paths, update_user_tags, upsert_cache_entry,
+    set_hidden, thumb_for_key, thumb_for_video, thumbnail_cache, tinier_convert_delete,
+    tinier_convert_entry, tinier_convert_record, tinier_convert_src, update_colors,
+    update_duration, update_thumbnail_paths, update_user_tags, upsert_cache_entry,
+    video_file_for_key,
 };
 pub use we_properties::{
     MAX_WE_PROPERTIES, MAX_WE_PROPERTY_NAME, clear_we_properties, set_we_property,

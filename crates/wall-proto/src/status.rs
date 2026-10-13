@@ -4,6 +4,7 @@ pub const PROTOCOL_NAME: &str = "skwd-wall";
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const SERVICE_NAME: &str = "skwd-deck";
 pub const SERVICE_COMPONENT: &str = "skwd-walld";
+pub const STEAM_CLIENT_AVAILABLE_FIELD: &str = "steam_client_available";
 pub const CAPABILITIES: &[&str] = &[
     "effects",
     "events",
@@ -14,6 +15,7 @@ pub const CAPABILITIES: &[&str] = &[
     "sources",
     "tasks",
     "wallpapers",
+    "weather-playlists",
 ];
 
 pub fn deck_status(version: &str) -> Value {

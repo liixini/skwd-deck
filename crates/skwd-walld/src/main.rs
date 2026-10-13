@@ -59,6 +59,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     let state = Arc::new(WallState::open()?);
+    state.reconcile_library()?;
     let config = state.config_store();
     let database = state.database();
     let renderer_supervisor = state.renderer_supervisor();

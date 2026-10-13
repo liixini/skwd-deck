@@ -23,7 +23,9 @@ fn maps_wmo_codes() {
     assert_eq!(map_weather(63, 0.0), ["rainy"]);
     assert_eq!(map_weather(75, 0.0), ["snowy"]);
     assert_eq!(map_weather(95, 0.0), ["stormy"]);
-    assert_eq!(map_weather(999, 0.0), ["clear"]);
+    assert!(map_weather(999, 0.0).is_empty());
+    assert!(map_weather(999, 40.0).is_empty());
+    assert!(map_weather(98, 0.0).is_empty());
 }
 
 #[test]

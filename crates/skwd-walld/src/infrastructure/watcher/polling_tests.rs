@@ -5,7 +5,7 @@ use crate::testenv::tmp;
 
 fn complete(root: &mut PollingRoot, budget: usize) -> PollDelta {
     for _ in 0..64 {
-        match root.advance(budget) {
+        match root.advance(budget, &skwd_config::LibraryPolicy::new(&serde_json::json!({}))) {
             PollAdvance::Pending => {}
             PollAdvance::Complete(delta) => return delta,
             PollAdvance::Failed(error) => panic!("poll failed: {error}"),
@@ -21,7 +21,10 @@ fn bounded_sweeps_converge_without_duplicates() {
         std::fs::write(dir.join(name), name).unwrap();
     }
     let mut root = PollingRoot::new(dir.clone(), String::from("injected watch failure"));
-    assert!(matches!(root.advance(1), PollAdvance::Pending));
+    assert!(matches!(
+        root.advance(1, &skwd_config::LibraryPolicy::new(&serde_json::json!({}))),
+        PollAdvance::Pending
+    ));
     let first = complete(&mut root, 1);
     assert!(first.initial);
     assert_eq!(first.changed.len(), 3);
@@ -73,7 +76,10 @@ fn failed_sweep_keeps_the_last_good_baseline() {
     let mut root = PollingRoot::new(dir.clone(), String::from("injected watch failure"));
     let _ = complete(&mut root, 32);
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(matches!(root.advance(32), PollAdvance::Failed(_)));
+    assert!(matches!(
+        root.advance(32, &skwd_config::LibraryPolicy::new(&serde_json::json!({}))),
+        PollAdvance::Failed(_)
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let recovered = complete(&mut root, 32);
     assert_eq!(recovered.removed, vec![path]);
@@ -92,4 +98,30 @@ fn transient_and_internal_files_are_excluded() {
     let mut root = PollingRoot::new(dir.clone(), String::from("injected watch failure"));
     assert_eq!(complete(&mut root, 32).changed, vec![final_path]);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn excluded_subtrees_stay_closed() {
+    let directory = tempfile::tempdir().unwrap();
+    let hidden = directory.path().join("Sus/deep/a.png");
+    let visible = directory.path().join("Sushi/b.png");
+    for path in [&hidden, &visible] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"original").unwrap();
+    }
+    let policy = skwd_config::LibraryPolicy::new(
+        &serde_json::json!({"paths":{"wallpaper":directory.path()},"library":{"excludedFolders":["Sus"]}}),
+    );
+    let mut root = PollingRoot::new(directory.path().to_path_buf(), String::new());
+    let PollAdvance::Complete(delta) = root.advance(32, &policy) else {
+        panic!("incomplete sweep")
+    };
+    assert_eq!(delta.changed, [visible]);
+    assert_eq!(root.last_sweep_metrics().directories_opened, 2);
+    assert_eq!(root.last_sweep_metrics().metadata_reads, 2);
+    std::fs::write(hidden, b"changed").unwrap();
+    let PollAdvance::Complete(delta) = root.advance(32, &policy) else {
+        panic!("incomplete sweep")
+    };
+    assert_eq!(delta, PollDelta::default());
 }

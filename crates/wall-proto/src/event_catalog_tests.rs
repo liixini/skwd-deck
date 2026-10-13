@@ -171,7 +171,12 @@ fn semantic_index_ready_round_trips() {
 fn config_changed_round_trips() {
     let wire = serde_json::json!({});
     let event: ConfigChanged = serde_json::from_value(wire.clone()).unwrap();
+    assert!(!event.library_changed);
     assert_eq!(serde_json::to_value(&event).unwrap(), wire);
+    let wire = serde_json::json!({"library_changed": true});
+    let event: ConfigChanged = serde_json::from_value(wire.clone()).unwrap();
+    assert!(event.library_changed);
+    assert_eq!(serde_json::to_value(event).unwrap(), wire);
 }
 
 #[test]

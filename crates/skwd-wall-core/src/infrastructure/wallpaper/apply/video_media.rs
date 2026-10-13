@@ -364,10 +364,7 @@ pub(super) fn reconcile_video_multi<'a>(
     }
     fills.sort();
     fills.dedup();
-    if pairs.iter().any(|(output, _)| {
-        state.config().display().background_for(output)
-            != state.config().display().background_for("*")
-    }) {
+    if pairs.iter().any(|(output, _)| state.config().display().background_differs_for(output)) {
         return false;
     }
     if fills.len() > 1 {

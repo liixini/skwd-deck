@@ -7,6 +7,7 @@ description = "Transient Steam Workshop downloader for Skwd Deck"
 
 [dependencies]
 steamworks = { workspace = true }
+serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 

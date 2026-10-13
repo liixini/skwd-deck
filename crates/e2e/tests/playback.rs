@@ -9,12 +9,12 @@ fn playback(walld: &Walld) -> Value {
 
 #[test]
 #[ignore = "requires release daemon and process access"]
-fn process_rules_reload_and_release_after_exit() {
+fn process_rules_reload() {
     let sandbox = Sandbox::new("automatic-playback");
     let mut config = json!({"paths": {"wallpaper": sandbox.library(), "videoWallpaper": sandbox.library(), "steamWorkshop": sandbox.library()},
         "restoreOnStartup": false, "pickOnlyMode": true,
         "general": {"randomInterval": 0},
-        "playback": {"processEnabled": false, "processes": "skwd-auto-pause-test", "resumeDelay": 1}});
+        "playback": {"processEnabled": false, "processes": "skwd-auto-*-tes?", "resumeDelay": 1}});
     sandbox.write_config(&config);
     let walld = Walld::start(&sandbox);
     let mut process =
@@ -23,12 +23,25 @@ fn process_rules_reload_and_release_after_exit() {
     config["playback"]["processEnabled"] = json!(true);
     sandbox.write_config(&config);
     let detected = wait_until(
-        || playback(&walld)["processes"] == json!(["skwd-auto-pause-test"]),
+        || {
+            playback(&walld)["processes"] == json!(["skwd-auto-*-tes?"])
+                && playback(&walld)["automatic_paused"] == true
+        },
         Duration::from_secs(8),
     );
+    assert!(detected, "{}", walld.log_contents());
+    for rule in ["skwd-auto-*-tes??", "skwd-auto-pause-test", "skwd-auto-*-tes?"] {
+        config["playback"]["processes"] = json!(rule);
+        sandbox.write_config(&config);
+        let expected = if rule.ends_with("??") { json!([]) } else { json!([rule]) };
+        assert!(wait_until(|| playback(&walld)["processes"] == expected, Duration::from_secs(8)));
+        assert!(wait_until(
+            || playback(&walld)["automatic_paused"] == !rule.ends_with("??"),
+            Duration::from_secs(5)
+        ));
+    }
     process.kill().unwrap();
     process.wait().unwrap();
-    assert!(detected, "{}", walld.log_contents());
     assert!(
         wait_until(
             || {

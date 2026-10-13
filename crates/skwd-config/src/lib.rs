@@ -4,8 +4,10 @@ mod atomic;
 mod environment;
 mod getter_macro;
 mod key_catalog;
+mod library;
 mod picker;
 mod power;
+mod profile;
 pub mod schema;
 mod settings;
 pub mod theme_profile;
@@ -14,6 +16,9 @@ mod value;
 pub use atomic::{atomic_write, atomic_write_mode, follow_links};
 pub use environment::{cache_dir, config_dir, config_path, env, home, resolve};
 pub use key_catalog::keys;
+pub use library::{
+    LibraryPolicy, excluded_folders, library_destination, library_folders, resolve_folder,
+};
 pub use picker::canonicalize_depth_layout;
 pub use power::{
     DEFAULT_BATTERY_FPS, DEFAULT_BATTERY_VIDEO_IDLE_SECONDS, PowerSourceState, battery_fps,
@@ -22,6 +27,10 @@ pub use power::{
     effective_gpu_preference, effective_picker_fps, effective_video_idle_seconds,
     effective_wallpaper_performance, on_battery_power, power_source_state, power_source_state_at,
     set_power_source_snapshot,
+};
+pub use profile::{
+    EVERYTHING_PROFILE, FolderState, LibraryItem, LibraryProfile, active_library_profile,
+    library_profile, library_profiles, profile_state,
 };
 pub use settings::{
     cache_dir_of, canonicalize_backdrop_blur, canonicalize_paper_engine, canonicalize_we_renderer,

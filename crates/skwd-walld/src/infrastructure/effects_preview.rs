@@ -187,13 +187,10 @@ pub(crate) fn effects_preview(input: &str, effects: &serde_json::Value) -> anyho
 pub(crate) fn effects_commit(
     input: &str,
     effects: &serde_json::Value,
-    wallpaper_dir: &str,
-    video_dir: &str,
+    folders: &[String],
 ) -> anyhow::Result<String> {
     let in_path = std::path::Path::new(input);
-    if !within_dir(in_path, std::path::Path::new(wallpaper_dir))
-        && !within_dir(in_path, std::path::Path::new(video_dir))
-    {
+    if !folders.iter().any(|folder| within_dir(in_path, std::path::Path::new(folder))) {
         anyhow::bail!("effects.commit: input path is outside the wallpaper/video dirs");
     }
     let parent = in_path.parent().ok_or_else(|| anyhow::anyhow!("input has no parent dir"))?;

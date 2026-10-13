@@ -5,7 +5,7 @@ pub use application::{
     ApplyOutputRequest, ApplyStaticRequest, ApplyVideoRequest, OutputTransitionRequest,
     StaticSmartRequest, VideoTransitionRequest, WallpaperApplication,
 };
-pub use runtime::ApplyRuntime;
+pub use runtime::{ApplyIntent, ApplyRuntime};
 
 #[cfg(test)]
 mod tests;

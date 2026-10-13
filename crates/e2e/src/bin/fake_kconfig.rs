@@ -82,7 +82,7 @@ fn write(path: &Path, request: &Request) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(path, lines.join("\n") + "\n");
+    let _ = skwd_config::atomic_write(path, (lines.join("\n") + "\n").as_bytes());
 }
 
 fn main() {

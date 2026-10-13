@@ -96,14 +96,17 @@ fn is_transient(path: &std::path::Path) -> bool {
 pub(crate) struct ConfigWatch {
     path: std::path::PathBuf,
     target: std::path::PathBuf,
+    steam_manifests: Vec<std::path::PathBuf>,
+    workshop: Option<std::path::PathBuf>,
     effects: Option<ConfigEffects>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 struct ConfigEffects {
     backdrop: serde_json::Value,
-    lock_screen: (String, String, bool),
+    lock_screen: (String, String, bool, serde_json::Value),
     semantic: (bool, String, String),
+    library: (String, String, skwd_config::LibraryPolicy),
 }
 
 #[derive(Debug, PartialEq)]
@@ -116,7 +119,26 @@ struct ConfigEffectChanges {
 impl ConfigWatch {
     pub(crate) fn new(path: std::path::PathBuf) -> Self {
         let target = Self::resolve(&path);
-        Self { path, target, effects: None }
+        Self { path, target, steam_manifests: Vec::new(), workshop: None, effects: None }
+    }
+
+    fn with_workshop(mut self, config: &skwd_wall_core::config::Config) -> Self {
+        self.steam_manifests = crate::infrastructure::steam_subscriptions::manifest_paths(config);
+        self.workshop = Some(config.we_dir());
+        self
+    }
+
+    fn refresh_manifests(
+        &mut self,
+        watcher: Option<&mut notify::RecommendedWatcher>,
+        config: &skwd_wall_core::config::Config,
+    ) {
+        let next = crate::infrastructure::steam_subscriptions::manifest_paths(config);
+        if let Some(watcher) = watcher {
+            let added = next.iter().filter(|path| !self.steam_manifests.contains(path));
+            watch_manifest_dirs(watcher, added);
+        }
+        self.steam_manifests = next;
     }
 
     fn update_effects(&mut self, config: &skwd_wall_core::config::Config) -> ConfigEffectChanges {
@@ -126,12 +148,18 @@ impl ConfigWatch {
                 config.plasma_lock_screen_mode(),
                 config.plasma_lock_screen_image(),
                 config.plasma_lock_screen_live(),
+                config
+                    .root()
+                    .get(skwd_config::keys::lock_screens::ROOT)
+                    .cloned()
+                    .unwrap_or_default(),
             ),
             semantic: (
                 config.semantic_enabled(),
                 config.semantic_manifest(),
                 config.semantic_index_profile(),
             ),
+            library: library_settings(config),
         };
         let changed = ConfigEffectChanges {
             backdrop: self.effects.as_ref().is_none_or(|last| last.backdrop != next.backdrop),
@@ -201,6 +229,10 @@ fn split_config_events(
         }
         if cfg.hit(&path) {
             hit = true;
+        } else if cfg.steam_manifests.contains(&path) {
+            if let Some(workshop) = &cfg.workshop {
+                push_capped(out, workshop.clone(), WATCH_BATCH_CAP);
+            }
         } else if !cfg.sibling(&path) && !is_transient(&path) {
             push_capped(out, path, WATCH_BATCH_CAP);
         }
@@ -243,9 +275,15 @@ fn flush_watch_batch(
     request_id: Option<&str>,
     force_full_scan: bool,
 ) -> bool {
+    let policy = state.config().library_policy();
+    let pending: Vec<_> = pending.into_iter().filter(|path| !policy.excludes(path)).collect();
+    let removed: Vec<_> = removed.into_iter().filter(|path| !policy.excludes(path)).collect();
     let workshop = state.config().we_dir();
     let force_full_scan =
         force_full_scan || pending.iter().chain(&removed).any(|path| path.starts_with(&workshop));
+    if force_full_scan {
+        crate::infrastructure::steam_subscriptions::reconcile(state, publisher);
+    }
     let (changed, to_remove) = plan_watch_flush(pending, removed);
     let mut removals_ok = true;
     for path in &to_remove {
@@ -310,7 +348,12 @@ impl RootWatcher for notify::RecommendedWatcher {
 fn media_roots(state: &Arc<WallState>) -> Vec<std::path::PathBuf> {
     let configured = {
         let config = state.config();
-        [config.wallpaper_dir().into(), config.video_dir().into(), config.we_dir()]
+        config
+            .library_folders()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .chain(std::iter::once(config.we_dir()))
+            .collect::<Vec<_>>()
     };
     let mut roots: Vec<std::path::PathBuf> = Vec::new();
     for path in configured {
@@ -346,6 +389,27 @@ fn watch_config_dir(watcher: &mut notify::RecommendedWatcher, cfg: &ConfigWatch)
     for dir in cfg.dirs().filter(|dir| dir.is_dir()) {
         if let Err(err) = watcher.watch(dir, RecursiveMode::NonRecursive) {
             log::warn!("watch config dir {} failed: {err}", dir.display());
+        }
+    }
+    watch_manifest_dirs(watcher, cfg.steam_manifests.iter());
+}
+
+fn watch_manifest_dirs<'a>(
+    watcher: &mut notify::RecommendedWatcher,
+    manifests: impl Iterator<Item = &'a std::path::PathBuf>,
+) {
+    use notify::{RecursiveMode, Watcher};
+
+    let mut directories = manifests
+        .filter_map(|path| {
+            path.parent().filter(|dir| dir.is_dir()).map(std::path::Path::to_path_buf)
+        })
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories.dedup();
+    for dir in directories {
+        if let Err(error) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
+            log::warn!("watch Steam manifest directory {} failed: {error}", dir.display());
         }
     }
 }
@@ -415,8 +479,9 @@ fn run_poll_cycle(
     let mut removed = Vec::new();
     let mut touched_roots = Vec::new();
     let mut force_full_scan = false;
+    let policy = skwd_wall_core::config::Config::load().library_policy();
     for root in &mut roots {
-        match root.advance(polling::ENTRY_BUDGET_PER_ROOT) {
+        match root.advance(polling::ENTRY_BUDGET_PER_ROOT, &policy) {
             polling::PollAdvance::Pending => {}
             polling::PollAdvance::Complete(delta) => {
                 if delta.initial || !(delta.changed.is_empty() && delta.removed.is_empty()) {
@@ -596,39 +661,41 @@ async fn watch_loop(
     ctx: crate::composition::context::Ctx,
     settings: session::WatchSettings,
 ) -> bool {
-    let crate::composition::context::Ctx { state, events: publisher, workers, stats, .. } = ctx;
+    let crate::composition::context::Ctx { state, events: publisher, workers, stats, .. } = &ctx;
     let mut pending: Vec<std::path::PathBuf> = Vec::new();
     let mut removed: Vec<std::path::PathBuf> = Vec::new();
     let mut first_seen: Option<std::time::Instant> = None;
     loop {
         let idle = pending.is_empty() && removed.is_empty();
         let flush_now = match next_step(&mut rx, idle, WATCH_DEBOUNCE).await {
-            WatchStep::Event(event) => absorb_and_hold(
-                event,
-                &mut cfg,
-                watcher.as_mut(),
-                &state,
-                publisher.as_ref(),
-                &mut pending,
-                &mut removed,
-                &mut first_seen,
-            ),
+            WatchStep::Event(event) => {
+                absorb_and_hold(
+                    event,
+                    &mut cfg,
+                    watcher.as_mut(),
+                    &ctx,
+                    &mut pending,
+                    &mut removed,
+                    &mut first_seen,
+                )
+                .await
+            }
             WatchStep::Flush => true,
             WatchStep::Closed => return false,
         };
-        let current = session::WatchSettings::read(&state);
+        let current = session::WatchSettings::read(state);
         if settings != current {
-            let changed = std::array::from_fn::<_, 3, _>(|index| {
-                settings.directories[index] != current.directories[index]
-            });
+            let images_changed = settings.anchors[0] != current.anchors[0];
+            let videos_changed = settings.anchors != current.anchors;
+            let workshop_changed = settings.workshop != current.workshop;
             let invalidate_state = state.clone();
             let result = tokio::task::spawn_blocking(move || {
                 invalidate_state.with_db(|connection| {
                     db::invalidate_source_mtimes(
                         connection,
-                        changed[0],
-                        changed[0] || changed[1],
-                        changed[2],
+                        images_changed,
+                        videos_changed,
+                        workshop_changed,
                     )
                 })
             })
@@ -639,7 +706,13 @@ async fn watch_loop(
             return true;
         }
         if flush_now {
-            flush(&state, &publisher, &workers, &stats, &mut pending, &mut removed).await;
+            let workshop_changed = cfg.workshop.as_ref().is_some_and(|workshop| {
+                pending.iter().chain(&removed).any(|path| path.starts_with(workshop))
+            });
+            flush(state, publisher, workers, stats, &mut pending, &mut removed).await;
+            if workshop_changed {
+                cfg.refresh_manifests(watcher.as_mut(), &state.config());
+            }
             first_seen = None;
         }
     }
@@ -698,22 +771,46 @@ async fn flush_watch_batch_async(
     .unwrap_or(false)
 }
 
-fn absorb_and_hold(
+async fn absorb_and_hold(
     mut event: notify::Event,
     cfg: &mut ConfigWatch,
-    watcher: Option<&mut notify::RecommendedWatcher>,
-    state: &Arc<WallState>,
-    publisher: &dyn EventPublisher,
+    mut watcher: Option<&mut notify::RecommendedWatcher>,
+    ctx: &crate::composition::context::Ctx,
     pending: &mut Vec<std::path::PathBuf>,
     removed: &mut Vec<std::path::PathBuf>,
     first_seen: &mut Option<std::time::Instant>,
 ) -> bool {
+    let state = &ctx.state;
+    let publisher = ctx.events.as_ref();
     import_theme_event(&event, state, publisher);
     event.paths.retain(|path| skwd_wall_core::theme_provider::provider_for_path(path).is_none());
+    watch_workshop_links(&event, watcher.as_deref_mut(), &state.config().we_dir());
     if absorb_watch_event(event, cfg, pending, removed) {
         cfg.refresh(watcher);
-        state.reload_config();
-        let backdrop_config = state.config().clone();
+        let before = cfg.effects.as_ref().map(|effects| effects.library.clone());
+        let reload_state = Arc::clone(state);
+        let reloaded = tokio::task::spawn_blocking(move || {
+            reload_state.reload_config();
+            let config = reload_state.config().clone();
+            let library_changed =
+                before.as_ref().is_none_or(|last| *last != library_settings(&config));
+            if library_changed {
+                reload_state.reconcile_library()?;
+            }
+            Ok::<_, anyhow::Error>((config, library_changed))
+        })
+        .await;
+        let (backdrop_config, library_changed) = match reloaded {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => {
+                log::warn!("library configuration reload failed: {error}");
+                return false;
+            }
+            Err(error) => {
+                log::warn!("library configuration worker failed: {error}");
+                return false;
+            }
+        };
         let changed = cfg.update_effects(&backdrop_config);
         if changed.backdrop {
             let backdrop_state = Arc::clone(state);
@@ -728,17 +825,56 @@ fn absorb_and_hold(
         }
         if changed.semantic {
             crate::infrastructure::semantic_index::settings_changed();
+        } else if library_changed {
+            crate::infrastructure::semantic_index::request_refresh();
         }
-        publisher.publish(ev::CONFIG_CHANGED, json!({}));
+        publisher.publish(
+            ev::CONFIG_CHANGED,
+            serde_json::to_value(ev::ConfigChanged { library_changed }).unwrap_or_default(),
+        );
         crate::infrastructure::power::request_refresh();
         crate::infrastructure::playback::refresh();
         crate::composition::runtime::rotation::wake();
+        crate::composition::runtime::weather::reload();
+        crate::composition::runtime::playlist::reload();
         crate::infrastructure::vitals::wake();
     }
+    let policy = state.config().library_policy();
+    pending.retain(|path| !policy.excludes(path));
+    removed.retain(|path| !policy.excludes(path));
     if first_seen.is_none() && !(pending.is_empty() && removed.is_empty()) {
         *first_seen = Some(std::time::Instant::now());
     }
     first_seen.is_some_and(|since| hold_exceeded(since.elapsed(), WATCH_MAX_HOLD))
+}
+
+fn library_settings(
+    config: &skwd_wall_core::config::Config,
+) -> (String, String, skwd_config::LibraryPolicy) {
+    (config.wallpaper_dir(), config.video_dir(), config.library_policy())
+}
+
+fn watch_workshop_links(
+    event: &notify::Event,
+    watcher: Option<&mut notify::RecommendedWatcher>,
+    workshop: &std::path::Path,
+) {
+    use notify::{EventKind, RecursiveMode, Watcher, event::ModifyKind};
+
+    if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(_))) {
+        return;
+    }
+    let Some(watcher) = watcher else { return };
+    for path in event.paths.iter().filter(|path| path.parent() == Some(workshop)) {
+        if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+            || !path.is_dir()
+        {
+            continue;
+        }
+        if let Err(error) = watcher.watch(path, RecursiveMode::Recursive) {
+            log::warn!("watch Workshop link {} failed: {error}", path.display());
+        }
+    }
 }
 
 fn theme_event_provider(event: &notify::Event) -> Option<&'static str> {
@@ -804,11 +940,10 @@ pub(crate) fn handle_remove(
     publisher: &dyn EventPublisher,
     path: &std::path::Path,
 ) -> bool {
-    let (wdir, vdir) = {
-        let cfg = state.config();
-        (cfg.wallpaper_dir(), cfg.video_dir())
-    };
-    let Some(key) = skwd_wall_core::paths::key_for_path(path, &wdir, &vdir) else {
+    if state.config().library_policy().excludes(path) {
+        return true;
+    }
+    let Some(key) = state.library_key(path) else {
         return true;
     };
     if let Some(rel) = key.strip_prefix("static:") {
@@ -823,6 +958,7 @@ pub(crate) fn handle_remove(
             if count > 0 {
                 log::info!("removed {key}");
                 publisher.publish(ev::REMOVED, json!({ "key": key }));
+                crate::composition::runtime::playlist::reload();
                 crate::infrastructure::semantic_index::request_refresh();
             }
             true

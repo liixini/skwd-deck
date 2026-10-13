@@ -187,9 +187,30 @@ impl Setting<String> {
     }
 }
 
+impl Setting<Vec<String>> {
+    pub const fn array(path: &'static str) -> Self {
+        Self { spec: SettingSpec::array(path), marker: PhantomData }
+    }
+
+    pub fn read(self, root: &Value) -> Vec<String> {
+        crate::arr_ref(root, self.path())
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
 pub mod setting {
     use super::Setting;
     use crate::keys;
+
+    pub mod library {
+        use super::{Setting, keys};
+        pub const FOLDERS: Setting<Vec<String>> = Setting::array(keys::library::FOLDERS);
+        pub const EXCLUDED_FOLDERS: Setting<Vec<String>> =
+            Setting::array(keys::library::EXCLUDED_FOLDERS);
+    }
 
     pub mod filter_bar {
         use super::{Setting, keys};
@@ -584,7 +605,47 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::performance::BATTERY_SAVER, true),
     SettingSpec::boolean(crate::keys::effects::AUTO_RECOLOR, false),
     SettingSpec::boolean(crate::keys::general::RANDOM_ROTATE, false),
-    SettingSpec::boolean(crate::keys::general::WEATHER_MATCH, false),
+    SettingSpec::boolean(crate::keys::weather::ENABLED, false),
+    SettingSpec::bounded_number(crate::keys::weather::OUTDOORS_CONTRAST_MARGIN, 0.005, 0.0, 1.0),
+    SettingSpec::bounded_number(crate::keys::weather::OUTDOORS_DWELL_SECONDS, 1800.0, 1.0, 86400.0),
+    SettingSpec::text(crate::keys::weather::OUTDOORS_TRANSITION_SHADER, "crossfade"),
+    SettingSpec::boolean(crate::keys::weather::OUTDOORS_RETHEME, false),
+    SettingSpec::bounded_number(crate::keys::weather::OUTDOORS_STABLE_SECONDS, 600.0, 0.0, 3600.0),
+    SettingSpec::text(crate::keys::weather::SOURCE, crate::keys::weather::SOURCE_PLAYLISTS),
+    SettingSpec::text(
+        crate::keys::weather::SEMANTIC_SELECTION,
+        crate::keys::weather::SELECTION_AUTOMATIC,
+    ),
+    SettingSpec::array(crate::keys::weather::APPROVED_CLEAR),
+    SettingSpec::array(crate::keys::weather::APPROVED_CLOUDY),
+    SettingSpec::array(crate::keys::weather::APPROVED_RAINY),
+    SettingSpec::array(crate::keys::weather::APPROVED_SNOWY),
+    SettingSpec::array(crate::keys::weather::APPROVED_STORMY),
+    SettingSpec::array(crate::keys::weather::APPROVED_FOGGY),
+    SettingSpec::array(crate::keys::weather::APPROVED_WINDY),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_CLEAR, "clear blue sky and sunshine"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_CLOUDY, "cloudy overcast sky"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_RAINY, "rainy day and wet streets"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_SNOWY, "snowy winter landscape"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_STORMY, "stormy sky and lightning"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_FOGGY, "foggy misty landscape"),
+    SettingSpec::text(crate::keys::weather::SEMANTIC_WINDY, "windy landscape and blowing trees"),
+    SettingSpec::bounded_number(crate::keys::weather::SEMANTIC_MAX_RESULTS, 32.0, 1.0, 64.0),
+    SettingSpec::bounded_number(crate::keys::weather::SEMANTIC_SCORE_WINDOW, 0.022, 0.0, 1.0),
+    SettingSpec::bounded_number(
+        crate::keys::weather::SEMANTIC_MIN_SCORE_PROMINENCE,
+        0.015,
+        0.0,
+        1.0,
+    ),
+    SettingSpec::bounded_number(crate::keys::weather::SEMANTIC_DWELL_SECONDS, 600.0, 5.0, 86400.0),
+    SettingSpec::text(crate::keys::weather::CLEAR, ""),
+    SettingSpec::text(crate::keys::weather::CLOUDY, ""),
+    SettingSpec::text(crate::keys::weather::RAINY, ""),
+    SettingSpec::text(crate::keys::weather::SNOWY, ""),
+    SettingSpec::text(crate::keys::weather::STORMY, ""),
+    SettingSpec::text(crate::keys::weather::FOGGY, ""),
+    SettingSpec::text(crate::keys::weather::WINDY, ""),
     SettingSpec::boolean(crate::keys::selector::ROUND_CORNERS, false),
     SettingSpec::boolean(crate::keys::selector::SLICE_WOBBLE, false),
     SettingSpec::boolean(crate::keys::selector::SLICE_PARALLAX, false),
@@ -704,6 +765,13 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::plasma::LOCK_SCREEN_DYNAMIC, "poster"),
     SettingSpec::text(crate::keys::plasma::LOCK_SCREEN_IMAGE, ""),
     SettingSpec::text(crate::keys::plasma::LOCK_SCREEN_MODE, "off"),
+    SettingSpec::text(crate::keys::lock_screens::MODE, crate::keys::lock_screens::OFF),
+    SettingSpec::text(crate::keys::lock_screens::IMAGE, ""),
+    SettingSpec::boolean(crate::keys::lock_screens::HYPRLOCK, false),
+    SettingSpec::boolean(crate::keys::lock_screens::SWAYLOCK, false),
+    SettingSpec::boolean(crate::keys::lock_screens::DMS, false),
+    SettingSpec::boolean(crate::keys::lock_screens::NOCTALIA, false),
+    SettingSpec::text(crate::keys::lock_screens::SDDM_IMAGE, ""),
     SettingSpec::text(crate::keys::selector::SANDY_SWAP_STYLE, "vortex"),
     SettingSpec::text(crate::keys::selector::HAND_CUT, "straight"),
     SettingSpec::text(crate::keys::selector::HAND_CUT_VARIANCE, "none"),
@@ -879,6 +947,10 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::bounded_number(crate::keys::niri::BACKDROP_BLUR_VIDEO_RADIUS, 20.0, 0.0, 100.0),
     SettingSpec::bounded_number(crate::keys::niri::BACKDROP_BLUR_WE_RADIUS, 20.0, 0.0, 100.0),
     SettingSpec::bounded_number(crate::keys::niri::BACKDROP_DIM, 0.0, 0.0, 100.0),
+    setting::library::FOLDERS.spec(),
+    setting::library::EXCLUDED_FOLDERS.spec(),
+    SettingSpec::array(crate::keys::library::PROFILES),
+    SettingSpec::text(crate::keys::library::PROFILE, crate::EVERYTHING_PROFILE),
     SettingSpec::array(crate::keys::filter_bar::RESOLUTION_PRESETS),
     SettingSpec::array(crate::keys::integrations::LIST),
     SettingSpec::array(crate::keys::post_processing::LIST),
@@ -897,6 +969,13 @@ pub fn find(path: &str) -> Option<&'static SettingSpec> {
 }
 
 pub fn value_kind(path: &str) -> Option<ValueKind> {
+    if path
+        .strip_prefix(crate::keys::theme::APP_PROFILES)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+        .is_some_and(|id| !id.is_empty() && !id.contains('.'))
+    {
+        return Some(ValueKind::Text);
+    }
     if path.starts_with("display.outputLocks.")
         || path.starts_with("filterBar.show.")
         || path.ends_with("hexArc")
@@ -994,6 +1073,11 @@ pub fn read_number_with(root: &Value, path: &str, compact: bool) -> Option<f64> 
 }
 
 pub fn text_default(path: &str) -> Option<&'static str> {
+    if path.starts_with(crate::keys::theme::APP_PROFILES)
+        && value_kind(path) == Some(ValueKind::Text)
+    {
+        return Some("");
+    }
     if path.ends_with("displayMode") {
         return Some("slices");
     }

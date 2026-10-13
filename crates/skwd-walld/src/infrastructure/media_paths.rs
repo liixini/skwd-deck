@@ -39,10 +39,7 @@ pub(crate) fn video_thumb(state: &Arc<WallState>, path: &str) -> Option<String> 
 }
 
 pub(crate) fn static_thumb(state: &Arc<WallState>, path: &str) -> Option<String> {
-    let directory = state.config().wallpaper_dir();
-    let relative =
-        Path::new(path).strip_prefix(&directory).ok()?.to_string_lossy().replace('\\', "/");
-    let key = format!("static:{relative}");
+    let key = state.library_key(Path::new(path))?;
     state
         .with_db(|connection| skwd_wall_core::db::thumb_for_key(connection, &key))
         .ok()

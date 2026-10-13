@@ -638,6 +638,11 @@ fn session_waits_for_transition() {
     st.set_session_paused(11, true);
     st.begin_apply();
     let (child, stdin) = capture_child(&output);
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !output.exists() {
+        assert!(std::time::Instant::now() < deadline, "capture not ready");
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let pid = child.id();
     st.restore_paper((child, stdin));
     st.allow_session_rendering_for(pid, Duration::from_millis(30));

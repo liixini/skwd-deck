@@ -68,9 +68,9 @@ pub fn playlist_member_items(
     id: i64,
 ) -> rusqlite::Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT pm.key, m.name, m.type, m.thumb, m.we_id, m.video_file
+        "SELECT pm.key, m.name, m.type, m.thumb, m.we_id, m.video_file, COALESCE(m.hidden, 0)
          FROM playlist_members pm LEFT JOIN meta m ON m.key = pm.key
-         WHERE pm.playlist_id = ?1 ORDER BY pm.position, pm.key",
+         WHERE pm.playlist_id = ?1 AND COALESCE(m.library_excluded, 0) = 0 ORDER BY pm.position, pm.key",
     )?;
     let rows = stmt.query_map(params![id], |row| {
         Ok(serde_json::json!({
@@ -80,6 +80,7 @@ pub fn playlist_member_items(
             "thumb": row.get::<_, Option<String>>(3)?,
             "we_id": row.get::<_, Option<String>>(4)?,
             "video_file": row.get::<_, Option<String>>(5)?,
+            "hidden": row.get::<_, bool>(6)?,
         }))
     })?;
     rows.collect()

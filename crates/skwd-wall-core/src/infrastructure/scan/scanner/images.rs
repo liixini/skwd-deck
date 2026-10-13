@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
-use walkdir::WalkDir;
 
 use crate::state::WallState;
 use crate::{db, media, paths};
@@ -12,31 +11,15 @@ use super::super::artifacts::{
 };
 use super::super::catalog::{Row, row_item_json};
 use super::super::concurrency::{decode_budget, image_decode_weight, scan_threads};
-use super::common::{artifacts_ready, is_image, known_mtimes, mtime_secs};
+use super::common::{artifacts_ready, is_image, known_mtimes};
 use super::status::{disk_full, mark_disk_full};
 
 pub fn scan<F>(state: &WallState, on_item: F) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
-    let directory = PathBuf::from(state.config().wallpaper_dir());
-    if !directory.is_dir() {
-        return 0;
-    }
-
     let known = known_mtimes(state);
-    let candidates: Vec<(PathBuf, String, i64)> = WalkDir::new(&directory)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| !paths::is_internal_library_path(entry.path()))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file() && is_image(entry.path()))
-        .filter_map(|entry| {
-            let relative =
-                entry.path().strip_prefix(&directory).ok()?.to_string_lossy().into_owned();
-            Some((entry.path().to_path_buf(), relative, mtime_secs(entry.path())))
-        })
-        .collect();
+    let candidates = super::common::candidates(state, is_image);
 
     let pending: Vec<&(PathBuf, String, i64)> = candidates
         .iter()
@@ -53,8 +36,7 @@ where
         .collect();
 
     log::debug!(
-        "scan: dir={} candidates={} todo={} threads={}",
-        directory.display(),
+        "scan: candidates={} todo={} threads={}",
         candidates.len(),
         pending.len(),
         scan_threads()

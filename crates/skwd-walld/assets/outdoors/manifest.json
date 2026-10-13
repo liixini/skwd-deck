@@ -1,0 +1,217 @@
+{
+  "entries": [
+    {
+      "file": "autumn_bear_nps.jpg",
+      "name": "Bear Lake autumn",
+      "season": "autumn",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 2048
+    },
+    {
+      "file": "autumn_bear_nps.jpg",
+      "name": "Bear Lake autumn",
+      "season": "autumn",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 2048
+    },
+    {
+      "file": "autumn_pond_nps.jpg",
+      "name": "Big Thicket autumn pond",
+      "season": "autumn",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 3413
+    },
+    {
+      "file": "spring_pond_nps.jpg",
+      "name": "Big Thicket spring pond",
+      "season": "spring",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1708
+    },
+    {
+      "file": "summer_clear_nps.jpg",
+      "name": "Tipsoo Lake summer",
+      "season": "summer",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1440
+    },
+    {
+      "file": "summer_overcast_nps.jpg",
+      "name": "Green Lake summer clouds",
+      "season": "summer",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1440
+    },
+    {
+      "file": "winter_frost.jpg",
+      "name": "Ashley Lake frost",
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy",
+        "snowy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": true,
+      "width": 4000,
+      "height": 3000
+    },
+    {
+      "file": "winter_lake.jpg",
+      "name": "Lake Iijärvi in winter",
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": true,
+      "width": 4752,
+      "height": 3168
+    },
+    {
+      "file": "winter_nosnow_nps.jpg",
+      "name": "Big Thicket winter slough",
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1700,
+      "requires_no_snow": true
+    },
+    {
+      "file": "winter_nosnow_nps.jpg",
+      "name": "Big Thicket winter slough",
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1700
+    },
+    {
+      "file": "winter_overcast_pond.jpg",
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "name": "Borrow Pit Meadows in winter",
+      "requires_snow": false,
+      "requires_no_snow": true,
+      "width": 5595,
+      "height": 3730
+    },
+    {
+      "file": "ambient_day_nps.jpg",
+      "name": "Shell Lake daylight",
+      "season": "neutral",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1440
+    },
+    {
+      "file": "ambient_night_nps_3840.jpg",
+      "name": "Jordan Pond night",
+      "season": "neutral",
+      "lights": [
+        "night"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 3840,
+      "height": 2560
+    },
+    {
+      "file": "ambient_rain_nps.jpg",
+      "name": "Manzanita Creek clouds",
+      "season": "neutral",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "requires_snow": false,
+      "width": 2560,
+      "height": 1920
+    }
+  ]
+}

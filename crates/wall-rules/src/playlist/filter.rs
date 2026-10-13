@@ -1,7 +1,12 @@
+use std::path::Path;
+
+use wall_proto::playlist_source;
+
 pub use super::tags::matches_tag_spec;
 
 pub struct Item<'a> {
     pub key: &'a str,
+    pub path: &'a str,
     pub tags: &'a [String],
     pub kind: &'a str,
     pub hue: i64,
@@ -129,8 +134,7 @@ fn matches_dimension(field: &str, spec: &str, width: i64, height: i64) -> bool {
 
 fn matches_clause(clause: &str, item: &Item<'_>) -> bool {
     match clause {
-        "all" | "favourites" => true,
-        clause if clause.starts_with("folder:") => folder_of(item.key) == clause["folder:".len()..],
+        playlist_source::ALL | playlist_source::FAVOURITES => true,
         clause if clause.starts_with("tag:") => {
             matches_tag_spec(item.tags, &clause["tag:".len()..])
         }
@@ -157,19 +161,53 @@ fn matches_clause(clause: &str, item: &Item<'_>) -> bool {
     }
 }
 
-pub fn matches(item: &Item<'_>, source: &str) -> bool {
-    let mut any = false;
-    for clause in source.split_whitespace() {
-        if !matches_clause(clause, item) {
-            return false;
+pub struct Filter {
+    folders: Vec<String>,
+    rules: Vec<String>,
+}
+
+impl Filter {
+    pub fn parse(source: &str) -> Self {
+        let mut folders = Vec::new();
+        let mut rules = Vec::new();
+        for clause in playlist_source::clauses(source) {
+            match playlist_source::folder_path(&clause) {
+                Some(folder) => folders.push(folder),
+                None => rules.push(clause),
+            }
         }
-        any = true;
+        Self { folders, rules }
     }
-    any
+
+    pub fn has_folders(&self) -> bool {
+        !self.folders.is_empty()
+    }
+
+    pub fn matches(&self, item: &Item<'_>) -> bool {
+        (self.has_folders() || !self.rules.is_empty())
+            && (!self.has_folders() || self.folders.iter().any(|folder| in_folder(item, folder)))
+            && self.rules.iter().all(|rule| matches_clause(rule, item))
+    }
+}
+
+#[cfg(test)]
+fn matches(item: &Item<'_>, source: &str) -> bool {
+    Filter::parse(source).matches(item)
+}
+
+fn in_folder(item: &Item<'_>, folder: &str) -> bool {
+    if folder.is_empty() {
+        return folder_of(item.key).is_empty();
+    }
+    let folder = Path::new(folder);
+    if folder.is_absolute() {
+        return Path::new(item.path).parent().is_some_and(|parent| parent.starts_with(folder));
+    }
+    Path::new(&folder_of(item.key)).starts_with(folder)
 }
 
 pub fn source_wants_favourites(source: &str) -> bool {
-    source.split_whitespace().any(|clause| clause == "favourites")
+    playlist_source::clauses(source).iter().any(|clause| clause == playlist_source::FAVOURITES)
 }
 
 #[cfg(test)]

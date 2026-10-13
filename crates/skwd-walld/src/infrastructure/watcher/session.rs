@@ -7,7 +7,10 @@ use crate::composition::context::Ctx;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct WatchSettings {
-    pub(super) directories: [std::path::PathBuf; 3],
+    pub(super) directories: Vec<std::path::PathBuf>,
+    pub(super) workshop: std::path::PathBuf,
+    pub(super) anchors: [Option<std::path::PathBuf>; 2],
+    excluded_folders: Vec<String>,
     polling_enabled: bool,
     interval_seconds: u64,
 }
@@ -16,11 +19,15 @@ impl WatchSettings {
     pub(super) fn read(state: &Arc<WallState>) -> Self {
         let config = state.config();
         Self {
-            directories: [
-                config.wallpaper_dir().into(),
-                config.video_dir().into(),
-                config.we_dir(),
-            ],
+            directories: config
+                .library_folders()
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+            workshop: config.we_dir(),
+            anchors: [config.wallpaper_dir(), config.video_dir()]
+                .map(|path| skwd_config::resolve_folder(std::path::Path::new(&path))),
+            excluded_folders: config.excluded_folders(),
             polling_enabled: config.library_polling_fallback(),
             interval_seconds: config.library_polling_interval_seconds(),
         }
@@ -95,7 +102,8 @@ fn install(ctx: Ctx) -> Option<Session> {
             std::time::Duration::from_secs(config.library_polling_interval_seconds()),
         )
     };
-    let cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    let cfg = super::ConfigWatch::new(skwd_wall_core::config::config_path())
+        .with_workshop(&state.config());
     let cfg_for_loop = cfg.clone();
     let tx_for_loop = tx.clone();
     let mut watcher = match create_watcher(tx.clone()) {

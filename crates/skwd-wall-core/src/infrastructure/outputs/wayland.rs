@@ -323,29 +323,64 @@ pub fn watch<F: FnMut()>(mut on_change: F) {
     if fake_active() {
         return watch_fake(on_change);
     }
-    let Ok(conn) = Connection::connect_to_env() else {
-        return;
-    };
-    let mut queue = conn.new_event_queue();
-    let qh = queue.handle();
-    let _registry = conn.display().get_registry(&qh, ());
-    let mut watcher = Watcher::default();
-    if queue.roundtrip(&mut watcher).is_err() {
-        return;
-    }
-    watcher.changed = false;
+    monitor_connections(
+        || Connection::connect_to_env().ok(),
+        || {
+            std::thread::sleep(ENUM_RETRY_DELAY);
+            true
+        },
+        &mut on_change,
+    );
+}
+
+fn monitor_connections(
+    mut connect: impl FnMut() -> Option<Connection>,
+    mut retry: impl FnMut() -> bool,
+    mut on_change: impl FnMut(),
+) {
+    let mut recovering = false;
     loop {
-        if queue.blocking_dispatch(&mut watcher).is_err() {
-            break;
-        }
-        if !watcher.changed {
+        let Some(conn) = connect() else {
+            recovering = true;
+            if !retry() {
+                return;
+            }
+            continue;
+        };
+        let mut queue = conn.new_event_queue();
+        let qh = queue.handle();
+        let _registry = conn.display().get_registry(&qh, ());
+        let mut watcher = Watcher::default();
+        if queue.roundtrip(&mut watcher).is_err() {
+            recovering = true;
+            if !retry() {
+                return;
+            }
             continue;
         }
         watcher.changed = false;
-        std::thread::sleep(ENUM_RETRY_DELAY);
-        let _ = queue.roundtrip(&mut watcher);
-        watcher.changed = false;
-        on_change();
+        if recovering {
+            on_change();
+        }
+        recovering = true;
+        loop {
+            if queue.blocking_dispatch(&mut watcher).is_err() {
+                break;
+            }
+            if !watcher.changed {
+                continue;
+            }
+            watcher.changed = false;
+            std::thread::sleep(ENUM_RETRY_DELAY);
+            if queue.roundtrip(&mut watcher).is_err() {
+                break;
+            }
+            watcher.changed = false;
+            on_change();
+        }
+        if !retry() {
+            return;
+        }
     }
 }
 

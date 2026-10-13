@@ -23,6 +23,7 @@ fn config_skips_missing() {
             { "template": "good.conf", "output": "colors.json" },
             { "template": "missing.conf", "output": "never.json" },
             { "template": "", "output": "skip.json" },
+            { "template": "good.conf", "output": "static.json", "profile": "nord" },
         ]
     }));
 
@@ -34,6 +35,7 @@ fn config_skips_missing() {
     assert!(!content.contains("[templates.integration_1]"));
     assert!(!content.contains("never.json"));
     assert!(!content.contains("[templates.integration_2]"));
+    assert!(!content.contains("static.json"));
 }
 
 #[test]

@@ -10,7 +10,7 @@ mod reload;
 mod structured;
 mod waybar;
 
-pub use manager::{apply, customize, list, set_enabled};
+pub use manager::{apply, customize, list, refresh_profile, set_enabled};
 pub(crate) use waybar::protects_output;
 
 #[cfg(test)]

@@ -123,15 +123,9 @@ pub(super) fn generic_source_list(
     if let Some(resp) = require_enabled(state, req, stats, source) {
         return resp;
     }
-    let (bing_market, unsplash_key, pexels_key, wallpaper_dir, video_dir) = {
+    let (bing_market, unsplash_key, pexels_key, folders) = {
         let cfg = state.config();
-        (
-            cfg.bing_market(),
-            cfg.unsplash_access_key(),
-            cfg.pexels_api_key(),
-            cfg.wallpaper_dir(),
-            cfg.video_dir(),
-        )
+        (cfg.bing_market(), cfg.unsplash_access_key(), cfg.pexels_api_key(), cfg.library_folders())
     };
     let page = req.opt_i64("page").unwrap_or(1).max(1) as u32;
     let query = req.str_param("query", "").to_string();
@@ -164,12 +158,8 @@ pub(super) fn generic_source_list(
     };
     match result {
         Ok(search_page) => {
-            let lib_dir = if spec.media == wall_proto::sources::Media::Video {
-                &video_dir
-            } else {
-                &wallpaper_dir
-            };
-            let local = sources::library_ids(lib_dir, source);
+            let local: std::collections::HashSet<String> =
+                folders.iter().flat_map(|folder| sources::library_ids(folder, source)).collect();
             let items: Vec<wall_proto::sources::ListItem> = search_page
                 .results
                 .iter()
@@ -331,8 +321,15 @@ pub(super) fn generic_source_download(ctx: &Ctx, req: &Request, source: &str) ->
     };
     let track_url = req.str_param("track_url", "").to_string();
     let access_key = state.config().unsplash_access_key();
-    let wdir = state.config().wallpaper_dir();
-    if let Some(existing) = sources::library_path(&wdir, source, &id) {
+    let Some(wdir) = state.config().library_destination(false) else {
+        return Response::err(req.id, INVALID_PARAMS, LIBRARY_FOLDER_REQUIRED);
+    };
+    if let Some(existing) = state
+        .config()
+        .library_folders()
+        .iter()
+        .find_map(|folder| sources::library_path(folder, source, &id))
+    {
         return respond_exists(req.id, events.as_ref(), &id, &existing);
     }
     let workers = Arc::clone(workers);

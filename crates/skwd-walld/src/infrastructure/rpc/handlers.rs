@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use skwd_wall_core::{WallState, db};
-use wall_proto::{Request, Response, ev};
+use wall_proto::{Request, Response, ev, rpc};
 
+use super::common::INVALID_PARAMS;
 use super::response::fail;
 use crate::backend::events::EventPublisher;
 use crate::composition::bootstrap::vram_mb;
@@ -12,6 +13,27 @@ use crate::composition::runtime::playlist;
 use crate::infrastructure::effects_preview::{effects_preview, requested_effects};
 use crate::infrastructure::stats::Stats;
 use crate::infrastructure::workspaces;
+
+const SCAN_ITEM_KEY: &str = "key";
+const STEAM_CLIENT_BACKEND: &str = "steam";
+const WEATHER_CATEGORY_REQUIRED: &str = "category must be a weather category";
+
+pub(super) fn lockscreen_set(state: &Arc<WallState>, req: &Request) -> Response {
+    let request: wall_proto::LockScreenSetRequest = match serde_json::from_value(req.params.clone())
+    {
+        Ok(request) => request,
+        Err(error) => return Response::err(req.id, INVALID_PARAMS, error.to_string()),
+    };
+    let target = request.target;
+    let enabled = request.enabled;
+    match crate::infrastructure::lock_screen::request_set(state, request) {
+        Ok(()) => Response::ok(
+            req.id,
+            json!(wall_proto::LockScreenSetResult { ok: true, target, enabled }),
+        ),
+        Err(error) => Response::err(req.id, 1, format!("{error:#}")),
+    }
+}
 
 pub(super) fn status_payload(
     result: Result<skwd_wall_core::infrastructure::paper::CapabilitiesResult, String>,
@@ -35,6 +57,7 @@ pub(super) fn status_payload(
 }
 
 pub(super) fn runtime_status(ctx: &Ctx) -> Value {
+    ctx.state.reload_config();
     let config = ctx.config.read().clone();
     let result = skwd_wall_core::infrastructure::paper::PaperClient::configured(&config)
         .capabilities()
@@ -42,9 +65,30 @@ pub(super) fn runtime_status(ctx: &Ctx) -> Value {
     let mut status = status_payload(result);
     status["steam_helper_available"] =
         json!(crate::infrastructure::steam_download::require_steam_helper().is_ok());
+    status[wall_proto::STEAM_CLIENT_AVAILABLE_FIELD] = json!(
+        config.steam_backend() == STEAM_CLIENT_BACKEND
+            && crate::infrastructure::steam_download::inventory(&[]).is_ok()
+    );
     status["playback"] = crate::infrastructure::playback::status();
     status["library_watch"] = json!(crate::infrastructure::watcher::current_status());
     status
+}
+
+pub(super) fn wall_mirror(state: &WallState, request: &Request) -> Response {
+    let target: paper_control::MirrorTarget = match serde_json::from_value(request.params.clone()) {
+        Ok(target) => target,
+        Err(error) => return Response::err(request.id, INVALID_PARAMS, error.to_string()),
+    };
+    let output = target.output.clone();
+    match skwd_wall_core::infrastructure::paper::PaperClient::configured(&state.config())
+        .mirror(target)
+    {
+        Ok(()) => Response::ok(
+            request.id,
+            json!({wall_proto::apply_fields::OK: true, wall_proto::apply_fields::OUTPUT: output}),
+        ),
+        Err(error) => Response::err(request.id, INVALID_PARAMS, error.to_string()),
+    }
 }
 
 pub(super) fn wall_set_paused(
@@ -69,6 +113,10 @@ pub(super) fn wall_set_paused(
         }
     }
     let _apply = state.apply().lock();
+    let _activity = match skwd_wall_core::plasma::activities::sync_current(state) {
+        Ok(target) => target,
+        Err(error) => return Response::err(request.id, -1, error.to_string()),
+    };
     if output == "*" {
         renderers.set_paused(paused);
     } else {
@@ -184,12 +232,31 @@ pub(super) fn diag(ctx: &Ctx, request: &Request) -> Response {
     )
 }
 
+pub(super) fn scan_item(ctx: &Ctx, req: &Request) -> Response {
+    playlist::reload();
+    match ctx
+        .state
+        .with_db(|connection| db::library_visible(connection, req.str_param(SCAN_ITEM_KEY, "")))
+    {
+        Ok(true) => {
+            ctx.stats.thumb();
+            ctx.events.publish(ev::CACHED, req.params.clone());
+        }
+        Ok(false) => {}
+        Err(error) => return fail(&ctx.stats, req.id, error),
+    }
+    Response::ok(req.id, json!({"ok": true}))
+}
+
 pub(super) fn scan_done(ctx: &Ctx, request: &Request) -> Response {
     let Ctx { state, events, workers, stats, .. } = ctx;
     let count = request.params.get("count").and_then(serde_json::Value::as_i64).unwrap_or(0);
     let disk_full = request.bool_param("disk_full", false);
     let request_id = request.opt_str("request_id");
     stats.set_task("idle");
+    if let Err(error) = state.reconcile_library() {
+        return fail(stats, request.id, error);
+    }
     let total = state.with_db(skwd_wall_core::db::item_count).unwrap_or(-1);
     log::info!("scan complete: {count} items (library total {total})");
     if let Some(request_id) = request_id {
@@ -200,6 +267,7 @@ pub(super) fn scan_done(ctx: &Ctx, request: &Request) -> Response {
         completion["request_id"] = json!(request_id);
     }
     events.publish(ev::SCAN_DONE, completion);
+    playlist::reload();
     ctx.tasks.finish("scan", wall_proto::TaskState::Completed, format!("{count} wallpapers found"));
     let changed_paths: Vec<String> = request
         .params
@@ -329,5 +397,81 @@ pub(super) fn theme_app(state: &WallState, req: &Request) -> Response {
     match result {
         Ok(result) => Response::ok(req.id, json!(result)),
         Err(error) => Response::err(req.id, 1, error.to_string()),
+    }
+}
+
+pub(super) fn wall_weather(ctx: &Ctx, req: &Request) -> Response {
+    use crate::composition::runtime::weather;
+    if req.method == rpc::WALL_WEATHER_RESUME
+        && crate::composition::runtime::outdoors::active(&ctx.state.config())
+    {
+        return wall_outdoors(ctx, req);
+    }
+    let status = if req.method == rpc::WALL_WEATHER {
+        weather::snapshot(ctx)
+    } else {
+        weather::refresh(
+            ctx,
+            req.method == rpc::WALL_WEATHER_REFRESH,
+            req.method == rpc::WALL_WEATHER_RESUME,
+        )
+    };
+    Response::ok(req.id, json!(status))
+}
+
+pub(super) fn wall_weather_candidates(ctx: &Ctx, req: &Request) -> Response {
+    let Some(category) = req
+        .params
+        .get(wall_proto::rpc_params::CATEGORY)
+        .and_then(Value::as_str)
+        .filter(|category| wall_proto::weather_category::PRIORITY.contains(category))
+    else {
+        return Response::err(req.id, super::common::INVALID_PARAMS, WEATHER_CATEGORY_REQUIRED);
+    };
+    Response::ok(
+        req.id,
+        json!(crate::composition::runtime::weather::candidates(&ctx.state, category)),
+    )
+}
+
+const ENABLED_REQUIRED: &str = "enabled must be a boolean";
+const OUTDOORS_ENABLED: &str = "enabled";
+const OUTDOORS_OUTPUT: &str = "output";
+const OUTDOORS_ALL: &str = "*";
+
+pub(super) fn wall_outdoors(ctx: &Ctx, req: &Request) -> Response {
+    use crate::composition::runtime::outdoors;
+    let result = if req.method == rpc::WALL_WEATHER_FOLLOW {
+        let Some(enabled) = req.params.get(OUTDOORS_ENABLED).and_then(Value::as_bool) else {
+            return Response::err(req.id, super::common::INVALID_PARAMS, ENABLED_REQUIRED);
+        };
+        outdoors::follow(ctx, enabled)
+    } else {
+        outdoors::feedback(
+            ctx,
+            &req.method,
+            req.str_param(OUTDOORS_OUTPUT, OUTDOORS_ALL),
+            req.opt_str(wall_proto::rpc_params::KEY),
+        )
+    };
+    match result {
+        Ok(status) => Response::ok(req.id, json!(status)),
+        Err(error) => Response::err(req.id, super::common::INVALID_PARAMS, error.to_string()),
+    }
+}
+
+pub(super) fn theme_apps_refresh(state: &WallState, req: &Request, stats: &Stats) -> Response {
+    let request = match serde_json::from_value::<wall_proto::AppThemeRefresh>(req.params.clone()) {
+        Ok(request) => request,
+        Err(error) => return Response::err(req.id, INVALID_PARAMS, error.to_string()),
+    };
+    state.reload_config();
+    let _theme = state.theme().lock_shell_preview();
+    match skwd_wall_core::theme::profiles::refresh_apps(state, &request) {
+        Ok(result) => Response::ok(req.id, json!(result)),
+        Err(error) => {
+            stats.error();
+            Response::err(req.id, 1, error.to_string())
+        }
     }
 }

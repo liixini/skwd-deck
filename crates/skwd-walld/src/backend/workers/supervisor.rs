@@ -1,3 +1,9 @@
+#[derive(Clone, Copy)]
+pub(crate) struct TinierRequest<'a> {
+    pub(crate) source: &'a str,
+    pub(crate) replace: bool,
+}
+
 pub(crate) struct TinierPreparation {
     pub(crate) task_id: String,
     pub(crate) result: std::sync::mpsc::Receiver<Result<(), String>>,
@@ -10,6 +16,6 @@ pub(crate) trait MediaWorkerSupervisor: Send + Sync {
     fn remote_thumbnails(&self, source: &str, jobs: &[(String, String)]);
     fn optimize_images(&self, automatic: bool, changed_paths: &[String]) -> bool;
     fn image_optimization_status(&self) -> serde_json::Value;
-    fn prepare_tinier(&self, source: &str) -> TinierPreparation;
+    fn prepare_tinier(&self, request: TinierRequest<'_>) -> TinierPreparation;
     fn stop_tinier(&self, task_id: &str) -> bool;
 }

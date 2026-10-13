@@ -7,7 +7,8 @@ use super::args::{first_positional, take_flag, take_option};
 use super::error::CliError;
 use super::rpc::call;
 use super::wallpaper::{
-    apply_params_for_item, kind_for_path, list_items, matches_filters, now_seed, pick_index,
+    LIST_COUNT, LIST_ROWS, apply_params_for_item, kind_for_path, list_items, matches_filters,
+    now_seed, pick_index, shown,
 };
 
 pub(super) fn run(socket: &Path, verb: &str, mut args: Vec<String>) -> Result<(), CliError> {
@@ -28,6 +29,7 @@ pub(super) fn run(socket: &Path, verb: &str, mut args: Vec<String>) -> Result<()
             Ok(())
         }
         "random" => random(socket, args),
+        "profile" => profile(&args),
         "next" | "prev" => playlist_step(socket, verb, args),
         "back" | "forward" => history_step(socket, verb, args),
         "history" => history(socket, args),
@@ -120,7 +122,16 @@ fn displays(mut args: Vec<String>) {
 fn list(socket: &Path, mut args: Vec<String>) -> Result<(), CliError> {
     let as_json = take_flag(&mut args, &["--json"]);
     let favourites = take_flag(&mut args, &["--favourites", "--favorites"]);
-    let response = call(socket, rpc::WALL_LIST, &json!({ "favourites": favourites }))?;
+    let mut response = call(socket, rpc::WALL_LIST, &json!({ "favourites": favourites }))?;
+    let profile = skwd_config::active_library_profile(crate::config::Config::load().root());
+    if let Some(rows) = response.get_mut(LIST_ROWS).and_then(Value::as_array_mut) {
+        rows.retain(|row| {
+            serde_json::from_value::<wall_proto::WallpaperItem>(row.clone())
+                .is_ok_and(|item| shown(&item, profile.as_ref()))
+        });
+        let count = rows.len();
+        response[LIST_COUNT] = json!(count);
+    }
     if as_json {
         print_json(&response);
         return Ok(());
@@ -193,8 +204,10 @@ fn random(socket: &Path, mut args: Vec<String>) -> Result<(), CliError> {
     let config = crate::config::Config::load();
     let response = call(socket, rpc::WALL_LIST, &json!({ "favourites": favourites }))?;
     let items = list_items(&response);
+    let profile = skwd_config::active_library_profile(config.root());
     let candidates: Vec<&wall_proto::WallpaperItem> = items
         .iter()
+        .filter(|item| shown(item, profile.as_ref()))
         .filter(|item| matches_filters(item, kind.as_deref(), tag.as_deref()))
         .collect();
     let index = pick_index(candidates.len(), now_seed())
@@ -204,6 +217,28 @@ fn random(socket: &Path, mut args: Vec<String>) -> Result<(), CliError> {
         .ok_or_else(|| CliError::NotFound("cannot resolve random wallpaper".into()))?;
     call(socket, rpc::WALL_APPLY, &params)?;
     println!("applied: {}", item.name.as_deref().unwrap_or("?"));
+    Ok(())
+}
+
+fn profile(args: &[String]) -> Result<(), CliError> {
+    let mut config = crate::config::Config::load();
+    let Some(id) = first_positional(args) else {
+        let active = skwd_config::str_ref(
+            config.root(),
+            skwd_config::keys::library::PROFILE,
+            skwd_config::EVERYTHING_PROFILE,
+        );
+        println!("{active}");
+        return Ok(());
+    };
+    if id != skwd_config::EVERYTHING_PROFILE
+        && skwd_config::library_profile(config.root(), &id).is_none()
+    {
+        return Err(CliError::NotFound(format!("no profile named '{id}'")));
+    }
+    config.set_key(skwd_config::keys::library::PROFILE, json!(id));
+    config.persist().map_err(|err| CliError::local(format!("cannot save profile: {err}")))?;
+    println!("profile: {id}");
     Ok(())
 }
 

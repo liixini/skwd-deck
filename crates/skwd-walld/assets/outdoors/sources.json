@@ -1,0 +1,351 @@
+{
+  "source": "Stock photographs only; no AI-generated assets",
+  "search_provenance": {
+    "duckduckgo_queries": [
+      "site:commons.wikimedia.org/wiki/File: forest lake winter public domain photograph",
+      "wikimedia commons forest lake public domain landscape photo"
+    ],
+    "result": "First DDG HTML query returned no results; next query returned anti-bot challenge. Switched to Wikimedia Commons and official NPS pages."
+  },
+  "attribution_notice": "No claim to original U.S. Government works. IIjärvi from Iivaara in winter by Guillaume Baviere is used under CC BY 2.0. Pond at Borrow Pit Meadows, Feb 2023 by Dominic Nelson and its resized thumbnail are licensed under CC BY-SA 4.0. Source and license links are recorded per image. Wallpaper files are unmodified downloaded originals or publisher-provided renditions. Preview thumbnails are resized derivatives; each transformation is recorded. The photographs retain their individual licenses separately from the application code.",
+  "assets": [
+    {
+      "file": "winter_frost.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Frost_on_the_landscape,_near_Ashley_Lake,_Tally_Lake_Ranger_District_(51795790894).jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4b/Frost_on_the_landscape%2C_near_Ashley_Lake%2C_Tally_Lake_Ranger_District_%2851795790894%29.jpg",
+      "creator": "Erika Williams / U.S. Forest Service",
+      "license": "Public domain (U.S. Forest Service government work)",
+      "license_url": "https://commons.wikimedia.org/wiki/Template:PD-USGov-USDA-FS",
+      "dimensions": [
+        4000,
+        3000
+      ],
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy",
+        "snowy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "Snowy overcast conifer forest near Ashley Lake; no lake visible.",
+      "sha256": "e2150bee83985c3fe00e5079b61b162838a4bc5740f7d9027f17a1522d537ef5",
+      "thumbnail": {
+        "file": "winter_frost.thumb.jpg",
+        "sha256": "454846e0313199a1a2d2bfdb8a2137640d4dba88ad35ec68f56c51f0f63f2fec",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "winter_lake.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:IIj%C3%A4rvi_from_Iivaara_in_winter.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b7/IIj%C3%A4rvi_from_Iivaara_in_winter.jpg",
+      "creator": "Guillaume Baviere",
+      "license": "CC BY 2.0",
+      "license_url": "https://creativecommons.org/licenses/by/2.0/",
+      "dimensions": [
+        4752,
+        3168
+      ],
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear",
+        "snowy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "Clear daylight over frozen Lake Iijärvi and snow-covered forest.",
+      "sha256": "5b828aafa2e7e61c656f983656423d3a7d2e1c94e79f8f0c16b8794cee7f3e4b",
+      "thumbnail": {
+        "file": "winter_lake.thumb.jpg",
+        "sha256": "8549339c7756db17d052b209e33efd50125d2365bec7e48d8f7ae1104b49c1f3",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      },
+      "title": "IIjärvi from Iivaara in winter"
+    },
+    {
+      "file": "summer_overcast_nps.jpg",
+      "source_page": "https://www.nps.gov/places/green-lake-trailhead.htm",
+      "url": "https://www.nps.gov/common/uploads/cropped_image/primary/35AC1183-DDF5-1522-DDAF7A7A2885865C.jpg?width=2560&quality=90&mode=crop",
+      "creator": "National Park Service (photographer unlisted)",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "season": "summer",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "NPS caption explicitly calls this Green Lake on a cloudy summer day; NPS-hosted 2560-pixel rendition.",
+      "sha256": "c94eb9b2885e39111590811e5ca26785ccae59e5230cccfaa6480c0af0069b2a",
+      "thumbnail": {
+        "file": "summer_overcast_nps.thumb.jpg",
+        "sha256": "57b902e2cfabc3021bd02633fa012d28fb7cb7e75f3a62103ee31436fd89253a",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "summer_clear_nps.jpg",
+      "source_page": "https://www.nps.gov/thingstodo/explore-tipsoo-lake.htm",
+      "url": "https://www.nps.gov/common/uploads/cropped_image/primary/A5056BE3-B017-3285-EDB138347C677E8D.jpg?width=2560&quality=90&mode=crop",
+      "creator": "National Park Service (photographer unlisted)",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "season": "summer",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "Clear daylight at Tipsoo Lake; NPS page dates wildflower season to late July or early August; NPS-hosted rendition.",
+      "sha256": "dda4af3c09351aed68f6d067486dff2e16fb1c147b5ad1d66a6eda040daa8392",
+      "thumbnail": {
+        "file": "summer_clear_nps.thumb.jpg",
+        "sha256": "b3af735420fcc209a1055cd0dd63dd528e7943e27fd81e4cdcbb6f1bf0336438",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "ambient_day_nps.jpg",
+      "source_page": "https://www.nps.gov/places/000/shell-lake.htm",
+      "url": "https://www.nps.gov/common/uploads/cropped_image/primary/E3B90182-D7CD-6123-5879C79F987C3C58.jpg?width=2560&quality=90&mode=crop",
+      "creator": "National Park Service (photographer unlisted)",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1440
+      ],
+      "season": null,
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "notes": "Calm Shell Lake and low-detail cloudy sky; season is not established; NPS-hosted rendition.",
+      "sha256": "e6d4aca30d1c47b360ed3b923cdad7c437fa81a6bbb5e36ee9a0ff5cb3c2ad79",
+      "thumbnail": {
+        "file": "ambient_day_nps.thumb.jpg",
+        "sha256": "80ebcd24b7c408a0d0c3f5449811c903d92c5b9bd0b18fa47579be1820a1edc7",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "ambient_night_nps_3840.jpg",
+      "source_page": "https://www.nps.gov/articles/000/wildlife-night-sky-acadia.htm",
+      "url": "https://www.nps.gov/articles/000/images/Jupiter-at-Jordan-Pond.JPG?maxwidth=3840&autorotate=false&quality=88",
+      "creator": "Sardius Stalker / National Park Service",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        3840,
+        2560
+      ],
+      "season": null,
+      "lights": [
+        "night"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "notes": "Starry Jordan Pond and tree silhouettes; no rainfall or season established; NPS-hosted 3840-pixel rendition.",
+      "sha256": "1caebe908e77d1dc93e45e62d51ace7cf7fd88f5478c77c71289f95d64452339",
+      "thumbnail": {
+        "file": "ambient_night_nps_3840.thumb.jpg",
+        "sha256": "412ea13823c4ac1a32f99bd8c390cb8e4a321b32e523f5667c4f955941c1b311",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "ambient_rain_nps.jpg",
+      "source_page": "https://www.nps.gov/lavo/planyourvisit/weather.htm",
+      "url": "https://www.nps.gov/lavo/planyourvisit/images/larger-better-weather-image.jpg?maxwidth=2560&autorotate=false&quality=90",
+      "creator": "National Park Service (photographer unlisted)",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1920
+      ],
+      "season": null,
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "ambient",
+      "notes": "NPS calls this a rainy overcast day near Manzanita Lake; photo shows a creek and overcast sky, but no falling rain; conservatively tagged cloudy.",
+      "sha256": "4fb0bdaee174df5bf05d8b850d37e38b6907f51bd016fd5e7c113baf61175242",
+      "thumbnail": {
+        "file": "ambient_rain_nps.thumb.jpg",
+        "sha256": "4c94fc77dea3e14777728c2414dfacd5e37d310f771ec2d6bbc5fb22f4d611e7",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "spring_pond_nps.jpg",
+      "source_page": "https://www.nps.gov/bith/index.htm",
+      "url": "https://www.nps.gov/common/uploads/structured_data/39EC3CA1-9934-FE72-CF899277FA59400B.jpg?maxWidth=2560&quality=90",
+      "creator": "Scott Sharaga / National Park Service",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1708
+      ],
+      "season": "spring",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "Big Thicket NPS caption explicitly calls this an early-spring reflective pond. Sky is absent, so weather is deliberately unspecified. NPS-hosted rendition.",
+      "sha256": "20a4afa8a3e2db9a96d183e730464c608ea8856a46d92068bbbbf0cfdf339424",
+      "thumbnail": {
+        "file": "spring_pond_nps.thumb.jpg",
+        "sha256": "4866ed63ee677a1eb114d6ae1ac1e035fc88a47558d745d22ae079333bfd3579",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "autumn_pond_nps.jpg",
+      "source_page": "https://www.nps.gov/bith/index.htm",
+      "url": "https://www.nps.gov/common/uploads/structured_data/A234EDCB-029E-0510-504D8E364BD5F601.jpg?maxWidth=2560&quality=90",
+      "creator": "Scott Sharaga / National Park Service",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        3413
+      ],
+      "season": "autumn",
+      "lights": [
+        "day"
+      ],
+      "weather": [],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "alternate",
+      "notes": "Explicit NPS Photo / Scott Sharaga fall pond; portrait aspect is unsuitable for most landscape monitors without cropping. Weather unspecified because sky is absent.",
+      "sha256": "d8f2874ada2f23f523bd55c2a7b8a9ae4f4cc0e9a312b99fbd3f42909e53a8ee",
+      "thumbnail": {
+        "file": "autumn_pond_nps.thumb.jpg",
+        "sha256": "3921a75d62fa2a3e80effb7bbd565ceb931e46ad6b5c7d8c9a3d370654150711",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "autumn_bear_nps.jpg",
+      "source_page": "https://www.nps.gov/romo/planyourvisit/bear-lake-wedding-site.htm",
+      "url": "https://www.nps.gov/common/uploads/image_group/romo/19C8DFB3-F3E0-C6FF-19EDEA84495C501C.jpg?maxwidth=2560&autorotate=false&quality=90",
+      "creator": "Nicole Stagg / National Park Service",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        2048
+      ],
+      "season": "autumn",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "NPS caption explicitly calls this Bear Lake in late fall, showing yellow aspens, conifers and their reflection under blue sky; NPS-hosted rendition.",
+      "sha256": "410a08a31dc1bd2a6055255235bcd95c9aac1cfe3445fefaf045b7cdf461ce13",
+      "thumbnail": {
+        "file": "autumn_bear_nps.thumb.jpg",
+        "sha256": "b942e7570ca1add07bfb46000d573a2a0aefd0dacad2e0b4b8ac7c4709b80dad",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "winter_nosnow_nps.jpg",
+      "source_page": "https://www.nps.gov/bith/index.htm",
+      "url": "https://www.nps.gov/common/uploads/structured_data/FA692D17-BDCC-E98F-C537FAF2CE0D7796.jpg?maxWidth=2560&quality=90",
+      "creator": "Steve Heineke / National Park Service",
+      "license": "Public domain (NPS Photo; U.S. government work)",
+      "license_url": "https://www.nps.gov/aboutus/disclaimer.htm",
+      "dimensions": [
+        2560,
+        1700
+      ],
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "clear"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "NPS explicitly labels leafless cypress slough in winter; visually snow-free, but daylight appears clear/sunny. No snow guard needed.",
+      "sha256": "038eafd7fd9110eba569b79f1ee95ab71b27359d6fa6659182bf7b79d9f5199c",
+      "thumbnail": {
+        "file": "winter_nosnow_nps.thumb.jpg",
+        "sha256": "548776c4d53c4ac9a25774abdd92935b5d2b7a237d4b235936a4c1c31cf42e4d",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification."
+      }
+    },
+    {
+      "file": "winter_overcast_pond.jpg",
+      "title": "Pond at Borrow Pit Meadows, Feb 2023",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Pond_at_Borrow_Pit_Meadows,_Feb_2023.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5d/Pond_at_Borrow_Pit_Meadows%2C_Feb_2023.jpg",
+      "creator": "Dominic Nelson",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "dimensions": [
+        5595,
+        3730
+      ],
+      "season": "winter",
+      "lights": [
+        "day"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "family": "wooded-lake-landscapes",
+      "match_kind": "starter",
+      "notes": "Original photograph dated 3 February 2023; source categories Overcast in the United Kingdom and Winter in Cheshire. Visually verified quiet pond, leafless trees, gray sky and no snow. Original wallpaper file unchanged.",
+      "sha256": "74395908e53f14a10b85956dfd25e305be9969aba2b7694ceea0122ce03fb45c",
+      "thumbnail": {
+        "file": "winter_overcast_pond.thumb.jpg",
+        "sha256": "dbf0aaa9973517171daeda097d9dbe5d811213e1d4ee4ad4764090574565c5e2",
+        "transformation": "Resized to fit 640 by 360; no crop or generative modification.",
+        "license": "CC BY-SA 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/"
+      }
+    }
+  ]
+}

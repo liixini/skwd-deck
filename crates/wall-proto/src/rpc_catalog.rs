@@ -1,11 +1,13 @@
 pub mod rpc {
     pub const THEME_APPS: &str = "theme.apps";
+    pub const THEME_APPS_REFRESH: &str = "theme.apps.refresh";
     pub const THEME_APP_CUSTOMIZE: &str = "theme.app.customize";
     pub const THEME_APP_SET: &str = "theme.app.set";
     pub const PLAYBACK_PROCESSES: &str = "playback.processes";
     pub const THEME_CURRENT: &str = "theme.current";
     pub const STATUS: &str = "status";
     pub const STATUS_BUG_REPORT: &str = "status.bug_report";
+    pub const LOCKSCREEN_SET: &str = "lockscreen.set";
     pub const SUBSCRIBE: &str = "subscribe";
     pub const DIAG: &str = "diag";
     pub const PAPER_READY: &str = "paper.ready";
@@ -18,8 +20,16 @@ pub mod rpc {
     pub const WALL_APPLY: &str = "wall.apply";
     pub const WALL_PREHEAT: &str = "wall.preheat";
     pub const WALL_REMOVE: &str = "wall.remove";
+    pub const WALL_ACTIVITIES: &str = "wall.activities";
     pub const WALL_OUTPUTS: &str = "wall.outputs";
+    pub const WALL_WEATHER_FOLLOW: &str = "wall.weather.follow";
+    pub const WALL_WEATHER_NEXT: &str = "wall.weather.next";
+    pub const WALL_WEATHER_EXCLUDE: &str = "wall.weather.exclude";
+    pub const WALL_WEATHER_PIN: &str = "wall.weather.pin";
+    pub const WALL_WEATHER_REFRESH: &str = "wall.weather.refresh";
+    pub const WALL_WEATHER_RESUME: &str = "wall.weather.resume";
     pub const WALL_WEATHER: &str = "wall.weather";
+    pub const WALL_WEATHER_CANDIDATES: &str = "wall.weather.candidates";
     pub const WALL_RETHEME: &str = "wall.retheme";
     pub const WALL_RELOAD_WE: &str = "wall.reload_we";
     pub const WALL_WE_PROPERTIES: &str = "wall.we_properties";
@@ -28,8 +38,10 @@ pub mod rpc {
     pub const WALL_SET_WE_PROPERTY: &str = "wall.set_we_property";
     pub const WALL_CLEAR_DATA: &str = "wall.clear_data";
     pub const WALL_SET_PAUSED: &str = "wall.set_paused";
+    pub const WALL_MIRROR: &str = "wall.mirror";
     pub const WALL_SET_AUDIO: &str = "wall.set_audio";
     pub const WALL_SET_FAVOURITE: &str = "wall.set_favourite";
+    pub const WALL_SET_HIDDEN: &str = "wall.set_hidden";
     pub const WALL_ROTATION_WAKE: &str = "wall.rotation_wake";
     pub const WALL_MONITORS: &str = "wall.monitors";
     pub const WALL_FORGET_MONITOR: &str = "wall.forget_monitor";
@@ -102,6 +114,7 @@ pub mod rpc {
     pub const ALL: &[&str] = &[
         STATUS,
         STATUS_BUG_REPORT,
+        LOCKSCREEN_SET,
         SUBSCRIBE,
         DIAG,
         PAPER_READY,
@@ -112,8 +125,16 @@ pub mod rpc {
         WALL_APPLY,
         WALL_PREHEAT,
         WALL_REMOVE,
+        WALL_ACTIVITIES,
         WALL_OUTPUTS,
         WALL_WEATHER,
+        WALL_WEATHER_CANDIDATES,
+        WALL_WEATHER_FOLLOW,
+        WALL_WEATHER_NEXT,
+        WALL_WEATHER_EXCLUDE,
+        WALL_WEATHER_PIN,
+        WALL_WEATHER_REFRESH,
+        WALL_WEATHER_RESUME,
         WALL_RETHEME,
         WALL_RELOAD_WE,
         WALL_WE_PROPERTIES,
@@ -122,8 +143,10 @@ pub mod rpc {
         WALL_CAPTURE_THUMBNAILS,
         WALL_CLEAR_DATA,
         WALL_SET_PAUSED,
+        WALL_MIRROR,
         WALL_SET_AUDIO,
         WALL_SET_FAVOURITE,
+        WALL_SET_HIDDEN,
         WALL_ROTATION_WAKE,
         WALL_MONITORS,
         WALL_FORGET_MONITOR,
@@ -170,6 +193,7 @@ pub mod rpc {
         PLAYBACK_PROCESSES,
         THEME_CURRENT,
         THEME_APPS,
+        THEME_APPS_REFRESH,
         THEME_APP_SET,
         THEME_APP_CUSTOMIZE,
         THEME_BACKENDS,

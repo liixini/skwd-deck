@@ -183,10 +183,10 @@ async fn report_remote(source: &str) -> anyhow::Result<()> {
 
 fn library_policy(config: &Config) -> sandbox::Policy {
     let workshop = config.we_dir();
-    let mut policy = sandbox::Policy::new()
-        .read(config.wallpaper_dir())
-        .read(config.video_dir())
-        .read(&workshop);
+    let mut policy = sandbox::Policy::new().read(&workshop);
+    for folder in config.library_folders() {
+        policy = policy.read(folder);
+    }
     for entry in std::fs::read_dir(&workshop).into_iter().flatten().filter_map(Result::ok) {
         let path = entry.path();
         if path.is_symlink()

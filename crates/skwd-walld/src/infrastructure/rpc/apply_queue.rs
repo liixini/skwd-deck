@@ -32,7 +32,9 @@ impl QueuedApply {
     }
 
     fn supersedes(&self, earlier: &Self) -> bool {
-        self.request.str_param("output", "*") == earlier.request.str_param("output", "*")
+        self.request.opt_str(wall_proto::ACTIVITY_PARAM)
+            == earlier.request.opt_str(wall_proto::ACTIVITY_PARAM)
+            && self.request.str_param("output", "*") == earlier.request.str_param("output", "*")
             && self.request.bool_param("override_locks", false)
                 == earlier.request.bool_param("override_locks", false)
             && self.request.str_param("source", "user")
@@ -41,6 +43,12 @@ impl QueuedApply {
 }
 
 impl QueueState {
+    fn accepts(&self, job: &QueuedApply) -> bool {
+        !self.running
+            || self.pending.len() < MAX_PENDING_APPLIES
+            || self.pending.iter().any(|earlier| job.supersedes(earlier))
+    }
+
     fn push(&mut self, job: QueuedApply) -> Option<QueuedApply> {
         if !self.running {
             self.running = true;
@@ -80,7 +88,12 @@ impl ApplyQueue {
             job.reply(&error);
             return;
         }
-        let first = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(job);
+        let mut queue = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if queue.accepts(&job) {
+            ctx.state.apply().cancel_restore(job.request.opt_str(wall_proto::ACTIVITY_PARAM));
+        }
+        let first = queue.push(job);
+        drop(queue);
         if let Some(first) = first {
             let ctx = ctx.clone();
             tokio::task::spawn_blocking(move || run(&ctx, first));

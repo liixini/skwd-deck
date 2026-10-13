@@ -9,12 +9,19 @@ use super::paper::{
 };
 use crate::state::WallState;
 
+pub mod activities;
 pub mod channel;
 mod presentation;
 mod session;
 
+const ASSIGNMENTS_KEY: &str = "Assignments";
+const LAST_SCREEN_KEY: &str = "lastScreen";
+const WALLPAPER_GROUP: &str = "Wallpaper";
+const GENERAL_GROUP: &str = "General";
 const PLUGIN_ID: &str = "org.skwd.wall.plasma";
 const LOCK_SCREEN_GROUPS: [&str; 4] = ["Greeter", "Wallpaper", PLUGIN_ID, "General"];
+const LOCK_SCREEN_CONFIG: &str = "kscreenlockerrc";
+const LOCK_SCREEN_RECEIPT: &str = "plasma.json";
 const QDBUS_PROGRAMS: &[&str] = &["qdbus6", "qdbus-qt6"];
 
 pub struct LockScreenCurrent<'a> {
@@ -90,7 +97,7 @@ fn qdbus_program() -> Option<PathBuf> {
 
 fn kconfig(program: &str, groups: &[&str], key: &str) -> Command {
     let mut command = Command::new(program);
-    command.args(["--file", "kscreenlockerrc"]);
+    command.args(["--file", LOCK_SCREEN_CONFIG]);
     for group in groups {
         command.args(["--group", group]);
     }
@@ -135,13 +142,24 @@ fn restored_lock_screen_plugin(previous: &str) -> Option<&str> {
 }
 
 fn release_lock_screen() -> anyhow::Result<bool> {
+    let record = lock_screen_record();
     if kconfig_read(&["Greeter"], "WallpaperPlugin")? != PLUGIN_ID {
+        super::lock_screens::backup::end(&record)?;
         return Ok(false);
     }
+    super::lock_screens::backup::begin(
+        &super::lock_screens::config_home().join(LOCK_SCREEN_CONFIG),
+        &record,
+    )?;
     let previous = kconfig_read(&LOCK_SCREEN_GROUPS, "PreviousWallpaperPlugin")?;
     kconfig_write(&["Greeter"], "WallpaperPlugin", restored_lock_screen_plugin(&previous))?;
     notify_lock_screen();
+    super::lock_screens::backup::end(&record)?;
     Ok(true)
+}
+
+fn lock_screen_record() -> PathBuf {
+    crate::paths::data_dir().join(super::lock_screens::DIRECTORY).join(LOCK_SCREEN_RECEIPT)
 }
 
 fn notify_lock_screen() {
@@ -189,6 +207,10 @@ fn use_lock_screen_paper(state: &WallState, current: &LockScreenCurrent<'_>) -> 
         "volume": 0,
     });
     let assignment = paper_assignment(state, "*", &entry)?;
+    super::lock_screens::backup::begin(
+        &super::lock_screens::config_home().join(LOCK_SCREEN_CONFIG),
+        &lock_screen_record(),
+    )?;
     kconfig_write(&groups, "Assignment", Some(&serde_json::to_string(&assignment)?))?;
     kconfig_write(&groups, "Paper", Some(&state.config().renderer().paper_bin()))?;
     kconfig_write(&groups, "Paused", Some("false"))?;
@@ -204,13 +226,29 @@ pub fn sync_lock_screen(
     state: &WallState,
     current: Option<&LockScreenCurrent<'_>>,
 ) -> anyhow::Result<bool> {
+    let config = state.config().clone();
+    sync_lock_screen_config(state, &config, current)
+}
+
+pub fn sync_lock_screen_config(
+    state: &WallState,
+    config: &crate::config::Config,
+    current: Option<&LockScreenCurrent<'_>>,
+) -> anyhow::Result<bool> {
     if !running_on_plasma() {
         return Ok(false);
     }
-    let mode = state.config().plasma_lock_screen_mode();
+    let mode = config.plasma_lock_screen_mode();
+    if matches!(
+        mode.as_str(),
+        skwd_config::keys::lock_screens::STATIC | skwd_config::keys::lock_screens::FOLLOW
+    ) && state.config().plasma_lock_screen_mode() == skwd_config::keys::lock_screens::OFF
+    {
+        super::lock_screens::backup::end(&lock_screen_record())?;
+    }
     match mode.as_str() {
         "static" => {
-            let image = state.config().plasma_lock_screen_image();
+            let image = config.plasma_lock_screen_image();
             if image.is_empty() {
                 anyhow::bail!("Plasma lock-screen image is empty");
             }
@@ -226,8 +264,7 @@ pub fn sync_lock_screen(
         }
         "follow" => {
             let Some(current) = current else { return Ok(false) };
-            if current.kind == wall_proto::kind::STATIC || state.config().plasma_lock_screen_live()
-            {
+            if current.kind == wall_proto::kind::STATIC || config.plasma_lock_screen_live() {
                 if let Err(error) = use_lock_screen_paper(state, current) {
                     if current.poster.is_empty() {
                         return Err(error);
@@ -299,6 +336,7 @@ fn assignments(
             output.name.clone(),
             serde_json::json!({
                 "assignment": assignment,
+                activities::WALLPAPER: entry,
                 "paper": state.config().renderer().paper_bin(),
                 "width": width.max(16),
                 "height": height.max(16),
@@ -348,11 +386,52 @@ fn paper_assignment(
     })
 }
 
-fn script(payload: &serde_json::Value) -> String {
+fn script(
+    payload: &serde_json::Value,
+    activity: &str,
+    visible: bool,
+    connectors: &[String],
+) -> anyhow::Result<String> {
     let plugin = PLUGIN_ID;
-    format!(
-        r#"var a={payload};var encoded=JSON.stringify(a);desktops().forEach(function(d){{var active=d.wallpaperPlugin==="{plugin}";d.currentConfigGroup=["Wallpaper","{plugin}","General"];if(active&&d.readConfig("Assignments","")===encoded)return;d.writeConfig("Assignments",encoded);if(!active)d.wallpaperPlugin="{plugin}";}});"#
-    )
+    let assignments_key = ASSIGNMENTS_KEY;
+    let last_screen_key = LAST_SCREEN_KEY;
+    let wallpaper_group = WALLPAPER_GROUP;
+    let general_group = GENERAL_GROUP;
+    let activity = serde_json::to_string(activity)?;
+    let connectors = serde_json::to_string(connectors)?;
+    Ok(format!(
+        r#"var a={payload};var encoded=JSON.stringify(a);var target={activity};
+if((currentActivity()===target)!=={visible})throw new Error("Activity changed; retry the apply");
+if(activities().indexOf(target)<0)throw new Error("Activity no longer exists");
+var screens=Object.keys(a).map(function(output){{var screen=screenForConnector(output);if(screen<0)throw new Error("Unknown output connector");return screen;}});
+var before=desktops().map(function(desktop){{return desktop.id;}});
+function screenOf(desktop){{desktop.currentConfigGroup=[];return desktop.screen<0?Number(desktop.readConfig("{last_screen_key}",-1)):desktop.screen;}}
+function targetDesktops(){{var seen={{}};return desktopsForActivity(target).filter(function(desktop){{if(seen[desktop.id])return false;seen[desktop.id]=true;return true;}});}}
+var ds=targetDesktops();
+{connectors}.map(function(output){{return screenForConnector(output);}}).filter(function(screen){{return screen>=0;}}).forEach(function(screen){{
+    if(ds.some(function(desktop){{return screenOf(desktop)===screen;}}))return;
+    var spare=ds.filter(function(desktop){{return screenOf(desktop)<0;}})[0];
+    if(!spare){{if(screens.indexOf(screen)>=0)throw new Error("Activity has no desktop for the selected output");return;}}
+    spare.screen=screen;
+    ds=targetDesktops();
+    if(!ds.some(function(desktop){{return screenOf(desktop)===screen;}}))throw new Error("Activity desktop initialization failed");
+}});
+ds.filter(function(desktop){{return screenOf(desktop)<0&&before.indexOf(desktop.id)<0;}}).forEach(function(desktop){{desktop.remove();}});
+ds=targetDesktops();
+if(!screens.every(function(screen){{return ds.some(function(desktop){{return screenOf(desktop)===screen;}});}}))throw new Error("Activity has no desktop for the selected output");
+ds.forEach(function(d){{
+    var selected=screens.indexOf(screenOf(d))>=0;
+    var active=d.wallpaperPlugin==="{plugin}";
+    if(!active&&!selected)return;
+    d.currentConfigGroup=["{wallpaper_group}","{plugin}","{general_group}"];
+    var merged=active?JSON.parse(d.readConfig("{assignments_key}","{{}}")):{{}};
+    Object.keys(a).forEach(function(output){{merged[output]=a[output];}});
+    encoded=JSON.stringify(merged);
+    if(active&&d.readConfig("{assignments_key}","")===encoded)return;
+    d.writeConfig("{assignments_key}",encoded);
+    if(!active)d.wallpaperPlugin="{plugin}";
+}});"#
+    ))
 }
 
 pub fn apply(
@@ -361,28 +440,83 @@ pub fn apply(
     map: &serde_json::Map<String, serde_json::Value>,
     transitions: &std::collections::BTreeMap<String, TransitionPolicy>,
 ) -> anyhow::Result<()> {
+    let activity = activities::current_target()?;
     let mut payload = assignments(state, outputs, map, transitions)?;
     let presentation = presentation::Pending::new(&mut payload)?;
-    let entries = payload.as_object().context("Plasma assignments must be an object")?;
-    channel::publish(entries);
-    if !channel::subscribed(entries.keys()) {
-        let program = qdbus_program().context("find qdbus6 or qdbus-qt6 in PATH")?;
-        let status = Command::new(program)
-            .args([
-                "org.kde.plasmashell",
-                "/PlasmaShell",
-                "org.kde.PlasmaShell.evaluateScript",
-                &script(&payload),
-            ])
-            .status()
-            .context("run Plasma wallpaper script")?;
-        if !status.success() {
-            anyhow::bail!("Plasma wallpaper script exited with {status}");
-        }
-    }
+    activities::evaluate(&script(
+        &payload,
+        &activity.id,
+        true,
+        &outputs.iter().map(|output| output.name.clone()).collect::<Vec<_>>(),
+    )?)?;
     let transition_ms =
         transitions.values().filter_map(|transition| transition.duration_ms).max().unwrap_or(0);
     presentation.wait(std::time::Duration::from_millis(15_000 + transition_ms.min(60_000)))
+}
+
+pub fn save_activity(
+    state: &WallState,
+    activity: &str,
+    output: &str,
+    wallpaper: &serde_json::Value,
+    override_locks: bool,
+) -> anyhow::Result<()> {
+    let activity = activities::resolve(Some(activity))?;
+    anyhow::ensure!(!activity.current, "Activity became current; retry the apply");
+    require_backend()?;
+    let kind = wallpaper
+        .get(wall_proto::apply_fields::TYPE)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let path = wallpaper
+        .get(wall_proto::apply_fields::PATH)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let we_id = wallpaper
+        .get(wall_proto::apply_fields::WE_ID)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let mut wallpaper = wallpaper.clone();
+    if kind == wall_proto::kind::WE {
+        anyhow::ensure!(
+            state.config().steam_enabled() && crate::we::valid_we_id(we_id),
+            "invalid or disabled Wallpaper Engine item"
+        );
+        let directory = state.config().we_dir().join(we_id);
+        let (project_type, file) = crate::we::read_project_type(&directory);
+        anyhow::ensure!(
+            directory.is_dir() && crate::we::is_supported_project(&project_type),
+            "unsupported Wallpaper Engine project"
+        );
+        if project_type == wall_proto::kind::VIDEO {
+            let video = crate::we::safe_item_join(&directory, &file)
+                .filter(|path| path.is_file())
+                .context("Wallpaper Engine media does not exist")?;
+            wallpaper[wall_proto::apply_fields::TYPE] = serde_json::json!(wall_proto::kind::VIDEO);
+            wallpaper[wall_proto::apply_fields::PATH] = serde_json::json!(video);
+            wallpaper[wall_proto::apply_fields::WE_ID] = serde_json::json!("");
+        }
+    } else {
+        anyhow::ensure!(
+            matches!(kind, wall_proto::kind::STATIC | wall_proto::kind::VIDEO)
+                && Path::new(path).is_file(),
+            "wallpaper source does not exist"
+        );
+    }
+    let outputs: Vec<_> = crate::outputs::enumerate()
+        .into_iter()
+        .filter(|candidate| {
+            output == wall_proto::apply_fields::ALL_OUTPUTS || candidate.name == output
+        })
+        .filter(|candidate| {
+            override_locks || !state.config().display().output_locked(&candidate.name)
+        })
+        .collect();
+    anyhow::ensure!(!outputs.is_empty(), "Activity apply needs a connected output");
+    let map = outputs.iter().map(|output| (output.name.clone(), wallpaper.clone())).collect();
+    let payload = assignments(state, &outputs, &map, &std::collections::BTreeMap::new())?;
+    activities::evaluate(&script(&payload, &activity.id, false, &crate::outputs::names())?)?;
+    Ok(())
 }
 
 pub fn apply_current(state: &WallState) -> anyhow::Result<()> {

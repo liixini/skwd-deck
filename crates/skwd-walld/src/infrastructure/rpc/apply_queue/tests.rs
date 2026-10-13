@@ -171,3 +171,76 @@ fn socket_reader_accepts_latest_selection_while_apply_is_blocked_and_survives_cl
     });
     assert_eq!(observed, [paths[0].clone(), paths[3].clone()]);
 }
+
+#[test]
+fn activities_queue_independently() {
+    let mut queue = QueueState::default();
+    queue.push(job(1, "DP-1", "static").0).unwrap();
+    let mut first = job(2, "DP-1", "static").0;
+    first.request.params["activity"] = json!("a");
+    let mut second = job(3, "DP-1", "static").0;
+    second.request.params["activity"] = json!("b");
+    queue.push(first);
+    queue.push(second);
+    assert_eq!(queue.next().unwrap().request.id, 2);
+    assert_eq!(queue.next().unwrap().request.id, 3);
+}
+
+#[test]
+fn queued_apply_cancels_restore() {
+    let (_guard, _) = crate::testenv::lock();
+    let (state, events, stats) = crate::testenv::harness();
+    let ctx = crate::testenv::context(&state, &events, &stats);
+    ctx.apply_queue.state.lock().unwrap().running = true;
+    let (job, _reply) = job(1, "*", "static");
+    ctx.apply_queue.submit(&ctx, job.request, job.response);
+    assert!(state.apply().restore_cancelled(None));
+}
+
+#[test]
+fn invalid_apply_preserves_restore() {
+    let (_guard, _) = crate::testenv::lock();
+    let (state, events, stats) = crate::testenv::harness();
+    let ctx = crate::testenv::context(&state, &events, &stats);
+    for params in
+        [json!({"type":"static"}), json!({"type":"static","path":"/wall.png","activity":false})]
+    {
+        let (mut job, _reply) = job(1, "*", "static");
+        job.request.params = params;
+        ctx.apply_queue.submit(&ctx, job.request, job.response);
+        assert!(!state.apply().restore_cancelled(None));
+    }
+}
+
+#[test]
+fn activity_cancel_is_scoped() {
+    let (_guard, _) = crate::testenv::lock();
+    let (state, events, stats) = crate::testenv::harness();
+    let ctx = crate::testenv::context(&state, &events, &stats);
+    ctx.apply_queue.state.lock().unwrap().running = true;
+    let (mut job, _reply) = job(1, "*", "static");
+    job.request.params[wall_proto::ACTIVITY_PARAM] = json!("inactive");
+    ctx.apply_queue.submit(&ctx, job.request, job.response);
+    assert!(state.apply().restore_cancelled(Some("inactive")));
+    assert!(!state.apply().restore_cancelled(Some("current")));
+    assert!(!state.apply().restore_cancelled(None));
+}
+
+#[test]
+fn queue_limit_preserves_restore() {
+    let (_guard, _) = crate::testenv::lock();
+    let (state, events, stats) = crate::testenv::harness();
+    let ctx = crate::testenv::context(&state, &events, &stats);
+    {
+        let mut queue = ctx.apply_queue.state.lock().unwrap();
+        queue.running = true;
+        for index in 0..MAX_PENDING_APPLIES {
+            queue.push(job(index as u64, &format!("DP-{index}"), "static").0);
+        }
+    }
+    let (job, mut reply) = job(100, "DP-excess", "static");
+    ctx.apply_queue.submit(&ctx, job.request, job.response);
+    let reply: Response = serde_json::from_str(&reply.try_recv().unwrap()).unwrap();
+    assert!(reply.error.is_some());
+    assert!(!state.apply().restore_cancelled(None));
+}

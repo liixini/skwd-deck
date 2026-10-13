@@ -27,7 +27,12 @@ fn source_scan_skips_webp() {
     std::fs::write(directory.path().join("done.webp"), b"x").unwrap();
     std::fs::create_dir_all(directory.path().join(".skwd-wall-v2/trash/images")).unwrap();
     std::fs::write(directory.path().join(".skwd-wall-v2/trash/images/hidden.png"), b"x").unwrap();
-    let sources = image_sources(directory.path());
+    let sources = image_sources(
+        directory.path(),
+        &skwd_config::LibraryPolicy::new(
+            &serde_json::json!({"paths":{"wallpaper":directory.path()}}),
+        ),
+    );
     assert_eq!(sources.len(), 2);
     assert!(sources.iter().any(|path| path.ends_with("a.png")));
     assert!(sources.iter().any(|path| path.ends_with("nested/b.JPG")));
@@ -45,7 +50,16 @@ fn delta_candidates() {
     std::fs::write(&internal, b"x").unwrap();
     let outside = directory.path().parent().unwrap().join("outside.png");
     let paths = BTreeSet::from([image.clone(), webp, internal, outside]);
-    assert_eq!(image_sources_from(directory.path(), &paths), vec![image]);
+    assert_eq!(
+        image_sources_from(
+            directory.path(),
+            &paths,
+            &skwd_config::LibraryPolicy::new(
+                &serde_json::json!({"paths":{"wallpaper":directory.path()}})
+            )
+        ),
+        vec![image]
+    );
 }
 
 #[test]
@@ -59,6 +73,9 @@ fn static_stages_output() {
     });
     image.save(&source).unwrap();
     let options = Options {
+        policy: skwd_config::LibraryPolicy::new(
+            &serde_json::json!({"paths":{"wallpaper":wallpaper_dir}}),
+        ),
         wallpaper_dir: wallpaper_dir.clone(),
         trash_dir: directory.path().join("trash"),
         legacy_trash_dir: directory.path().join("legacy-trash"),
@@ -148,4 +165,68 @@ fn animated_gif_detected() {
     drop(encoder);
 
     assert!(gif_is_animated(&source).unwrap());
+}
+
+#[test]
+fn excludes_full_and_delta() {
+    let directory = tempfile::tempdir().unwrap();
+    let hidden = directory.path().join("Sus/deep/a.png");
+    let visible = directory.path().join("Sushi/b.png");
+    for path in [&hidden, &visible] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"original").unwrap();
+    }
+    let policy = skwd_config::LibraryPolicy::new(
+        &serde_json::json!({"paths":{"wallpaper":directory.path()},"library":{"excludedFolders":["Sus/"]}}),
+    );
+    let paths = BTreeSet::from([hidden.clone(), visible.clone()]);
+    assert_eq!(image_sources(directory.path(), &policy), std::slice::from_ref(&visible));
+    assert_eq!(image_sources_from(directory.path(), &paths, &policy), [visible]);
+    assert_eq!(std::fs::read(&hidden).unwrap(), b"original");
+}
+
+#[test]
+fn delta_skips_directory_links() {
+    let directory = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("a.png"), b"original").unwrap();
+    let link = directory.path().join("link");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    let policy = skwd_config::LibraryPolicy::new(
+        &serde_json::json!({"paths":{"wallpaper":directory.path()}}),
+    );
+    let paths = BTreeSet::from([link.join("a.png")]);
+    assert!(image_sources(directory.path(), &policy).is_empty());
+    assert!(image_sources_from(directory.path(), &paths, &policy).is_empty());
+}
+
+#[test]
+fn inactive_managed_root() {
+    let (_guard, root) = crate::testenv::lock();
+    let managed = root.join("walls");
+    let additional = root.join("extra");
+    std::fs::create_dir_all(&additional).unwrap();
+    let source = managed.join("retained.png");
+    std::fs::write(&source, b"original").unwrap();
+    let database = Database::open().unwrap();
+    for folders in [serde_json::json!([]), serde_json::json!([additional])] {
+        let config = skwd_wall_core::config::Config::from_root(
+            serde_json::json!({"paths":{"wallpaper":managed},"library":{"folders":folders}}),
+        );
+        let options = Options::read(&config);
+        let work = options.work_dir.join("retained");
+        std::fs::create_dir_all(&options.work_dir).unwrap();
+        std::fs::write(&work, b"work").unwrap();
+        let request = PendingRequest {
+            full_scan: true,
+            force: true,
+            clean_trash: true,
+            ..PendingRequest::default()
+        };
+        let result = run_worker_batch(&options, &database, &request);
+        assert_eq!(result.status.candidates, 0);
+        assert!(result.renames.is_empty());
+        assert_eq!(std::fs::read(&source).unwrap(), b"original");
+        assert_eq!(std::fs::read(&work).unwrap(), b"work");
+    }
 }

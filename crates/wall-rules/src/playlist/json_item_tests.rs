@@ -16,7 +16,8 @@ fn json_item_matching() {
         "width": 3840,
         "height": 2160
     });
-    assert!(matches_item(&video, "type:video color:blue tag:cat res:>=1920x1080"));
-    assert!(!matches_item(&video, "type:image"));
-    assert!(!matches_item(&serde_json::json!({}), ""));
+    let matching = Filter::parse("type:video color:blue tag:cat res:>=1920x1080");
+    assert!(matches_item(&video, "", &matching));
+    assert!(!matches_item(&video, "", &Filter::parse("type:image")));
+    assert!(!matches_item(&serde_json::json!({}), "", &Filter::parse("")));
 }

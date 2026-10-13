@@ -31,6 +31,7 @@ pub struct ScannerRuntime {
 #[derive(Default)]
 pub struct ThemeRuntime {
     theme_source: Mutex<Option<String>>,
+    source_generation: AtomicU64,
     applied_theme: Mutex<Option<serde_json::Value>>,
     noctalia_preview: Mutex<Option<(String, String)>>,
     bridge_preview: Mutex<Option<Vec<u8>>>,
@@ -114,6 +115,50 @@ impl WallState {
 
     pub fn config(&self) -> RwLockReadGuard<'_, Config> {
         self.config.read()
+    }
+
+    pub fn library_key(&self, path: &std::path::Path) -> Option<String> {
+        let config = self.config();
+        let path = skwd_config::resolve_folder(path)?;
+        let key = crate::paths::key_for_path(&path, &config)?;
+        if !crate::paths::is_video_path(&path) {
+            return Some(key);
+        }
+        let wallpaper = skwd_config::resolve_folder(std::path::Path::new(&config.wallpaper_dir()));
+        drop(config);
+        self.with_db(|connection| {
+            if let Some(stored) =
+                crate::db::key_for_video_file(connection, &path.to_string_lossy())?
+            {
+                return Ok(stored);
+            }
+            if let Some(root) = wallpaper
+                && let Ok(relative) = path.strip_prefix(root)
+            {
+                let legacy = format!("{}:{}", wall_proto::kind::VIDEO, relative.display());
+                if let Some(source) = crate::db::video_file_for_key(connection, &legacy)?
+                    && skwd_config::resolve_folder(std::path::Path::new(&source)).as_ref()
+                        == Some(&path)
+                {
+                    return Ok(legacy);
+                }
+            }
+            if let Some(source) = crate::db::video_file_for_key(connection, &key)?
+                && skwd_config::resolve_folder(std::path::Path::new(&source)).as_ref()
+                    != Some(&path)
+            {
+                return Ok(format!("{}:{}", wall_proto::kind::VIDEO, path.display()));
+            }
+            Ok(key)
+        })
+        .ok()
+    }
+
+    pub fn reconcile_library(&self) -> rusqlite::Result<usize> {
+        let config = self.config();
+        let wallpaper = std::path::PathBuf::from(config.wallpaper_dir());
+        let policy = config.library_policy();
+        self.with_db(|connection| crate::db::reconcile_library(connection, &wallpaper, &policy))
     }
 
     pub fn reload_config(&self) {
@@ -201,13 +246,23 @@ impl ThemeRuntime {
 
     pub fn set_source(&self, path: &str) {
         *lock(&self.theme_source) = Some(path.to_string());
+        self.invalidate_source();
     }
 
     pub fn clear_source_if(&self, path: &str) {
         let mut source = lock(&self.theme_source);
         if source.as_deref() == Some(path) {
             *source = None;
+            self.invalidate_source();
         }
+    }
+
+    pub fn invalidate_source(&self) {
+        self.source_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn source_generation(&self) -> u64 {
+        self.source_generation.load(Ordering::SeqCst)
     }
 
     pub fn source(&self) -> Option<String> {

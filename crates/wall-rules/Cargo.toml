@@ -7,6 +7,8 @@ description = "Pure schedule conditions and playlist logic for skwd-walld"
 
 [dependencies]
 serde_json = { workspace = true }
+serde = { workspace = true }
+wall-proto = { path = "../wall-proto" }
 
 [dev-dependencies]
 proptest = "1"

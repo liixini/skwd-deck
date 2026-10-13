@@ -13,6 +13,7 @@ use super::look::{asset_present, sanitize_name};
 use super::rpc::call;
 use super::wallpaper::{
     apply_params_for_item, kind_for_path, matches_filters, now_seed, path_for_key, pick_index,
+    shown,
 };
 use super::watch::{expand_template, run as watch, shell_escape};
 
@@ -492,4 +493,21 @@ fn static_apply_uses_catalog_source_path() {
         crate::wallpaper::apply_params_for_item(&item, "/old", "/videos", "*"),
         Some(json!({"type":"static", "path":"/data/壁纸/new.png", "output":"*"}))
     );
+}
+
+#[test]
+fn shown_respects_profile() {
+    let root = json!({"library":{"profiles":[{"id":"public","hide":["/walls/anime"],"workshop":"exclude"}]}});
+    let profile = skwd_config::library_profile(&root, "public");
+    let item = |key: &str, path: &str, hidden: bool| wall_proto::WallpaperItem {
+        key: Some(key.into()),
+        path: Some(path.into()),
+        hidden,
+        ..Default::default()
+    };
+    assert!(shown(&item("static:a.png", "/walls/a.png", false), profile.as_ref()));
+    assert!(!shown(&item("static:a.png", "/walls/a.png", true), profile.as_ref()));
+    assert!(!shown(&item("static:b.png", "/walls/anime/b.png", false), profile.as_ref()));
+    assert!(!shown(&item("we:1", "/steam/movie.mp4", false), profile.as_ref()));
+    assert!(shown(&item("we:1", "/steam/movie.mp4", false), None));
 }

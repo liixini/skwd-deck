@@ -167,6 +167,7 @@ async fn receive(
     let mut previous = None;
     let mut subscription = None;
     let mut delivered = None;
+
     let mut bytes = Vec::new();
     loop {
         let mut limited = (&mut reader).take((4097 - bytes.len()) as u64);
@@ -190,15 +191,16 @@ async fn receive(
             changed = published.changed() => { if changed.is_err() { return Ok(()); } }
         }
         let Some(paused) = policies.borrow().get(&output).copied() else { continue };
+        let scoped = skwd_wall_core::plasma::available();
         let entry = subscription
             .as_ref()
+            .filter(|_| !scoped)
             .and_then(|_| skwd_wall_core::plasma::channel::entry(&output))
             .filter(|entry| delivered.as_ref() != Some(entry));
         if previous == Some(paused) && entry.is_none() {
             continue;
         }
-        let mut line =
-            serde_json::json!({"version": 1, "paused": paused, "capabilities": ["assignments"]});
+        let mut line = serde_json::json!({"version": 1, "paused": paused, "capabilities": if scoped { Vec::<&str>::new() } else { vec!["assignments"] }});
         if let Some(entry) = &entry {
             line["entry"] = entry.clone();
         }

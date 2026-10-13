@@ -74,7 +74,8 @@ pub(super) fn current_native_scene_policy(state: &WallState) -> NativeScenePolic
         state.config().renderer().we_disable_particles(),
     );
     policy.gpu_device = state.config().renderer().gpu_device();
-    policy.fill_mode = state.config().renderer().we_scene_fill_mode();
+    policy.fill_mode =
+        state.config().renderer().we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS);
     policy.assets_dir = state.config().we_assets_dir();
     policy.layer = state.config().renderer().wallpaper_layer();
     policy.stationary = crate::infrastructure::paper::stationary_wallpaper(&state.config());

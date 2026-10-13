@@ -1,6 +1,15 @@
+use crate::backend::workers::TinierRequest;
+use crate::composition::apply::ExpectedApply;
+use wall_proto::apply_fields;
+
+const OVERRIDE_LOCKS: &str = "override_locks";
+const ACTIVITY_INVALID_PARAMS: i32 = -32602;
+const ACTIVITY_TYPE_ERROR: &str = "Activity must be a string";
+
 #[allow(clippy::wildcard_imports)]
 use super::common::*;
 
+const PREPARATION_ERROR_KIND: &str = "decode_failed";
 const PREHEAT_MAX_BYTES: usize = 32 << 20;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -11,12 +20,8 @@ enum DeferredTerminal {
     Failure(String),
 }
 
-fn preparation_terminal(
-    generation: u64,
-    current: u64,
-    result: Result<(), String>,
-) -> DeferredTerminal {
-    if current != generation {
+fn preparation_terminal(current: bool, result: Result<(), String>) -> DeferredTerminal {
+    if !current {
         return DeferredTerminal::Superseded;
     }
     match result {
@@ -95,13 +100,10 @@ pub(super) fn effects_commit_rpc(state: &Arc<WallState>, req: &Request) -> Respo
     if let Err(error) =
         crate::infrastructure::effects_preview::resolve_palettes(&mut effects, &state.config())
     {
-        return Response::err(req.id, -32602, error.to_string());
+        return Response::err(req.id, ACTIVITY_INVALID_PARAMS, error.to_string());
     }
-    let (wp_dir, vid_dir) = {
-        let cfg = state.config();
-        (cfg.wallpaper_dir(), cfg.video_dir())
-    };
-    let result = effects_commit(&input, &effects, &wp_dir, &vid_dir);
+    let folders = state.config().library_folders();
+    let result = effects_commit(&input, &effects, &folders);
     if let Some(preview) = req.opt_str("preview") {
         safe_remove_preview(preview);
     }
@@ -109,13 +111,15 @@ pub(super) fn effects_commit_rpc(state: &Arc<WallState>, req: &Request) -> Respo
         Ok(out) => out,
         Err(err) => return Response::err(req.id, -32603, format!("effects.commit: {err}")),
     };
-    tag_effect_output(state, &wp_dir, &out, &effects);
+    tag_effect_output(state, &out, &effects);
     Response::ok(req.id, json!({"output": out}))
 }
 
-pub(super) fn tag_effect_output(state: &Arc<WallState>, wp_dir: &str, out: &str, effects: &Value) {
-    let prefix = format!("{}/", wp_dir.trim_end_matches('/'));
-    let Some(rel) = out.strip_prefix(&prefix) else {
+pub(super) fn tag_effect_output(state: &Arc<WallState>, out: &str, effects: &Value) {
+    let Some(key) = state.library_key(std::path::Path::new(out)) else {
+        return;
+    };
+    let Some((_, rel)) = key.split_once(':') else {
         return;
     };
     let stem = rel.rsplit_once('.').map_or(rel, |(stem, _)| stem);
@@ -127,18 +131,52 @@ pub(super) fn tag_effect_output(state: &Arc<WallState>, wp_dir: &str, out: &str,
     log::info!("effects.commit: tagged {stem} with effect '{label}'");
 }
 
+struct ActivityScope {
+    activity: wall_proto::Activity,
+    wallpapers: Value,
+}
+
+fn request_activity(req: &Request) -> Result<Option<ActivityScope>, Response> {
+    if !skwd_wall_core::plasma::available() && req.params.get(wall_proto::ACTIVITY_PARAM).is_none()
+    {
+        return Ok(None);
+    }
+    if req.params.get(wall_proto::ACTIVITY_PARAM).is_some_and(|activity| !activity.is_string()) {
+        return Err(Response::err(req.id, ACTIVITY_INVALID_PARAMS, ACTIVITY_TYPE_ERROR));
+    }
+    let result =
+        skwd_wall_core::plasma::activities::resolve(req.opt_str(wall_proto::ACTIVITY_PARAM))
+            .and_then(|activity| {
+                let wallpapers =
+                    Value::Object(skwd_wall_core::plasma::activities::wallpapers(&activity.id)?);
+                Ok(ActivityScope { activity, wallpapers })
+            });
+    result
+        .map(Some)
+        .map_err(|error| Response::err(req.id, ACTIVITY_INVALID_PARAMS, error.to_string()))
+}
+
 pub(super) fn outputs_list(
     state: &Arc<WallState>,
     renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
     req: &Request,
 ) -> Response {
-    let assigns = renderers.assignments();
+    let scoped = match request_activity(req) {
+        Ok(scoped) => scoped,
+        Err(error) => return error,
+    };
+    let visible = scoped.as_ref().is_none_or(|scope| scope.activity.current);
+    let assigns =
+        if scoped.is_some() { std::collections::HashMap::new() } else { renderers.assignments() };
     let (def_mute, def_vol) = {
         let cfg = state.config();
         (cfg.renderer().mute(), cfg.renderer().volume())
     };
     let cache_dir = state.config().cache_dir();
-    let audio_state = skwd_wall_core::audio::read_state(&cache_dir);
+    let audio_state = scoped.as_ref().map_or_else(
+        || skwd_wall_core::audio::read_state(&cache_dir),
+        |scope| scope.wallpapers.clone(),
+    );
     let shared_video = renderers.has_shared_video();
     let live = skwd_wall_core::outputs::enumerate();
     crate::infrastructure::restore_policy::remember_monitors(&live);
@@ -156,8 +194,10 @@ pub(super) fn outputs_list(
             let kind = getf("type").and_then(Value::as_str).unwrap_or("");
             let animated = matches!(kind, wall_proto::kind::VIDEO | wall_proto::kind::WE);
             wall_proto::OutputStatus {
-                paused: animated && state.renderers().paused_for(&mon.name),
-                manual_paused: animated && state.renderers().manual_paused_for(&mon.name),
+                paused: visible && animated && state.renderers().paused_for(&mon.name),
+                manual_paused: visible
+                    && animated
+                    && state.renderers().manual_paused_for(&mon.name),
                 target: mon.name.clone(),
                 connected: true,
                 current: current_of(path, we_id, &assigns, &mon.name),
@@ -174,57 +214,65 @@ pub(super) fn outputs_list(
                 volume: getf("volume")
                     .and_then(serde_json::Value::as_u64)
                     .map_or(def_vol, |vol| vol as u32),
-                audio_shared: shared_video,
+                audio_shared: visible && shared_video,
             }
         })
         .collect();
     let remembered = crate::infrastructure::restore_policy::known_monitors(&live);
-    if let Some(monitors) = remembered.get("monitors").and_then(Value::as_array) {
+    if let Some(monitors) =
+        remembered.get("monitors").and_then(Value::as_array).filter(|_| scoped.is_none())
+    {
         for monitor in monitors
             .iter()
             .filter(|monitor| !monitor.get("connected").and_then(Value::as_bool).unwrap_or(false))
         {
-            let field = |key| monitor.get(key).and_then(Value::as_str).unwrap_or_default();
-            let wallpaper = monitor.get("wallpaper").and_then(Value::as_object);
-            let wallpaper_field = |key| {
-                wallpaper
-                    .and_then(|entry| entry.get(key))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-            };
-            let name = field("connector").to_string();
-            let id = field("id");
-            if name.is_empty() || id.is_empty() {
-                continue;
+            if let Some(status) = offline_status(state, monitor, (def_mute, def_vol)) {
+                outputs.push(status);
             }
-            let path_owned =
-                crate::infrastructure::media_paths::library_path(state, wallpaper_field("path"));
-            let kind = wallpaper_field("type").to_string();
-            let we_id = wallpaper_field("we_id").to_string();
-            let current =
-                if kind == wall_proto::kind::WE { we_id.clone() } else { path_owned.clone() };
-            outputs.push(wall_proto::OutputStatus {
-                name: name.clone(),
-                target: format!("@monitor:{id}"),
-                connected: false,
-                width: monitor.get("width").and_then(Value::as_i64).unwrap_or_default() as i32,
-                height: monitor.get("height").and_then(Value::as_i64).unwrap_or_default() as i32,
-                logical_width: 0,
-                logical_height: 0,
-                current,
-                kind,
-                path: path_owned,
-                we_id,
-                mute: def_mute,
-                volume: def_vol,
-                fill: state.config().display().fill_override_for(&name).unwrap_or_default(),
-                audio_shared: false,
-                paused: false,
-                manual_paused: false,
-            });
         }
     }
     Response::ok(req.id, json!({"outputs": outputs}))
+}
+
+fn offline_status(
+    state: &Arc<WallState>,
+    monitor: &Value,
+    defaults: (bool, u32),
+) -> Option<wall_proto::OutputStatus> {
+    let field = |key| monitor.get(key).and_then(Value::as_str).unwrap_or_default();
+    let wallpaper = monitor.get("wallpaper").and_then(Value::as_object);
+    let wallpaper_field = |key| {
+        wallpaper.and_then(|entry| entry.get(key)).and_then(Value::as_str).unwrap_or_default()
+    };
+    let name = field("connector").to_string();
+    let id = field("id");
+    if name.is_empty() || id.is_empty() {
+        return None;
+    }
+    let path_owned =
+        crate::infrastructure::media_paths::library_path(state, wallpaper_field("path"));
+    let kind = wallpaper_field("type").to_string();
+    let we_id = wallpaper_field("we_id").to_string();
+    let current = if kind == wall_proto::kind::WE { we_id.clone() } else { path_owned.clone() };
+    Some(wall_proto::OutputStatus {
+        name: name.clone(),
+        target: format!("@monitor:{id}"),
+        connected: false,
+        width: monitor.get("width").and_then(Value::as_i64).unwrap_or_default() as i32,
+        height: monitor.get("height").and_then(Value::as_i64).unwrap_or_default() as i32,
+        logical_width: 0,
+        logical_height: 0,
+        current,
+        kind,
+        path: path_owned,
+        we_id,
+        mute: defaults.0,
+        volume: defaults.1,
+        fill: state.config().display().fill_override_for(&name).unwrap_or_default(),
+        audio_shared: false,
+        paused: false,
+        manual_paused: false,
+    })
 }
 
 pub(super) fn current_of(
@@ -327,6 +375,9 @@ pub(super) fn clear_data(ctx: &Ctx, req: &Request) -> Response {
 }
 
 pub(super) fn validate_apply_request(req: &Request) -> Option<Response> {
+    if req.params.get(wall_proto::ACTIVITY_PARAM).is_some_and(|activity| !activity.is_string()) {
+        return Some(Response::err(req.id, ACTIVITY_INVALID_PARAMS, ACTIVITY_TYPE_ERROR));
+    }
     let kind = req.str_param("type", wall_proto::kind::STATIC);
     let error = match kind {
         wall_proto::kind::WE if req.str_param("we_id", "").is_empty() => "missing we_id",
@@ -356,6 +407,19 @@ pub(super) fn publish_apply_rejection(ctx: &Ctx, req: &Request, response: &Respo
     }
 }
 
+fn scoped_result(
+    req: &Request,
+    activity: Option<&wall_proto::Activity>,
+    mut result: Value,
+) -> Value {
+    if let Some(activity) = activity {
+        result[wall_proto::ACTIVITY_PARAM] = json!(activity.id);
+        result[apply_fields::APPLY_TOKEN] =
+            json!(req.params.get(apply_fields::APPLY_TOKEN).and_then(Value::as_str));
+    }
+    result
+}
+
 pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, wallpaper, history, events, workers, stats, .. } = ctx;
     state.reload_config();
@@ -366,14 +430,53 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
         publish_apply_rejection(ctx, req, &error);
         return error;
     }
+    let scoped = match request_activity(req) {
+        Ok(scoped) => scoped,
+        Err(error) => return error,
+    };
+    let activity = scoped.as_ref().map(|scope| &scope.activity);
+    if let Some(activity) = activity.as_ref().filter(|activity| !activity.current) {
+        let response = apply_inactive(state, req, activity);
+        events.publish(ev::APPLY_RESULT, scoped_result(req, Some(activity), json!({
+            apply_fields::REQUEST_ID: req.id,
+            apply_fields::OUTPUT: req.str_param(apply_fields::OUTPUT, apply_fields::ALL_OUTPUTS),
+            apply_fields::OK: response.error.is_none(),
+            apply_fields::VISIBLE: false,
+            apply_fields::DETAIL: response.error.as_ref().map(|error| error.message.as_str()),
+        })));
+        return response;
+    }
     let output = req.str_param("output", "*");
+    if activity.is_some()
+        && output != apply_fields::ALL_OUTPUTS
+        && !skwd_wall_core::outputs::names().iter().any(|name| name == output)
+    {
+        return Response::err(
+            req.id,
+            ACTIVITY_INVALID_PARAMS,
+            "Activity apply needs a connected output",
+        );
+    }
+    let desired = scoped.as_ref().map(|scope| &scope.wallpapers);
     let (def_mute, def_vol) = {
         let cfg = state.config();
-        skwd_wall_core::audio::resolve_defaults(
-            &cfg.cache_dir(),
-            output,
-            cfg.renderer().mute(),
-            cfg.renderer().volume(),
+        desired.as_ref().map_or_else(
+            || {
+                skwd_wall_core::audio::resolve_defaults(
+                    &cfg.cache_dir(),
+                    output,
+                    cfg.renderer().mute(),
+                    cfg.renderer().volume(),
+                )
+            },
+            |desired| {
+                skwd_wall_core::audio::carried_audio(
+                    desired,
+                    output,
+                    cfg.renderer().mute(),
+                    cfg.renderer().volume(),
+                )
+            },
         )
     };
     let mute = req.params.get("mute").and_then(serde_json::Value::as_bool).unwrap_or(def_mute);
@@ -417,8 +520,15 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
         && !output.starts_with("@monitor:")
         && crate::infrastructure::media_paths::tinier_video(state, path).is_none()
     {
-        let generation = state.apply().next_generation();
-        let preparation = workers.prepare_tinier(path);
+        let expected = {
+            let _apply = state.apply().lock();
+            activity.map_or_else(
+                || ExpectedApply::Generation(state.apply().next_generation()),
+                |activity| ExpectedApply::Intent(state.apply().intent(&activity.id, output)),
+            )
+        };
+        let preparation =
+            workers.prepare_tinier(TinierRequest { source: path, replace: activity.is_none() });
         let task_id = preparation.task_id.clone();
         let deferred_state = Arc::clone(state);
         let deferred_wallpaper = Arc::clone(wallpaper);
@@ -428,86 +538,104 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
         let path = path.to_string();
         let deferred_output = output.to_string();
         let transition_override = transition_override.clone();
-        let request_id = req.id;
+        let deferred_activity = activity.cloned();
+        let mut result = json!({apply_fields::REQUEST_ID:req.id,apply_fields::OUTPUT:output,apply_fields::TASK_ID:task_id});
+        if let Some(activity) = activity {
+            result[wall_proto::ACTIVITY_PARAM] = json!(activity.id);
+            result[apply_fields::VISIBLE] = json!(false);
+            result[apply_fields::APPLY_TOKEN] =
+                json!(req.params.get(apply_fields::APPLY_TOKEN).and_then(Value::as_str));
+        }
+        let mut queued = result.clone();
+        queued[apply_fields::QUEUED] = json!(true);
+        queued[apply_fields::OK] = json!(true);
+        events.publish(ev::APPLY_RESULT, queued.clone());
         thread::spawn(move || {
-            let result = preparation
+            let prepared = preparation
                 .result
                 .recv()
                 .map_err(|error| error.to_string())
                 .and_then(|inner| inner);
-            match preparation_terminal(generation, deferred_state.apply().generation(), result) {
-                DeferredTerminal::Superseded => {
-                    log::info!("tinier preparation superseded: {path}");
-                    return;
+            let preparation_failed = prepared.is_err();
+            let terminal = match preparation_terminal(expected.current(&deferred_state), prepared) {
+                DeferredTerminal::Success => {
+                    let target = deferred_activity
+                        .as_ref()
+                        .map(|activity| {
+                            skwd_wall_core::plasma::activities::Target::enter(&activity.id)
+                        })
+                        .transpose();
+                    apply_terminal(target.and_then(|_target| {
+                        apply_core(
+                            &deferred_state,
+                            deferred_wallpaper.as_ref(),
+                            deferred_history.as_ref(),
+                            deferred_events.as_ref(),
+                            &deferred_stats,
+                            wall_proto::kind::VIDEO,
+                            &path,
+                            "",
+                            mute,
+                            volume,
+                            source,
+                            &deferred_output,
+                            notify,
+                            no_transition,
+                            transition_override.as_ref(),
+                            Some(expected),
+                        )
+                    }))
                 }
-                DeferredTerminal::Cancelled => return,
-                DeferredTerminal::Failure(detail) => {
-                    deferred_stats.error();
-                    deferred_events.publish(
-                        ev::APPLY_RESULT,
-                        json!({
-                            "request_id": request_id,
-                            "ok": false,
-                            "output": deferred_output,
-                            "error_kind": "decode_failed",
-                            "detail": detail,
-                        }),
-                    );
-                    return;
-                }
-                DeferredTerminal::Success => {}
-            }
-            let applied = apply_core(
-                &deferred_state,
-                deferred_wallpaper.as_ref(),
-                deferred_history.as_ref(),
-                deferred_events.as_ref(),
-                &deferred_stats,
-                wall_proto::kind::VIDEO,
-                &path,
-                "",
-                mute,
-                volume,
-                source,
-                &deferred_output,
-                notify,
-                no_transition,
-                transition_override.as_ref(),
-                Some(generation),
-            );
-            match apply_terminal(applied) {
-                DeferredTerminal::Success => deferred_events.publish(
-                    ev::APPLY_RESULT,
-                    json!({ "request_id": request_id, "ok": true, "output": deferred_output }),
-                ),
-                DeferredTerminal::Superseded => {
-                    log::info!("tinier apply superseded after preparation: {path}");
+                terminal => terminal,
+            };
+            match terminal {
+                DeferredTerminal::Success => {
+                    result[apply_fields::OK] = json!(true);
+                    if deferred_activity.is_some() {
+                        result[apply_fields::VISIBLE] = json!(true);
+                    }
                 }
                 DeferredTerminal::Failure(detail) => {
                     deferred_stats.error();
-                    deferred_events.publish(
-                        ev::APPLY_RESULT,
-                        json!({
-                            "request_id": request_id,
-                            "ok": false,
-                            "output": deferred_output,
-                            "error_kind": classify_apply_error(&detail),
-                            "detail": detail,
-                        }),
-                    );
+                    result[apply_fields::OK] = json!(false);
+                    result[apply_fields::ERROR_KIND] = json!(if preparation_failed {
+                        PREPARATION_ERROR_KIND
+                    } else {
+                        classify_apply_error(&detail)
+                    });
+                    result[apply_fields::DETAIL] = json!(detail);
                 }
-                DeferredTerminal::Cancelled => unreachable!("apply execution is not cancellable"),
+                DeferredTerminal::Cancelled | DeferredTerminal::Superseded
+                    if deferred_activity.is_none() =>
+                {
+                    return;
+                }
+                DeferredTerminal::Cancelled => {
+                    result[apply_fields::OK] = json!(false);
+                    result[apply_fields::CANCELLED] = json!(true);
+                }
+                DeferredTerminal::Superseded => {
+                    result[apply_fields::OK] = json!(false);
+                    result[apply_fields::SUPERSEDED] = json!(true);
+                }
             }
+            deferred_events.publish(ev::APPLY_RESULT, result);
         });
-        events.publish(
-            ev::APPLY_RESULT,
-            json!({ "request_id": req.id, "ok": true, "output": output, "queued": true }),
-        );
-        return Response::ok(
-            req.id,
-            json!({"queued": true, "task_id": task_id, "status": "preparing"}),
-        );
+        queued[apply_fields::STATUS] = json!(apply_fields::PREPARING);
+        return Response::ok(req.id, queued);
     }
+    let expected = activity.map(|activity| {
+        let _apply = state.apply().lock();
+        ExpectedApply::Intent(state.apply().intent(&activity.id, output))
+    });
+    let _activity = match activity
+        .as_ref()
+        .map(|activity| skwd_wall_core::plasma::activities::Target::enter(&activity.id))
+        .transpose()
+    {
+        Ok(target) => target,
+        Err(error) => return Response::err(req.id, -1, error.to_string()),
+    };
     match apply_core(
         state,
         wallpaper.as_ref(),
@@ -524,27 +652,37 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
         notify,
         no_transition,
         transition_override.as_ref(),
-        None,
+        expected,
     ) {
-        Ok(val) => {
+        Ok(mut val) => {
+            if let Some(activity) = &activity {
+                val[wall_proto::ACTIVITY_PARAM] = json!(activity.id);
+                val[apply_fields::VISIBLE] = json!(true);
+                val[apply_fields::QUEUED] = json!(false);
+            }
             events.publish(
                 ev::APPLY_RESULT,
-                json!({ "request_id": req.id, "ok": true, "output": output }),
+                scoped_result(req, activity, json!({ "request_id": req.id, "ok": true, "output": output, apply_fields::VISIBLE: true })),
             );
-            Response::ok(req.id, val)
+            Response::ok(req.id, scoped_result(req, activity, val))
         }
         Err(err) => {
             stats.error();
             let detail = err.to_string();
             events.publish(
                 ev::APPLY_RESULT,
-                json!({
-                    "request_id": req.id,
-                    "ok": false,
-                    "output": output,
-                    "error_kind": classify_apply_error(&detail),
-                    "detail": detail,
-                }),
+                scoped_result(
+                    req,
+                    activity,
+                    json!({
+                        "request_id": req.id,
+                        "ok": false,
+                        "output": output,
+                        "error_kind": classify_apply_error(&detail),
+                        "detail": detail,
+                        apply_fields::VISIBLE: false,
+                    }),
+                ),
             );
             Response::err(req.id, -1, detail)
         }
@@ -559,6 +697,10 @@ pub(super) fn set_audio(
 ) -> Response {
     state.reload_config();
     let _apply = state.apply().lock();
+    let _activity = match skwd_wall_core::plasma::activities::sync_current(state) {
+        Ok(target) => target,
+        Err(error) => return Response::err(req.id, -1, error.to_string()),
+    };
     let mute = req.params.get("mute").and_then(serde_json::Value::as_bool);
     let volume = req
         .params
@@ -811,14 +953,93 @@ fn reapply_scene_if_current(ctx: &Ctx, we_id: &str) -> bool {
     matches!(reload_current_we(state, wallpaper.as_ref()), Ok(true))
 }
 
-pub(super) fn set_favourite(state: &Arc<WallState>, req: &Request, stats: &Arc<Stats>) -> Response {
-    let key = req.str_param("key", "");
-    let fav = req.bool_param("favourite", true);
-    match state.with_db(|conn| db::set_favourite(conn, key, fav)) {
+pub(super) fn set_flag(state: &Arc<WallState>, req: &Request, stats: &Arc<Stats>) -> Response {
+    if req.method == wall_proto::rpc::WALL_SET_HIDDEN {
+        return write_flag(req, stats, wall_proto::rpc_params::HIDDEN, |key, value| {
+            state.with_db(|conn| db::set_hidden(conn, key, value))
+        });
+    }
+    write_flag(req, stats, wall_proto::rpc_params::FAVOURITE, |key, value| {
+        state.with_db(|conn| db::set_favourite(conn, key, value))
+    })
+}
+
+fn write_flag<E: std::fmt::Display>(
+    req: &Request,
+    stats: &Arc<Stats>,
+    flag: &str,
+    write: impl FnOnce(&str, bool) -> Result<bool, E>,
+) -> Response {
+    let key = req.str_param(wall_proto::rpc_params::KEY, "");
+    let value = req.bool_param(flag, true);
+    match write(key, value) {
         Ok(changed) => {
-            Response::ok(req.id, json!({"key": key, "favourite": fav, "changed": changed}))
+            if changed {
+                crate::composition::runtime::playlist::reload();
+            }
+            Response::ok(
+                req.id,
+                json!({
+                    wall_proto::rpc_params::KEY: key,
+                    flag: value,
+                    wall_proto::rpc_params::CHANGED: changed,
+                }),
+            )
         }
         Err(err) => fail(stats, req.id, err),
+    }
+}
+
+fn apply_inactive(
+    state: &Arc<WallState>,
+    req: &Request,
+    activity: &wall_proto::Activity,
+) -> Response {
+    let _apply = state.apply().lock();
+    let kind = req.str_param(apply_fields::TYPE, wall_proto::kind::STATIC);
+    let path = req.str_param(apply_fields::PATH, "");
+    let we_id = req.str_param(apply_fields::WE_ID, "");
+    let output = req.str_param(apply_fields::OUTPUT, apply_fields::ALL_OUTPUTS);
+    let previous = match skwd_wall_core::plasma::activities::wallpapers(&activity.id) {
+        Ok(previous) => Value::Object(previous),
+        Err(error) => return Response::err(req.id, -1, error.to_string()),
+    };
+    let (default_mute, default_volume) = skwd_wall_core::audio::carried_audio(
+        &previous,
+        output,
+        state.config().renderer().mute(),
+        state.config().renderer().volume(),
+    );
+    let mute = req.bool_param(apply_fields::MUTE, default_mute);
+    let volume = req
+        .params
+        .get(apply_fields::VOLUME)
+        .and_then(Value::as_u64)
+        .map_or(default_volume, |volume| u32::try_from(volume).unwrap_or(u32::MAX));
+    let entry = skwd_wall_core::audio::entry(kind, path, we_id, mute, volume);
+    match skwd_wall_core::plasma::save_activity(
+        state,
+        &activity.id,
+        output,
+        &entry,
+        req.bool_param(OVERRIDE_LOCKS, false),
+    ) {
+        Ok(()) => {
+            state.apply().intent(&activity.id, output);
+            Response::ok(
+                req.id,
+                scoped_result(
+                    req,
+                    Some(activity),
+                    json!({
+                        apply_fields::APPLIED: if kind == wall_proto::kind::WE { we_id } else { path },
+                        apply_fields::VISIBLE: false,
+                        apply_fields::QUEUED: false,
+                    }),
+                ),
+            )
+        }
+        Err(error) => Response::err(req.id, -1, error.to_string()),
     }
 }
 
@@ -828,14 +1049,14 @@ mod deferred_terminal_tests {
 
     #[test]
     fn tinier_terminal_results_distinguish_success_failure_cancel_and_supersession() {
-        assert_eq!(preparation_terminal(4, 4, Ok(())), DeferredTerminal::Success);
+        assert_eq!(preparation_terminal(true, Ok(())), DeferredTerminal::Success);
         assert_eq!(
-            preparation_terminal(4, 4, Err("Preparation cancelled".into())),
+            preparation_terminal(true, Err("Preparation cancelled".into())),
             DeferredTerminal::Cancelled
         );
-        assert_eq!(preparation_terminal(4, 5, Ok(())), DeferredTerminal::Superseded);
+        assert_eq!(preparation_terminal(false, Ok(())), DeferredTerminal::Superseded);
         assert_eq!(
-            preparation_terminal(4, 4, Err("decode broke".into())),
+            preparation_terminal(true, Err("decode broke".into())),
             DeferredTerminal::Failure("decode broke".into())
         );
         assert_eq!(apply_terminal(Ok(json!({}))), DeferredTerminal::Success);

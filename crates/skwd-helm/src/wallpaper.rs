@@ -4,10 +4,12 @@ use serde_json::{Value, json};
 
 pub(super) fn path_for_key(key: &str, wallpaper_dir: &str, video_dir: &str) -> Option<String> {
     if let Some(relative) = key.strip_prefix("static:") {
-        return Some(format!("{}/{}", wallpaper_dir.trim_end_matches('/'), relative));
+        return Some(
+            std::path::Path::new(wallpaper_dir).join(relative).to_string_lossy().into_owned(),
+        );
     }
     if let Some(relative) = key.strip_prefix("video:") {
-        return Some(format!("{}/{}", video_dir.trim_end_matches('/'), relative));
+        return Some(std::path::Path::new(video_dir).join(relative).to_string_lossy().into_owned());
     }
     None
 }
@@ -20,9 +22,12 @@ pub(super) fn kind_for_path(path: &str) -> &'static str {
     }
 }
 
+pub(super) const LIST_ROWS: &str = "wallpapers";
+pub(super) const LIST_COUNT: &str = "count";
+
 pub(super) fn list_items(response: &Value) -> Vec<wall_proto::WallpaperItem> {
     response
-        .get("wallpapers")
+        .get(LIST_ROWS)
         .cloned()
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default()
@@ -73,6 +78,16 @@ pub(super) fn matches_filters(
             .is_some_and(|tags| tags.split([',', ' ']).any(|tag| tag.trim() == wanted))
     });
     kind_matches && tag_matches
+}
+
+pub(super) fn shown(
+    item: &wall_proto::WallpaperItem,
+    profile: Option<&skwd_config::LibraryProfile>,
+) -> bool {
+    let key = item.key.as_deref().unwrap_or_default();
+    let path = item.path.as_deref().or(item.video_file.as_deref()).unwrap_or_default();
+    let state = skwd_config::profile_state(profile, skwd_config::LibraryItem::new(key, path));
+    !item.hidden && state == skwd_config::FolderState::Show
 }
 
 pub(super) fn pick_index(length: usize, seed: u64) -> Option<usize> {

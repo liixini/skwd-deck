@@ -3,18 +3,25 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::tags::{all_effect_tags, merge_effect_tag, merge_tag, stem_key};
 use crate::paths;
 
+const RANDOM_ORDER: &str = " ORDER BY RANDOM()";
+const RANDOM_ONE: &str = " ORDER BY RANDOM() LIMIT 1";
+const SET_HIDDEN: &str = "UPDATE meta SET hidden = ?1 WHERE key = ?2 AND hidden != ?1";
+const COUNT_VISIBLE: &str = "SELECT count(*) FROM meta WHERE library_excluded = 0";
+const VIDEO_SOURCE: &str =
+    "SELECT video_file FROM meta WHERE key = ?1 AND key LIKE 'video:%' AND video_file != ''";
+const VIDEO_KEY: &str = "SELECT key FROM meta WHERE video_file = ?1 AND key LIKE 'video:%' LIMIT 1";
+const LIST_WALLPAPERS: &str = "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated, hidden FROM meta WHERE library_excluded = 0 ORDER BY name";
+const LIST_FAVOURITES: &str = "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated, hidden FROM meta WHERE library_excluded = 0 AND favourite = 1 ORDER BY name";
+
 pub const TINIER_CONVERT_MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub const TINIER_CONVERT_PRESET: &str = "tinier-av1-v1";
+const WORKSHOP_KEY_PREFIX: &str = "we:";
 
 pub fn list_wallpapers(
     conn: &Connection,
     favourite_only: bool,
 ) -> rusqlite::Result<Vec<serde_json::Value>> {
-    let sql = if favourite_only {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta WHERE favourite = 1 ORDER BY name"
-    } else {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta ORDER BY name"
-    };
+    let sql = if favourite_only { LIST_FAVOURITES } else { LIST_WALLPAPERS };
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         let key = row.get::<_, Option<String>>(0)?;
@@ -49,6 +56,7 @@ pub fn list_wallpapers(
             "apply_count": row.get::<_, Option<i64>>(21)?,
             "last_applied": row.get::<_, Option<i64>>(22)?,
             "thumbnail_generated": row.get::<_, bool>(23)?,
+            "hidden": row.get::<_, bool>(24)?,
         }))
     })?;
     let mut out: Vec<serde_json::Value> = rows.filter_map(std::result::Result::ok).collect();
@@ -71,13 +79,13 @@ pub fn list_wallpapers_json(
     conn: &Connection,
     favourite_only: bool,
     wallpaper_dir: &str,
+    we_dir: &std::path::Path,
+    mut steam_confirmation_required: impl FnMut(&str, &std::path::Path) -> bool,
 ) -> rusqlite::Result<(String, usize)> {
-    let sql = if favourite_only {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta WHERE favourite = 1 ORDER BY name"
-    } else {
-        "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated FROM meta ORDER BY name"
-    };
+    let sql = if favourite_only { LIST_FAVOURITES } else { LIST_WALLPAPERS };
     let effects = all_effect_tags(conn);
+    #[cfg(feature = "daemon")]
+    let tracking = crate::we::SteamTracking::load();
     let mut stmt = conn.prepare(sql)?;
     let mut rows = stmt.query([])?;
     let mut out = String::with_capacity(1 << 20);
@@ -97,17 +105,33 @@ pub fn list_wallpapers_json(
         {
             tags = Some(merge_tag(tags.as_deref().unwrap_or(""), fx));
         }
-        let path = (ty.as_deref() == Some(wall_proto::kind::STATIC))
-            .then(|| {
-                key.as_deref()?.strip_prefix("static:").map(|relative| {
-                    std::path::Path::new(wallpaper_dir)
-                        .join(relative)
-                        .to_string_lossy()
-                        .into_owned()
+        let workshop = key.as_deref().and_then(|key| key.strip_prefix(WORKSHOP_KEY_PREFIX));
+        let path = match workshop {
+            Some(id) => Some(we_dir.join(id).to_string_lossy().into_owned()),
+            None => (ty.as_deref() == Some(wall_proto::kind::STATIC))
+                .then(|| {
+                    key.as_deref()?.strip_prefix("static:").and_then(|relative| {
+                        skwd_config::resolve_folder(
+                            &std::path::Path::new(wallpaper_dir).join(relative),
+                        )
+                        .map(|path| path.to_string_lossy().into_owned())
+                    })
                 })
-            })
-            .flatten();
+                .flatten(),
+        };
         let item = wall_proto::WallpaperItem {
+            steam_confirmation_required: workshop
+                .is_some_and(|id| steam_confirmation_required(id, &we_dir.join(id))),
+            steam_subscribed: {
+                #[cfg(feature = "daemon")]
+                {
+                    workshop.is_some_and(|id| tracking.subscribed(we_dir, id, &we_dir.join(id)))
+                }
+                #[cfg(not(feature = "daemon"))]
+                {
+                    false
+                }
+            },
             path,
             key: key.clone(),
             name: row.get(1)?,
@@ -135,6 +159,7 @@ pub fn list_wallpapers_json(
             apply_count: row.get(21)?,
             last_applied: row.get(22)?,
             thumbnail_generated: row.get(23)?,
+            hidden: row.get(24)?,
         };
         if count > 0 {
             out.push(',');
@@ -167,19 +192,29 @@ pub fn upsert_cache_entry(
     width: i64,
     height: i64,
 ) -> rusqlite::Result<()> {
+    let transaction = conn
+        .is_autocommit()
+        .then(|| {
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        })
+        .transpose()?;
+    let excluded = super::visibility::stored_exclusion(conn, key, name, video_file)?;
     conn.prepare_cached(
-        "INSERT INTO meta(key, type, name, thumb, thumb_sm, video_file, we_id, mtime, hue, sat, richness, filesize, width, height)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+        "INSERT INTO meta(key, type, name, thumb, thumb_sm, video_file, we_id, mtime, hue, sat, richness, filesize, width, height, library_excluded)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(key) DO UPDATE SET
            type=excluded.type, name=excluded.name, thumb=excluded.thumb,
            thumb_sm=excluded.thumb_sm, video_file=excluded.video_file,
            we_id=excluded.we_id, mtime=excluded.mtime, hue=excluded.hue, sat=excluded.sat,
            richness=excluded.richness, filesize=excluded.filesize,
-           width=excluded.width, height=excluded.height",
+           width=excluded.width, height=excluded.height, library_excluded=excluded.library_excluded",
     )?
     .execute(
-        params![key, wp_type, name, thumb, thumb_sm, video_file, we_id, mtime, hue, sat, richness, filesize, width, height],
+        params![key, wp_type, name, thumb, thumb_sm, video_file, we_id, mtime, hue, sat, richness, filesize, width, height, excluded],
     )?;
+    if let Some(transaction) = transaction {
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -222,6 +257,11 @@ pub fn set_favourite(conn: &Connection, key: &str, favourite: bool) -> rusqlite:
         "UPDATE meta SET favourite = ?1 WHERE key = ?2",
         params![i64::from(favourite), key],
     )?;
+    Ok(changed > 0)
+}
+
+pub fn set_hidden(conn: &Connection, key: &str, hidden: bool) -> rusqlite::Result<bool> {
+    let changed = conn.execute(SET_HIDDEN, params![hidden, key])?;
     Ok(changed > 0)
 }
 
@@ -290,12 +330,11 @@ pub fn bump_apply_count(conn: &Connection, key: &str) -> rusqlite::Result<usize>
 }
 
 pub fn key_for_video_file(conn: &Connection, video_file: &str) -> rusqlite::Result<Option<String>> {
-    conn.query_row(
-        "SELECT key FROM meta WHERE video_file = ?1 LIMIT 1",
-        params![video_file],
-        |row| row.get(0),
-    )
-    .optional()
+    conn.query_row(VIDEO_KEY, params![video_file], |row| row.get(0)).optional()
+}
+
+pub fn video_file_for_key(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row(VIDEO_SOURCE, [key], |row| row.get(0)).optional()
 }
 
 pub fn has_entry(conn: &Connection, key: &str) -> bool {
@@ -311,7 +350,7 @@ pub fn invalidate_source_mtimes(
     videos: bool,
     workshop: bool,
 ) -> rusqlite::Result<usize> {
-    conn.execute("UPDATE meta SET mtime = -1 WHERE (?1 AND key LIKE 'static:%') OR (?2 AND key LIKE 'video:%') OR (?3 AND key LIKE 'we:%')", params![images, videos, workshop])
+    conn.execute("UPDATE meta SET mtime = -1 WHERE (?1 AND key LIKE 'static:%' AND key NOT LIKE 'static:/%') OR (?2 AND key LIKE 'video:%' AND key NOT LIKE 'video:/%') OR (?3 AND key LIKE 'we:%')", params![images, videos, workshop])
 }
 
 pub fn known_keys(conn: &Connection) -> rusqlite::Result<Vec<(String, i64)>> {
@@ -337,7 +376,7 @@ pub fn known_we_meta(conn: &Connection) -> rusqlite::Result<Vec<(String, i64, St
 }
 
 pub fn item_count(conn: &Connection) -> rusqlite::Result<i64> {
-    conn.query_row("SELECT count(*) FROM meta", [], |row| row.get(0))
+    conn.query_row(COUNT_VISIBLE, [], |row| row.get(0))
 }
 
 pub fn retire_video_converts(conn: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -421,11 +460,18 @@ pub fn delete_entries(conn: &Connection, keys: &[String]) -> rusqlite::Result<us
     conn.execute(&sql, binds.as_slice())
 }
 
+pub struct RandomEntry<'a> {
+    pub key: &'a str,
+    pub name: &'a str,
+    pub video: &'a str,
+}
+
 pub fn random_pick(
     conn: &Connection,
     exclude_name: Option<&str>,
     types: &[&str],
     favourites_only: bool,
+    visible: Option<&dyn Fn(RandomEntry<'_>) -> bool>,
 ) -> rusqlite::Result<Option<(String, String, String, String, String)>> {
     if types.is_empty() {
         return Ok(None);
@@ -433,7 +479,7 @@ pub fn random_pick(
     let placeholders = std::iter::repeat_n("?", types.len()).collect::<Vec<_>>().join(",");
     let mut sql = format!(
         "SELECT key, type, name, COALESCE(video_file,''), COALESCE(we_id,'') \
-         FROM meta WHERE type IN ({placeholders})"
+         FROM meta WHERE library_excluded = 0 AND hidden = 0 AND type IN ({placeholders})"
     );
     if favourites_only {
         sql.push_str(" AND favourite = 1");
@@ -441,7 +487,7 @@ pub fn random_pick(
     if exclude_name.is_some() {
         sql.push_str(" AND name != ?");
     }
-    sql.push_str(" ORDER BY RANDOM() LIMIT 1");
+    sql.push_str(if visible.is_some() { RANDOM_ORDER } else { RANDOM_ONE });
 
     let mut stmt = conn.prepare(&sql)?;
     let mut binds: Vec<&dyn rusqlite::ToSql> =
@@ -449,7 +495,7 @@ pub fn random_pick(
     if let Some(name) = exclude_name.as_ref() {
         binds.push(name);
     }
-    stmt.query_row(rusqlite::params_from_iter(binds), |row| {
+    let mut rows = stmt.query_map(rusqlite::params_from_iter(binds), |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
@@ -457,8 +503,11 @@ pub fn random_pick(
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
         ))
-    })
-    .optional()
+    })?;
+    let shown = |(key, _, name, video, _): &(String, String, String, String, String)| {
+        visible.is_none_or(|visible| visible(RandomEntry { key, name, video }))
+    };
+    rows.find(|row| row.as_ref().map_or(true, shown)).transpose()
 }
 
 #[path = "wallpapers_tests.rs"]

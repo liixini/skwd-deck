@@ -11,6 +11,9 @@ const STUB: &str = "fake_renderer";
 #[path = "plasma/transitions.rs"]
 mod transitions;
 
+#[path = "plasma/preparation.rs"]
+mod preparation;
+
 fn plasma_session(name: &str) -> (Sandbox, FakePlasma) {
     let mut sandbox = Sandbox::new(name);
     let plasma = FakePlasma::install(
@@ -68,26 +71,72 @@ fn scripted(plasma: &FakePlasma) -> Map<String, Value> {
     plasma.scripts().pop().expect("a Plasma script ran")
 }
 
-fn latest(plugin: &FakePlugin) -> Value {
-    plugin.entries().pop().unwrap_or(Value::Null)
-}
-
-fn delivered(plugin: &FakePlugin, kind: SourceKind, path: &str) -> bool {
-    plugin.wait(|lines| {
-        lines
-            .iter()
-            .rev()
-            .find_map(|line| line.get("entry"))
-            .is_some_and(|entry| source(entry) == (kind, path.to_string()))
-    })
-}
-
 fn backend(walld: &Walld) -> String {
     walld.client().call("status", json!({}), 2).expect("status")["result"]["playback"]
         ["window_state_backend"]
         .as_str()
         .unwrap_or_default()
         .to_string()
+}
+
+fn restore_session(name: &str) -> (Sandbox, FakePlasma, String) {
+    let (sandbox, plasma) = plasma_session(name);
+    let image = still(&sandbox, "restore.png", "red");
+    {
+        let walld = Walld::start(&sandbox);
+        let mut client = walld.client();
+        let reply = client
+            .call("wall.apply", json!({"type":"static","path":image}), 9)
+            .unwrap_or_else(|| panic!("wall.apply: no response\n{}", walld.log_contents()));
+        assert!(reply.get("error").is_none(), "{reply}\n{}", walld.log_contents());
+    }
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(sandbox.config_path()).unwrap()).unwrap();
+    config["restoreOnStartup"] = json!(true);
+    sandbox.write_config(&config);
+    (sandbox, plasma, image)
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn local_we_clears_activities() {
+    let (sandbox, _plasma) = plasma_session("activity-we-delete");
+    let source = sandbox.root.join("we");
+    let actual = sandbox.root.join("native/710007");
+    std::fs::create_dir_all(&actual).unwrap();
+    std::fs::write(
+        actual.join("project.json"),
+        r#"{"type":"scene","title":"Local scene","file":"scene.json","preview":"preview.png"}"#,
+    )
+    .unwrap();
+    std::fs::write(actual.join("scene.json"), "{}").unwrap();
+    assert!(ffmpeg_still(&actual.join("preview.png"), "color=c=blue:s=96x64"));
+    std::os::unix::fs::symlink(&actual, source.join("710007")).unwrap();
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    assert!(wait_until(
+        || client
+            .call("wall.list", json!({}), 1)
+            .and_then(|response| response["result"]["wallpapers"].as_array().cloned())
+            .is_some_and(|rows| rows.iter().any(|row| row["key"] == "we:710007")),
+        Duration::from_secs(15)
+    ));
+    let keep = json!({"wallpaper":{"path":"/unrelated/image.png","we_id":""}});
+    let saved = json!({
+        "activity-a": {
+            "DP-1":{"wallpaper":{"path":actual.join("scene.json"),"we_id":""}},
+            "DP-2":keep
+        },
+        "activity-b": {"HDMI-1":{"wallpaper":{"path":actual,"we_id":""}}}
+    });
+    let assignments = sandbox.root.join("plasma/assignments.json");
+    std::fs::write(&assignments, saved.to_string()).unwrap();
+    call(&walld, &mut client, "wall.remove", json!({"we_id":"710007","unsubscribe":false}));
+    let after: Value = serde_json::from_slice(&std::fs::read(assignments).unwrap()).unwrap();
+    assert!(after["activity-a"].get("DP-1").is_none());
+    assert_eq!(after["activity-a"]["DP-2"], keep);
+    assert!(after["activity-b"].get("HDMI-1").is_none());
+    assert!(actual.is_dir());
 }
 
 #[test]
@@ -170,107 +219,46 @@ fn plasma_still_on_one_output_keeps_the_other_outputs_scene() {
 
 #[test]
 #[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
-fn plasma_pushes_assignments_to_subscribed_outputs_instead_of_scripting() {
-    let (sandbox, plasma) = plasma_session("plasma-push");
+fn subscriptions_preserve_activity_config() {
+    let (sandbox, plasma) = plasma_session("plasma-channel");
     let first = still(&sandbox, "a.png", "red");
     let second = still(&sandbox, "b.png", "green");
     let walld = Walld::start(&sandbox);
     let mut client = walld.client();
     let mut left = FakePlugin::connect(&sandbox, "DP-1");
     let mut right = FakePlugin::connect(&sandbox, "DP-2");
-
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": first}));
-    assert_eq!(plasma.scripts().len(), 1, "an unsubscribed session is configured by script");
-
     left.subscribe();
-    assert!(delivered(&left, SourceKind::Static, &first), "{:?}", left.lines());
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": second}));
-    assert_eq!(plasma.scripts().len(), 2, "one unsubscribed output still needs the script");
-    assert!(delivered(&left, SourceKind::Static, &second), "{:?}", left.lines());
-    assert!(right.entries().is_empty(), "an unsubscribed plugin received {:?}", right.entries());
-
     right.subscribe();
-    assert!(delivered(&right, SourceKind::Static, &second), "{:?}", right.lines());
-    call(
-        &walld,
-        &mut client,
-        "wall.apply",
-        json!({"type": "static", "path": first, "output": "DP-1"}),
-    );
-    assert_eq!(plasma.scripts().len(), 2, "{:?}", plasma.calls());
-    assert!(delivered(&left, SourceKind::Static, &first), "{:?}", left.lines());
-    assert_eq!(source(&latest(&right)), (SourceKind::Static, second.clone()));
-    assert_eq!(assignment(&latest(&right)).outputs, ["DP-2"]);
-    assert_eq!(latest(&left)["width"], 1920);
-
-    call(&walld, &mut client, "wall.apply", json!({"type": "we", "we_id": "scene-a"}));
-    call(
-        &walld,
-        &mut client,
-        "wall.set_audio",
-        json!({"mute": false, "volume": 35, "outputs": ["DP-1"]}),
-    );
-    assert_eq!(plasma.scripts().len(), 2, "{:?}", plasma.calls());
-    assert!(
-        left.wait(|lines| lines.iter().rev().find_map(|line| line.get("entry")).is_some_and(
-            |entry| {
-                let assigned = assignment(entry);
-                assigned.source.kind == SourceKind::WallpaperEngine
-                    && (assigned.mute, assigned.volume) == (false, 35)
-            }
-        )),
-        "{:?}",
-        left.lines()
-    );
-    let untouched = assignment(&latest(&right));
-    assert_eq!(untouched.source.kind, SourceKind::WallpaperEngine);
-    assert_ne!((untouched.mute, untouched.volume), (false, 35));
-    assert!(child_pids(walld.pid(), STUB).is_empty(), "Plasma started a native renderer");
-    assert!(!walld.log_contents().contains("panicked"));
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":second,"output":"DP-1"}));
+    assert_eq!(plasma.scripts().len(), 2);
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, second));
+    assert_eq!(source(&scripted(&plasma)["DP-2"]), (SourceKind::Static, first));
+    assert!(left.entries().is_empty());
+    assert!(right.entries().is_empty());
+    assert!(left.lines().iter().all(|line| line["capabilities"] == json!([])));
 }
 
 #[test]
 #[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
-fn plasma_plugin_restart_falls_back_to_the_script_and_resumes_the_push() {
+fn plugin_restart_keeps_config() {
     let (sandbox, plasma) = plasma_session("plasma-reconnect");
     let first = still(&sandbox, "a.png", "red");
     let second = still(&sandbox, "b.png", "green");
     let walld = Walld::start(&sandbox);
     let mut client = walld.client();
-
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": first}));
-    let mut plugins =
-        [FakePlugin::connect(&sandbox, "DP-1"), FakePlugin::connect(&sandbox, "DP-2")];
-    for plugin in &mut plugins {
-        plugin.subscribe();
-        assert!(delivered(plugin, SourceKind::Static, &first), "{:?}", plugin.lines());
-    }
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    let plugins = [FakePlugin::connect(&sandbox, "DP-1"), FakePlugin::connect(&sandbox, "DP-2")];
     assert!(wait_until(|| backend(&walld) == "plasma", Duration::from_secs(5)));
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": second}));
-    assert_eq!(plasma.scripts().len(), 1);
-
     drop(plugins);
-    assert!(
-        wait_until(|| backend(&walld) != "plasma", Duration::from_secs(5)),
-        "{}",
-        backend(&walld)
-    );
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": first}));
-    assert_eq!(plasma.scripts().len(), 2, "a restarted shell must be configured by script");
-    assert_eq!(source(&scripted(&plasma)["DP-2"]), (SourceKind::Static, first.clone()));
-
-    let mut plugins =
-        [FakePlugin::connect(&sandbox, "DP-1"), FakePlugin::connect(&sandbox, "DP-2")];
-    for plugin in &mut plugins {
-        plugin.subscribe();
-        assert!(delivered(plugin, SourceKind::Static, &first), "{:?}", plugin.lines());
-        assert_eq!(plugin.entries().len(), 1, "{:?}", plugin.lines());
-    }
-    call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": second}));
-    assert_eq!(plasma.scripts().len(), 2, "{:?}", plasma.calls());
-    for plugin in &plugins {
-        assert!(delivered(plugin, SourceKind::Static, &second), "{:?}", plugin.lines());
-    }
+    assert!(wait_until(|| backend(&walld) != "plasma", Duration::from_secs(5)));
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":second}));
+    assert_eq!(plasma.scripts().len(), 2);
+    let mut plugin = FakePlugin::connect(&sandbox, "DP-1");
+    plugin.subscribe();
+    assert!(plugin.wait(|lines| !lines.is_empty()));
+    assert!(plugin.entries().is_empty());
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, second));
 }
 
 #[test]
@@ -307,28 +295,21 @@ fn plasma_pauses_reach_only_their_output() {
         walld.log_contents()
     );
     assert!(right.lines().iter().all(|line| line["paused"] == false), "{:?}", right.lines());
-    assert!(left.lines().iter().all(|line| line["capabilities"] == json!(["assignments"])));
+    assert!(left.lines().iter().all(|line| line["capabilities"] == json!([])));
     left.report(false);
     assert!(paused(&left, false), "{:?}", left.lines());
 
     call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": image}));
-    for plugin in [&mut left, &mut right] {
-        plugin.subscribe();
-        assert!(delivered(plugin, SourceKind::Static, &image), "{:?}", plugin.lines());
-    }
+    left.subscribe();
+    right.subscribe();
     let scripts = plasma.scripts().len();
-    call(&walld, &mut client, "wall.set_paused", json!({"output": "DP-2", "paused": true}));
-    assert!(
-        right.wait(|lines| lines
-            .iter()
-            .rev()
-            .find_map(|line| line.get("entry"))
-            .is_some_and(|entry| entry["manualPaused"] == true && entry["paused"] == true)),
-        "{:?}",
-        right.lines()
-    );
-    assert_eq!(latest(&left)["manualPaused"], false, "{:?}", left.lines());
-    assert_eq!(plasma.scripts().len(), scripts, "{:?}", plasma.calls());
+    call(&walld, &mut client, "wall.set_paused", json!({"output":"DP-2","paused":true}));
+    let saved = scripted(&plasma);
+    assert_eq!(saved["DP-2"]["manualPaused"], true);
+    assert_eq!(saved["DP-2"]["paused"], true);
+    assert_eq!(saved["DP-1"]["manualPaused"], false);
+    assert!(plasma.scripts().len() > scripts);
+    assert!(left.entries().is_empty() && right.entries().is_empty());
 }
 
 fn lock_screen_plugin(sandbox: &Sandbox) -> String {
@@ -369,17 +350,30 @@ fn plasma_lock_screen_off_gives_the_lock_screen_back() {
     assert!(!released.lines().any(|line| line.starts_with("WallpaperPlugin=")), "{released}");
 
     std::fs::write(&lockrc, "[Greeter]\nWallpaperPlugin=org.kde.slideshow\n").expect("user choice");
+    let original = std::fs::read(&lockrc).unwrap();
     set_lock_screen_mode(&sandbox, &mut config, "static");
     assert!(selected("org.skwd.wall.plasma"), "no second takeover\n{}", walld.log_contents());
+    let backup = sandbox.root.join("config/kscreenlockerrc.skwd-backup");
+    assert_eq!(std::fs::read(&backup).unwrap(), original);
     set_lock_screen_mode(&sandbox, &mut config, "off");
     assert!(selected("org.kde.slideshow"), "user plugin not restored\n{}", walld.log_contents());
+    assert_eq!(std::fs::read(&backup).unwrap(), original);
 
-    let reloads = plasma
-        .calls()
-        .iter()
-        .filter(|args| args.iter().any(|arg| arg == "org.kde.screensaver.configure"))
-        .count();
-    assert!(reloads >= 4, "{:?}", plasma.calls());
+    assert!(
+        wait_until(
+            || {
+                plasma
+                    .calls()
+                    .iter()
+                    .filter(|args| args.iter().any(|arg| arg == "org.kde.screensaver.configure"))
+                    .count()
+                    >= 4
+            },
+            Duration::from_secs(10)
+        ),
+        "{:?}",
+        plasma.calls()
+    );
     let kconfig =
         std::fs::read_to_string(sandbox.root.join("plasma/kconfig.log")).unwrap_or_default();
     assert!(
@@ -483,8 +477,14 @@ fn plasma_lock_screen_allows_config_reload_during_assignment() {
         serde_json::from_str(&std::fs::read_to_string(sandbox.config_path()).unwrap()).unwrap();
     config["plasma"] = json!({"lockScreen": {"mode": "static", "image": image}});
     sandbox.write_config(&config);
+    let lockrc = sandbox.root.join("config/kscreenlockerrc");
+    let original = b"[Greeter]\nWallpaperPlugin=org.skwd.wall.plasma\n\n[Greeter][Wallpaper][org.skwd.wall.plasma][General]\nAssignment=previous\n";
+    std::fs::write(&lockrc, original).unwrap();
     let walld = Walld::start(&sandbox);
     assert!(wait_until(|| gate.join("entered").exists(), Duration::from_secs(3)));
+    let backup = sandbox.root.join("config/kscreenlockerrc.skwd-backup");
+    assert_eq!(std::fs::read(&backup).unwrap(), original);
+    assert_eq!(std::fs::read(&lockrc).unwrap(), original);
     set_lock_screen_mode(&sandbox, &mut config, "off");
     let mut client = walld.client();
     client.send("effects.list", json!({}), 91);
@@ -497,5 +497,306 @@ fn plasma_lock_screen_allows_config_reload_during_assignment() {
         walld.wait_log("synchronized KDE Plasma lock-screen wallpaper", Duration::from_secs(3))
     );
     assert!(wait_until(|| lock_screen_plugin(&sandbox).is_empty(), Duration::from_secs(3)));
+    assert_eq!(std::fs::read(backup).unwrap(), original);
     call(&walld, &mut client, "effects.list", json!({}));
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn inactive_activity_is_isolated() {
+    let (sandbox, plasma) = plasma_session("plasma-activities");
+    let first = still(&sandbox, "a.png", "red");
+    let second = still(&sandbox, "b.png", "green");
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let listed = call(&walld, &mut client, "wall.activities", json!({}));
+    assert_eq!(listed["result"]["current"], "activity-a");
+    assert_eq!(listed["result"]["activities"].as_array().unwrap().len(), 2);
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    let before = call(&walld, &mut client, "wall.outputs", json!({}));
+    let current = sandbox.outputs_json();
+    let last = sandbox.last_wallpaper();
+    let inactive = call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":second,"output":"DP-1","activity":"activity-b"}),
+    );
+    assert_eq!(inactive["result"]["visible"], false);
+    assert_eq!(sandbox.outputs_json(), current);
+    assert_eq!(sandbox.last_wallpaper(), last);
+    assert_eq!(inactive["result"]["activity"], "activity-b");
+    assert_eq!(before["result"], call(&walld, &mut client, "wall.outputs", json!({}))["result"]);
+    let scoped = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-b"}));
+    let rows = scoped["result"]["outputs"].as_array().unwrap();
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-1").unwrap()["path"], second);
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-2").unwrap()["path"], "");
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":first,"output":"DP-2","activity":"activity-b"}),
+    );
+    let scoped = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-b"}));
+    let rows = scoped["result"]["outputs"].as_array().unwrap();
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-1").unwrap()["path"], second);
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-2").unwrap()["path"], first);
+    assert_eq!(
+        call(&walld, &mut client, "wall.activities", json!({}))["result"]["current"],
+        "activity-a"
+    );
+    let scripts = plasma.scripts().len();
+    for activity in [json!("deleted"), json!(""), json!(42), json!(null)] {
+        let response = client
+            .call("wall.apply", json!({"type":"static","path":first,"activity":activity}), 9)
+            .unwrap();
+        assert!(response.get("error").is_some(), "{response}");
+    }
+    assert_eq!(plasma.scripts().len(), scripts);
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn switched_activity_preserves_outputs() {
+    let (sandbox, _plasma) = plasma_session("plasma-switch");
+    let first = still(&sandbox, "a.png", "red");
+    let second = still(&sandbox, "b.png", "green");
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":second,"activity":"activity-b"}),
+    );
+    std::fs::write(
+        sandbox.root.join("plasma/activities.json"),
+        json!({"current":"activity-b","names":{"activity-a":"Work","activity-b":"Home"}})
+            .to_string(),
+    )
+    .unwrap();
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":first,"output":"DP-1","activity":"activity-b"}),
+    );
+    let scoped = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-b"}));
+    let rows = scoped["result"]["outputs"].as_array().unwrap();
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-1").unwrap()["path"], first);
+    assert_eq!(rows.iter().find(|row| row["name"] == "DP-2").unwrap()["path"], second);
+    let original = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-a"}));
+    assert!(
+        original["result"]["outputs"].as_array().unwrap().iter().all(|row| row["path"] == first)
+    );
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn restart_uses_current_activity() {
+    let (sandbox, _plasma) = plasma_session("activity-restart");
+    let first = still(&sandbox, "a.png", "red");
+    let second = still(&sandbox, "b.png", "green");
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":second,"activity":"activity-b"}),
+    );
+    drop(client);
+    drop(walld);
+    std::fs::write(
+        sandbox.root.join("plasma/activities.json"),
+        json!({"current":"activity-b","names":{"activity-a":"Work","activity-b":"Home"}})
+            .to_string(),
+    )
+    .unwrap();
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(sandbox.config_path()).unwrap()).unwrap();
+    config["restoreOnStartup"] = json!(true);
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    assert!(
+        wait_until(|| sandbox.outputs_json()["DP-1"]["path"] == second, Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    let mut client = walld.client();
+    let original = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-a"}));
+    assert!(
+        original["result"]["outputs"].as_array().unwrap().iter().all(|row| row["path"] == first)
+    );
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn activity_waits_for_service() {
+    let (sandbox, plasma, image) = restore_session("activity-late-service");
+    let prior = plasma.scripts().len();
+    let unavailable = sandbox.root.join("plasma/activity-unavailable");
+    std::fs::write(&unavailable, "").unwrap();
+    let walld = Walld::start(&sandbox);
+    assert!(
+        walld.wait_log("Plasma Activity restore failed", Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(plasma.scripts().len(), prior);
+    std::fs::remove_file(unavailable).unwrap();
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(8)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, image));
+    assert!(walld.responsive());
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn assignments_wait_for_data() {
+    let (sandbox, plasma, image) = restore_session("plasma-late-assignments");
+    let prior = plasma.scripts().len();
+    let assignments = sandbox.root.join("plasma/assignments.json");
+    let saved = std::fs::read(&assignments).unwrap();
+    let unavailable = sandbox.root.join("plasma/assignments-unavailable");
+    std::fs::write(&unavailable, "").unwrap();
+    let walld = Walld::start(&sandbox);
+    assert!(
+        walld.wait_log("Plasma Activity restore failed", Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(plasma.scripts().len(), prior);
+    assert_eq!(std::fs::read(&assignments).unwrap(), saved);
+    std::fs::remove_file(unavailable).unwrap();
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(8)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, image));
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_waits_for_ready() {
+    let (sandbox, plasma, image) = restore_session("plasma-late-ready");
+    let prior = plasma.scripts().len();
+    plasma.fail_presentations("Plasma starting");
+    let walld = Walld::start(&sandbox);
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    assert!(
+        walld.wait_log("Plasma Activity restore failed", Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    plasma.confirm_presentations();
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior + 1, Duration::from_secs(8)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, image));
+    assert!(walld.responsive());
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn manual_apply_supersedes_restore() {
+    let (sandbox, plasma, _image) = restore_session("plasma-manual-supersedes");
+    let green = still(&sandbox, "manual.png", "green");
+    let prior = plasma.scripts().len();
+    plasma.fail_presentations("Plasma starting");
+    let walld = Walld::start(&sandbox);
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    assert!(
+        walld.wait_log("Plasma Activity restore failed", Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    plasma.confirm_presentations();
+    let mut client = walld.client();
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":green}));
+    let scripts = plasma.scripts().len();
+    assert_eq!(scripts, prior + 2, "{}", walld.log_contents());
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(plasma.scripts().len(), scripts, "{}", walld.log_contents());
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, green));
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn inactive_apply_keeps_restore() {
+    let (sandbox, plasma, image) = restore_session("plasma-inactive-keeps");
+    let green = still(&sandbox, "inactive.png", "green");
+    let prior = plasma.scripts().len();
+    plasma.fail_presentations("Plasma starting");
+    let walld = Walld::start(&sandbox);
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    assert!(
+        walld.wait_log("Plasma Activity restore failed", Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    let mut client = walld.client();
+    let reply = call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":green,"activity":"activity-b"}),
+    );
+    assert_eq!(reply["result"]["visible"], false);
+    let scripts = plasma.scripts().len();
+    plasma.confirm_presentations();
+    assert!(
+        wait_until(|| plasma.scripts().len() > scripts, Duration::from_secs(8)),
+        "{}",
+        walld.log_contents()
+    );
+    assert_eq!(source(&scripted(&plasma)["DP-1"]), (SourceKind::Static, image));
+    let scoped = call(&walld, &mut client, "wall.outputs", json!({"activity":"activity-b"}));
+    assert!(scoped["result"]["outputs"].as_array().unwrap().iter().all(|row| row["path"] == green));
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn native_output_stays_native() {
+    let (sandbox, plasma) = plasma_session("activity-native-output");
+    let first = still(&sandbox, "a.png", "red");
+    let second = still(&sandbox, "b.png", "green");
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    call(&walld, &mut client, "wall.apply", json!({"type":"static","path":first}));
+    std::fs::write(
+        sandbox.root.join("plasma/native-outputs.json"),
+        json!({"activity-a":["DP-2"]}).to_string(),
+    )
+    .unwrap();
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static","path":second,"activity":"activity-a","output":"DP-1"}),
+    );
+    let changed = scripted(&plasma);
+    assert_eq!(source(&changed["DP-1"]), (SourceKind::Static, second));
+    assert!(!changed.contains_key("DP-2"));
+    assert!(sandbox.outputs_json().get("DP-2").is_none());
 }

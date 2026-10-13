@@ -124,3 +124,119 @@ fn identity_key_pairs_connector() {
     assert_eq!(named.identity(), twin.identity());
     assert_eq!(info("DP-3").identity_key(), "DP-3");
 }
+
+fn short_session() -> (Connection, std::thread::JoinHandle<()>) {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    let (client, mut server) = UnixStream::pair().unwrap();
+    let thread = std::thread::spawn(move || {
+        loop {
+            let mut header = [0; 8];
+            if server.read_exact(&mut header).is_err() {
+                return;
+            }
+            let size = (u32::from_ne_bytes(header[4..].try_into().unwrap()) >> 16) as usize;
+            let mut payload = vec![0; size - header.len()];
+            server.read_exact(&mut payload).unwrap();
+            if u32::from_ne_bytes(header[..4].try_into().unwrap()) != 1
+                || u32::from_ne_bytes(header[4..].try_into().unwrap()) & 0xffff != 0
+            {
+                continue;
+            }
+            let callback = u32::from_ne_bytes(payload[..4].try_into().unwrap());
+            let mut event = Vec::new();
+            event.extend_from_slice(&callback.to_ne_bytes());
+            event.extend_from_slice(&(12u32 << 16).to_ne_bytes());
+            event.extend_from_slice(&0u32.to_ne_bytes());
+            server.write_all(&event).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            return;
+        }
+    });
+    (Connection::from_socket(client).unwrap(), thread)
+}
+
+#[test]
+fn startup_connection_recovers() {
+    let mut attempts = 0;
+    let mut retries = 0;
+    let mut changes = 0;
+    let mut server = None;
+    monitor_connections(
+        || {
+            attempts += 1;
+            if attempts == 1 {
+                return None;
+            }
+            let (conn, thread) = short_session();
+            server = Some(thread);
+            Some(conn)
+        },
+        || {
+            retries += 1;
+            retries < 2
+        },
+        || changes += 1,
+    );
+    server.unwrap().join().unwrap();
+    assert_eq!(attempts, 2);
+    assert_eq!(changes, 1);
+}
+
+#[test]
+fn startup_handshake_recovers() {
+    use std::os::unix::net::UnixStream;
+
+    let mut attempts = 0;
+    let mut retries = 0;
+    let mut changes = 0;
+    let mut server = None;
+    monitor_connections(
+        || {
+            attempts += 1;
+            if attempts == 1 {
+                let (client, peer) = UnixStream::pair().unwrap();
+                drop(peer);
+                return Some(Connection::from_socket(client).unwrap());
+            }
+            let (conn, thread) = short_session();
+            server = Some(thread);
+            Some(conn)
+        },
+        || {
+            retries += 1;
+            retries < 2
+        },
+        || changes += 1,
+    );
+    server.unwrap().join().unwrap();
+    assert_eq!(attempts, 2);
+    assert_eq!(changes, 1);
+}
+
+#[test]
+fn disconnected_session_recovers() {
+    let mut attempts = 0;
+    let mut retries = 0;
+    let mut changes = 0;
+    let mut servers = Vec::new();
+    monitor_connections(
+        || {
+            attempts += 1;
+            let (conn, thread) = short_session();
+            servers.push(thread);
+            Some(conn)
+        },
+        || {
+            retries += 1;
+            retries < 2
+        },
+        || changes += 1,
+    );
+    for server in servers {
+        server.join().unwrap();
+    }
+    assert_eq!(attempts, 2);
+    assert_eq!(changes, 1);
+}

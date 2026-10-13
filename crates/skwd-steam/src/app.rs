@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::io::Write;
 
-use steamworks::Client;
+use serde::Serialize;
+use steamworks::{Client, ItemState, PublishedFileId};
 
 use crate::download;
 use crate::event_output::{emit, emit_with_folder};
@@ -10,10 +11,21 @@ use crate::search;
 use crate::search_params::SearchParams;
 
 const APP_ID: u32 = 431_960;
+const INVENTORY_COMMAND: &str = "inventory";
+
+#[derive(Serialize)]
+struct Inventory {
+    account: String,
+    subscribed: HashSet<String>,
+    installed: std::collections::HashMap<String, String>,
+}
 
 pub async fn run(args: &[String]) -> i32 {
     if args.first().map(String::as_str) == Some("search") {
         return run_search_command(args.get(1).map_or("{}", String::as_str)).await;
+    }
+    if args.first().map(String::as_str) == Some(INVENTORY_COMMAND) {
+        return run_inventory(&args[1..]);
     }
     let unsubscribe = args.first().map(String::as_str) == Some("unsub");
     let ids = numeric_ids(if unsubscribe { &args[1..] } else { args });
@@ -55,6 +67,31 @@ pub async fn run(args: &[String]) -> i32 {
         }
     }
     i32::from(completed.len() != ids.len())
+}
+
+fn run_inventory(args: &[String]) -> i32 {
+    let Ok(client) = Client::init_app(APP_ID) else { return 1 };
+    if !client.user().logged_on() {
+        return 1;
+    }
+    let subscribed = client
+        .ugc()
+        .subscribed_items(true)
+        .into_iter()
+        .map(|item| item.0.to_string())
+        .collect::<HashSet<_>>();
+    let installed = args
+        .iter()
+        .filter_map(|id| id.parse::<u64>().ok().map(|raw| (id, PublishedFileId(raw))))
+        .filter(|(_, item)| client.ugc().item_state(*item).contains(ItemState::INSTALLED))
+        .filter_map(|(id, item)| {
+            client.ugc().item_install_info(item).map(|info| (id.clone(), info.folder))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let inventory =
+        Inventory { account: client.user().steam_id().raw().to_string(), subscribed, installed };
+    println!("{}", serde_json::to_string(&inventory).expect("inventory serializes"));
+    0
 }
 
 async fn run_search_command(params_json: &str) -> i32 {

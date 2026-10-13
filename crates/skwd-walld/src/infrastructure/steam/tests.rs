@@ -57,6 +57,47 @@ fn parse_search_empty() {
 }
 
 #[test]
+fn exact_item_details() {
+    let json = r#"{"response":{"publishedfiledetails":[
+        {"publishedfileid":"123","result":1,"consumer_app_id":431960,"title":"Scene","file_size":2048,"tags":[{"tag":"Scene"}]},
+        {"publishedfileid":"124","consumer_app_id":431960,"title":"Other","tags":[{"tag":"Video"}]}
+    ]}}"#;
+    let page = parse_item_details(json, 123).unwrap();
+    assert_eq!(page.results.len(), 1);
+    assert_eq!(page.results[0].file_size, 2048);
+    assert_eq!(page.last_page, 1);
+}
+
+#[test]
+fn rejects_other_apps() {
+    let json = r#"{"response":{"publishedfiledetails":[
+        {"publishedfileid":"123","result":1,"consumer_app_id":999,"tags":[{"tag":"Scene"}]},
+        {"publishedfileid":"123","result":1,"consumer_app_id":431960,"tags":[{"tag":"Web"}]},
+        {"publishedfileid":"123","result":9,"consumer_app_id":431960,"tags":[{"tag":"Scene"}]}
+    ]}}"#;
+    assert!(parse_item_details(json, 123).unwrap().results.is_empty());
+}
+
+#[test]
+fn exact_item_filters() {
+    let item = SteamResult {
+        id: "123".into(),
+        title: String::new(),
+        preview_url: String::new(),
+        file_size: 0,
+        subscriptions: 0,
+        tags: "Wallpaper, Scene, Everyone".into(),
+    };
+    let mut params = SearchParams { tags: vec!["Scene".into()], ..Default::default() };
+    assert!(matches_tags(&item, &params));
+    params.tags = vec!["Video".into()];
+    assert!(!matches_tags(&item, &params));
+    params.tags.clear();
+    params.excluded_tags = vec!["Everyone".into()];
+    assert!(!matches_tags(&item, &params));
+}
+
+#[test]
 fn helper_search_paging() {
     let json = r#"{"results":[
             {"id":"123","title":"Forest","preview_url":"https://x/p.jpg","file_size":2048,"subscriptions":99,"tags":"Scene, Nature"},

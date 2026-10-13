@@ -8,6 +8,8 @@ description = "Shared Skwd Wall config paths, atomic persistence, schema, and va
 [dependencies]
 dirs = "6"
 serde_json = { workspace = true }
+serde = { workspace = true }
+wall-proto = { path = "../wall-proto" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

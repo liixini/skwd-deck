@@ -99,6 +99,21 @@ fn typed_settings_defaults() {
 }
 
 #[test]
+fn outdoors_policy_roundtrip() {
+    let shader = crate::keys::weather::OUTDOORS_TRANSITION_SHADER;
+    let retheme = crate::keys::weather::OUTDOORS_RETHEME;
+    assert_eq!(shader, "weather.outdoors.transitionShader");
+    assert_eq!(retheme, "weather.outdoors.retheme");
+    assert_eq!(text_default(shader), Some("crossfade"));
+    assert_eq!(boolean_default(retheme), Some(false));
+    assert_eq!(normalize_value(shader, &json!("random")), Some(json!("random")));
+    assert_eq!(normalize_value(retheme, &json!(true)), Some(json!(true)));
+    let root = json!({"weather":{"outdoors":{"transitionShader":"crossfade","retheme":true}}});
+    assert_eq!(read_text(&root, shader).as_deref(), Some("crossfade"));
+    assert_eq!(read_boolean(&root, retheme), Some(true));
+}
+
+#[test]
 fn paths_unique_kinds_stable() {
     let mut paths = HashSet::new();
     for spec in all() {
@@ -135,6 +150,10 @@ fn normalizes_writes() {
     );
     assert_eq!(normalize_value(crate::keys::general::UI_SCALE, &json!("nope")), None);
     assert_eq!(value_kind("integrations.3.livePreview"), Some(ValueKind::Boolean));
+    assert_eq!(value_kind("integrations.3.profile"), Some(ValueKind::Text));
+    assert_eq!(value_kind("theme.appProfiles.kitty"), Some(ValueKind::Text));
+    assert_eq!(text_default("theme.appProfiles.kitty"), Some(""));
+    assert_eq!(normalize_value("theme.appProfiles.kitty", &json!(false)), None);
     assert_eq!(value_kind("filterBar.resolutionPresets.2.width"), Some(ValueKind::Number));
     assert_eq!(value_kind("filterBar.resolutionPresets.2.from"), Some(ValueKind::Text));
     assert_eq!(value_kind("filterBar.resolutionPresets.2.to"), Some(ValueKind::Text));
@@ -314,4 +333,66 @@ fn optional_filter_controls_have_enabled_boolean_defaults() {
         assert_eq!(normalize_value(path, &json!(false)), Some(json!(false)));
         assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
     }
+}
+
+#[test]
+fn weather_mapping_defaults() {
+    use crate::keys::weather;
+    assert_eq!(boolean_default(weather::ENABLED), Some(false));
+    for path in [
+        weather::CLEAR,
+        weather::CLOUDY,
+        weather::RAINY,
+        weather::SNOWY,
+        weather::STORMY,
+        weather::FOGGY,
+        weather::WINDY,
+    ] {
+        assert_eq!(text_default(path), Some(""));
+        assert_eq!(normalize_value(path, &json!("42")), Some(json!("42")));
+        assert_eq!(normalize_value(path, &json!(42)), Some(json!("42")));
+    }
+}
+
+#[test]
+fn semantic_weather_defaults() {
+    use crate::keys::weather;
+    assert_eq!(text_default(weather::SOURCE), Some("playlists"));
+    assert_eq!(text_default(weather::SEMANTIC_SELECTION), Some("automatic"));
+    assert_eq!(
+        normalize_value(weather::SEMANTIC_SELECTION, &json!("approved")),
+        Some(json!("approved"))
+    );
+    for (category, path) in [
+        ("clear", weather::APPROVED_CLEAR),
+        ("cloudy", weather::APPROVED_CLOUDY),
+        ("rainy", weather::APPROVED_RAINY),
+        ("snowy", weather::APPROVED_SNOWY),
+        ("stormy", weather::APPROVED_STORMY),
+        ("foggy", weather::APPROVED_FOGGY),
+        ("windy", weather::APPROVED_WINDY),
+    ] {
+        assert_eq!(weather::approved_key(category), Some(path));
+        assert_eq!(
+            normalize_value(path, &json!(["static:one.png"])),
+            Some(json!(["static:one.png"]))
+        );
+    }
+    assert_eq!(weather::approved_key("sunny"), None);
+    for path in [
+        weather::SEMANTIC_CLEAR,
+        weather::SEMANTIC_CLOUDY,
+        weather::SEMANTIC_RAINY,
+        weather::SEMANTIC_SNOWY,
+        weather::SEMANTIC_STORMY,
+        weather::SEMANTIC_FOGGY,
+        weather::SEMANTIC_WINDY,
+    ] {
+        assert!(text_default(path).is_some_and(|query| !query.is_empty()));
+        assert_eq!(normalize_value(path, &json!("")), Some(json!("")));
+    }
+    assert_eq!(number_default(weather::SEMANTIC_MAX_RESULTS), Some(32.0));
+    assert_eq!(normalize_value(weather::SEMANTIC_MAX_RESULTS, &json!(999)), Some(json!(64)));
+    assert_eq!(normalize_value(weather::SEMANTIC_DWELL_SECONDS, &json!(0)), Some(json!(5)));
+    assert_eq!(normalize_value(weather::SEMANTIC_SCORE_WINDOW, &json!(-1)), Some(json!(0)));
 }

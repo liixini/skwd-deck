@@ -127,12 +127,12 @@ impl<'a> RendererConfig<'a> {
             .unwrap_or(30.0) as u32
     }
 
-    pub fn we_scene_fill_mode(&self) -> String {
+    pub fn we_scene_fill_mode(&self, output: &str) -> String {
         let scaling = self.we_scaling();
         if scaling.parse::<wall_geom::FillMode>().is_ok() {
             scaling
         } else {
-            self.config.display().fill_mode()
+            self.config.display().fill_mode_for(output)
         }
     }
 }

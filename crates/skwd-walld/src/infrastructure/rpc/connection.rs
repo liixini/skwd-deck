@@ -281,8 +281,8 @@ mod tests;
 fn payload_for(ctx: &Ctx, request: &Request, heavy: bool) -> String {
     let Ctx { database, stats, .. } = ctx;
     if heavy {
-        let wallpaper_dir = ctx.config.read().wallpaper_dir();
-        return list_payload(database, request, stats, &wallpaper_dir);
+        let config = ctx.config.read();
+        return list_payload(database, request, stats, &config);
     }
     let response = dispatch(ctx, request);
     response_payload(&response, request.id)
@@ -300,14 +300,31 @@ fn list_payload(
     database: &skwd_wall_core::infrastructure::database::Database,
     request: &Request,
     stats: &Stats,
-    wallpaper_dir: &str,
+    config: &skwd_wall_core::config::Config,
 ) -> String {
     stats.rpc(&request.method);
     let favourites = request.bool_param("favourites", false);
+    let mut steam = crate::infrastructure::steam_subscriptions::SteamConfirmation::new(config);
     match database.with_connection(|connection| {
-        db::list_wallpapers_json(connection, favourites, wallpaper_dir)
+        db::list_wallpapers_json(
+            connection,
+            favourites,
+            &config.wallpaper_dir(),
+            &config.we_dir(),
+            |id, item| steam.required(id, item),
+        )
     }) {
-        Ok((rows, count)) => {
+        Ok((mut rows, mut count)) => {
+            if config.weather_source() == wall_proto::WeatherSource::Outdoors && !favourites {
+                let builtins = crate::infrastructure::outdoors::items(config);
+                if let Ok(mut items) = serde_json::from_str::<Vec<serde_json::Value>>(&rows) {
+                    items.extend(
+                        builtins.into_iter().filter_map(|item| serde_json::to_value(item).ok()),
+                    );
+                    count = items.len();
+                    rows = serde_json::to_string(&items).expect("outdoors list serialization");
+                }
+            }
             format!(r#"{{"id":{},"result":{{"count":{count},"wallpapers":{rows}}}}}"#, request.id)
         }
         Err(error) => {

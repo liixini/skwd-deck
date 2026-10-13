@@ -34,6 +34,79 @@ pub(super) fn palette(color: &str) -> Value {
 }
 
 #[test]
+fn app_profiles_stay_distinct() {
+    let (_root, env, _) = fixture();
+    let config = Config::from_root(json!({"theme": {"appProfiles": {
+        "kitty": "nord", "ghostty": "dracula"
+    }}}));
+    let global = palette("#123456");
+    manager::set_with(&env, &config, "kitty", true, &Value::Null, true).unwrap();
+    manager::set_with(&env, &config, "ghostty", true, &global, true).unwrap();
+    let kitty = env.config.join("kitty/skwd-colors.conf");
+    let ghostty = env.config.join("ghostty/skwd-colors.conf");
+    let first = std::fs::read_to_string(&kitty).unwrap();
+    let second = std::fs::read_to_string(&ghostty).unwrap();
+    assert_ne!(first, second);
+    manager::apply_with(&env, &config, &palette("#abcdef"), false);
+    assert!(!std::fs::read_to_string(&kitty).unwrap().contains("abcdef"));
+    let changed = std::fs::read_to_string(&ghostty).unwrap();
+    assert!(!changed.contains("abcdef"));
+    assert!(changed.contains("bd93f9"));
+
+    let cleared = Config::from_root(json!({"theme": {"appProfiles": {
+        "kitty": "", "ghostty": "missing"
+    }}}));
+    manager::apply_with(&env, &cleared, &palette("#fedcba"), true);
+    assert!(std::fs::read_to_string(&kitty).unwrap().contains("fedcba"));
+    assert_eq!(std::fs::read_to_string(&ghostty).unwrap(), changed);
+}
+
+#[test]
+fn saved_profile_refreshes() {
+    let (_root, env, _) = fixture();
+    let mut before = palette("#123456");
+    before["name"] = json!("Personal");
+    let mut after = palette("#abcdef");
+    after["name"] = json!("Personal");
+    let original = Config::from_root(json!({"theme": {
+        "appProfiles": {"kitty": "Personal"}, "savedThemes": [before]
+    }}));
+    let edited = Config::from_root(json!({"theme": {
+        "appProfiles": {"kitty": "Personal"}, "savedThemes": [after]
+    }}));
+    manager::set_with(&env, &original, "kitty", true, &Value::Null, true).unwrap();
+    let output = env.config.join("kitty/skwd-colors.conf");
+    let first = std::fs::read_to_string(&output).unwrap();
+    assert!(manager::refresh_with(&env, &edited, "Personal", true).unwrap());
+    let second = std::fs::read_to_string(&output).unwrap();
+    assert_ne!(second, first);
+    assert!(second.contains("abcdef"));
+
+    std::fs::write(&output, "user colours").unwrap();
+    assert!(manager::refresh_with(&env, &original, "Personal", true).is_err());
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "user colours");
+
+    let mut saved = palette("#123456");
+    saved["name"] = json!("Personal");
+    let both_original = Config::from_root(json!({"theme": {
+        "appProfiles": {"kitty": "Personal", "ghostty": "Personal"},
+        "savedThemes": [saved]
+    }}));
+    manager::set_with(&env, &both_original, "ghostty", true, &Value::Null, true).unwrap();
+    let ghostty = env.config.join("ghostty/skwd-colors.conf");
+    let old_ghostty = std::fs::read_to_string(&ghostty).unwrap();
+    let mut saved = palette("#abcdef");
+    saved["name"] = json!("Personal");
+    let both = Config::from_root(json!({"theme": {
+        "appProfiles": {"kitty": "Personal", "ghostty": "Personal"},
+        "savedThemes": [saved]
+    }}));
+    assert!(manager::refresh_with(&env, &both, "Personal", true).is_err());
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "user colours");
+    assert_ne!(std::fs::read_to_string(&ghostty).unwrap(), old_ghostty);
+}
+
+#[test]
 fn every_recipe_enables_updates_and_restores_unrelated_edits() {
     let (_root, env, config) = fixture();
     for recipe in &RECIPES {

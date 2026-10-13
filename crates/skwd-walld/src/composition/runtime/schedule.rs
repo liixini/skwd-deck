@@ -25,6 +25,8 @@ pub fn should_catch_up(last: Option<ApplySource>) -> bool {
                 | ApplySource::UserOverride
                 | ApplySource::Random
                 | ApplySource::Playlist
+                | ApplySource::Weather { .. }
+                | ApplySource::WeatherSemantic { .. }
                 | ApplySource::Replay,
         )
     )
@@ -105,7 +107,7 @@ fn parse_rule(val: &Value) -> Option<Rule> {
 
 fn load_rules(cfg: &skwd_wall_core::config::Config) -> Vec<Rule> {
     let mut out = Vec::new();
-    if !cfg.schedule_enabled() {
+    if !cfg.schedule_enabled() || super::outdoors::active(cfg) {
         return out;
     }
     if !cfg.schedule_migrated() {
@@ -258,6 +260,10 @@ fn fire(
     set: &str,
     mode: Option<&str>,
 ) {
+    state.reload_config();
+    if super::outdoors::active(&state.config()) {
+        return;
+    }
     stats.set_task("scheduled");
     if let Some(id) = set.strip_prefix("playlist:").and_then(|rest| rest.trim().parse::<i64>().ok())
     {

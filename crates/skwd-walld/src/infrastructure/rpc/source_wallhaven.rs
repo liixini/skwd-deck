@@ -26,7 +26,7 @@ pub(super) fn wallhaven_search(ctx: &Ctx, request: &Request) -> Response {
         wallhaven::search(&params, &api_key)
     } else {
         let username = state.config().wallhaven_username();
-        wallhaven::collection_page(&username, &collection, params.page, &api_key)
+        wallhaven::collection_page(&username, &collection, &params, &api_key)
     };
     let mut page = match result {
         Ok(page) => page,
@@ -38,8 +38,12 @@ pub(super) fn wallhaven_search(ctx: &Ctx, request: &Request) -> Response {
     if !at_most.is_empty() {
         page.results.retain(|result| wallhaven::within_max(&result.resolution, &at_most));
     }
-    let wallpaper_dir = state.config().wallpaper_dir();
-    let local_ids = wallhaven::library_ids(&wallpaper_dir);
+    let local_ids: std::collections::HashSet<String> = state
+        .config()
+        .library_folders()
+        .iter()
+        .flat_map(|folder| wallhaven::library_ids(folder))
+        .collect();
     let items: Vec<wall_proto::sources::ListItem> = page
         .results
         .iter()
@@ -129,8 +133,15 @@ pub(super) fn wallhaven_download(ctx: &Ctx, request: &Request) -> Response {
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let wallpaper_dir = state.config().wallpaper_dir();
-    if let Some(existing) = wallhaven::library_path(&wallpaper_dir, &id) {
+    let Some(wallpaper_dir) = state.config().library_destination(false) else {
+        return Response::err(request.id, INVALID_PARAMS, LIBRARY_FOLDER_REQUIRED);
+    };
+    if let Some(existing) = state
+        .config()
+        .library_folders()
+        .iter()
+        .find_map(|folder| wallhaven::library_path(folder, &id))
+    {
         return respond_exists(request.id, events.as_ref(), &id, &existing);
     }
     let download_id = id.clone();

@@ -9,7 +9,7 @@ use skwd_wall_core::infrastructure::config::ConfigStore;
 use skwd_wall_core::infrastructure::database::Database;
 use skwd_wall_core::lock;
 
-use crate::backend::workers::TinierPreparation;
+use crate::backend::workers::{TinierPreparation, TinierRequest};
 use crate::domain::video_optimization::fit_cap_height;
 use crate::infrastructure::tasks::TaskRegistry;
 use crate::infrastructure::video_optimization::{
@@ -97,8 +97,8 @@ impl VideoOptimizer {
         }
     }
 
-    pub(super) fn prepare(self: &Arc<Self>, source: &str) -> TinierPreparation {
-        let work = self.find_or_queue(source);
+    pub(super) fn prepare(self: &Arc<Self>, request: TinierRequest<'_>) -> TinierPreparation {
+        let work = self.find_or_queue(request);
         let result = work.subscribe();
         self.publish_task(&work, 0, "Queued");
         self.spawn_next();
@@ -128,26 +128,31 @@ impl VideoOptimizer {
         true
     }
 
-    fn find_or_queue(&self, source: &str) -> Arc<TinierWork> {
+    fn find_or_queue(&self, request: TinierRequest<'_>) -> Arc<TinierWork> {
+        let source = request.source;
         if let Some(current) = lock(&self.current_tinier).as_ref()
             && current.source == source
+            && !current.cancelled.load(Ordering::Acquire)
         {
             return Arc::clone(current);
         }
         let mut queue = lock(&self.queue);
-        if let Some(index) = queue.iter().position(|work| work.source == source)
-            && let Some(work) = queue.remove(index)
-        {
-            if let Some(current) = lock(&self.current_tinier).as_ref() {
-                current.cancelled.store(true, Ordering::Release);
+        if !request.replace {
+            if let Some(work) = queue.iter().find(|work| work.source == source) {
+                return Arc::clone(work);
             }
-            queue.push_front(Arc::clone(&work));
+            let work = Arc::new(TinierWork::new(source));
+            queue.push_back(Arc::clone(&work));
             return work;
         }
         if let Some(current) = lock(&self.current_tinier).as_ref() {
             current.cancelled.store(true, Ordering::Release);
         }
-        let work = Arc::new(TinierWork::new(source));
+        let work = queue
+            .iter()
+            .position(|work| work.source == source)
+            .and_then(|index| queue.remove(index))
+            .unwrap_or_else(|| Arc::new(TinierWork::new(source)));
         queue.push_front(Arc::clone(&work));
         work
     }

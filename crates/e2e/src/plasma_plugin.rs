@@ -68,14 +68,6 @@ impl FakePlugin {
     }
 
     pub fn subscribe(&mut self) {
-        assert!(
-            self.wait(|lines| lines
-                .iter()
-                .any(|line| line["capabilities"] == json!(["assignments"]))),
-            "walld never offered assignments to {}: {:?}",
-            self.output,
-            self.lines()
-        );
         let frame = json!({"version": 2, "output": self.output, "subscribe": "assignments"});
         self.send(&frame);
     }

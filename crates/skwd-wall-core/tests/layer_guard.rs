@@ -325,9 +325,7 @@ fn config_feature_facades_are_bounded_and_canonical() {
     let config_parsers: Vec<_> = production
         .iter()
         .filter(|path| {
-            std::fs::read_to_string(path)
-                .expect("read config source")
-                .contains("serde_json::from_str")
+            std::fs::read_to_string(path).expect("read config source").contains("serde_json::from_")
         })
         .collect();
     assert_eq!(config_parsers, [&config.join("source.rs")], "config parsing must stay canonical");

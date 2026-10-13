@@ -47,8 +47,7 @@ fn commit_outside_rejected() {
     let err = super::effects_commit(
         &outside.to_string_lossy(),
         &json!([{ "effect": "grayscale", "params": {} }]),
-        &walls.to_string_lossy(),
-        "/nonexistent-skwd-videos",
+        &[walls.to_string_lossy().into_owned()],
     )
     .expect_err("commit confined");
     assert!(err.to_string().contains("outside"));

@@ -129,7 +129,8 @@ fn measured_sweep(
     let delta = loop {
         assert!(calls < max_calls, "polling sweep exceeded {max_calls} advance calls");
         calls += 1;
-        let result = root.advance(step_budget);
+        let result =
+            root.advance(step_budget, &skwd_config::LibraryPolicy::new(&serde_json::json!({})));
         if !delay.is_zero() {
             std::thread::sleep(delay);
         }

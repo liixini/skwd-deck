@@ -70,7 +70,11 @@ fn indexed_duration_roundtrip() {
     assert_eq!(update_duration(&conn, "video:a.mp4", 92_500).unwrap(), 1);
     let list = list_wallpapers(&conn, false).unwrap();
     assert_eq!(list[0]["duration_ms"], 92_500);
-    let (json, _) = list_wallpapers_json(&conn, false, "/data/壁纸/").unwrap();
+    let (json, _) =
+        list_wallpapers_json(&conn, false, "/data/壁纸/", std::path::Path::new("/we"), |_, _| {
+            false
+        })
+        .unwrap();
     let typed: Vec<wall_proto::WallpaperItem> = serde_json::from_str(&json).unwrap();
     assert_eq!(typed[0].duration_ms, Some(92_500));
 }
@@ -93,7 +97,14 @@ fn list_json_matches_tree() {
             }
         }
         let tree = serde_json::Value::Array(rows);
-        let (json, count) = list_wallpapers_json(&conn, fav, "/data/壁纸/").unwrap();
+        let (json, count) = list_wallpapers_json(
+            &conn,
+            fav,
+            "/data/壁纸/",
+            std::path::Path::new("/we"),
+            |_, _| false,
+        )
+        .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed, tree);
         assert_eq!(count, tree.as_array().unwrap().len());
@@ -271,18 +282,46 @@ fn random_pick_filters() {
     .unwrap();
     set_favourite(&conn, "video:v.mp4", true).unwrap();
 
-    let only_static = random_pick(&conn, None, &["static"], false).unwrap().unwrap();
+    let only_static = random_pick(&conn, None, &["static"], false, None).unwrap().unwrap();
     assert_eq!(only_static.1, "static");
     assert_eq!(only_static.0, "static:a.png");
 
-    let fav = random_pick(&conn, None, &["static", "video"], true).unwrap().unwrap();
+    let fav = random_pick(&conn, None, &["static", "video"], true, None).unwrap().unwrap();
     assert_eq!(fav.0, "video:v.mp4");
     assert_eq!(fav.3, "/abs/v.mp4");
 
-    let excluded = random_pick(&conn, Some("a.png"), &["static"], false).unwrap();
+    let excluded = random_pick(&conn, Some("a.png"), &["static"], false, None).unwrap();
     assert!(excluded.is_none());
 
-    assert!(random_pick(&conn, None, &[], false).unwrap().is_none());
+    assert!(random_pick(&conn, None, &[], false, None).unwrap().is_none());
+}
+
+#[test]
+fn hidden_skips_random() {
+    let conn = open_in_memory().unwrap();
+    seed(&conn, "static:a.png", "a.png", "static");
+    seed(&conn, "static:b.png", "b.png", "static");
+    assert!(set_hidden(&conn, "static:a.png", true).unwrap());
+    assert!(!set_hidden(&conn, "static:a.png", true).unwrap());
+    for _ in 0..8 {
+        let pick = random_pick(&conn, None, &["static"], false, None).unwrap().unwrap();
+        assert_eq!(pick.0, "static:b.png");
+    }
+    let listed = list_wallpapers(&conn, false).unwrap();
+    let hidden: Vec<bool> = listed.iter().map(|item| item["hidden"].as_bool().unwrap()).collect();
+    assert_eq!(hidden, [true, false]);
+}
+
+#[test]
+fn predicate_limits_random() {
+    let conn = open_in_memory().unwrap();
+    seed(&conn, "static:a.png", "a.png", "static");
+    seed(&conn, "static:b.png", "b.png", "static");
+    let only_a = |entry: RandomEntry<'_>| entry.name == "a.png";
+    let pick = random_pick(&conn, None, &["static"], false, Some(&only_a));
+    assert_eq!(pick.unwrap().unwrap().2, "a.png");
+    let none = |_: RandomEntry<'_>| false;
+    assert!(random_pick(&conn, None, &["static"], false, Some(&none)).unwrap().is_none());
 }
 
 #[test]
@@ -398,4 +437,25 @@ fn invalid_thumbnail_record_is_a_cache_miss() {
     seed(&conn, "we:42", "scene", "we");
     conn.execute("UPDATE meta SET thumbnail_cache = 'incomplete' WHERE key = 'we:42'", []).unwrap();
     assert!(thumbnail_cache(&conn, "we:42").unwrap().is_none());
+}
+
+#[test]
+fn invalidate_legacy_sources() {
+    let conn = open_in_memory().unwrap();
+    for (key, kind) in [
+        ("static:a.png", "static"),
+        ("static:/extra/a.png", "static"),
+        ("video:a.mp4", "video"),
+        ("video:/extra/a.mp4", "video"),
+        ("we:123", "we"),
+    ] {
+        seed(&conn, key, key, kind);
+    }
+    conn.execute("UPDATE meta SET mtime=100", []).unwrap();
+    assert_eq!(invalidate_source_mtimes(&conn, true, false, false).unwrap(), 1);
+    assert_eq!(invalidate_source_mtimes(&conn, false, true, false).unwrap(), 1);
+    for (key, mtime) in known_keys(&conn).unwrap() {
+        assert_eq!(mtime, if key == "static:a.png" || key == "video:a.mp4" { -1 } else { 100 });
+    }
+    assert_eq!(invalidate_source_mtimes(&conn, false, false, true).unwrap(), 1);
 }

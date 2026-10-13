@@ -8,6 +8,7 @@ fn source_policy() {
         (UserOverride, true, false, false, true),
         (Random, true, true, true, true),
         (Rotation, false, true, true, true),
+        (Weather { playlist_id: 1, revision: 1 }, false, false, true, true),
         (Playlist, false, false, true, true),
         (Schedule, false, false, true, true),
         (Workspace, false, false, true, true),

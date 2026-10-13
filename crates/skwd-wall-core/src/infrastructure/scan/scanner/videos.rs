@@ -2,14 +2,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rayon::prelude::*;
-use walkdir::WalkDir;
 
 use crate::lock;
 use crate::state::WallState;
 use crate::{db, media, paths};
 
 use super::super::concurrency::{decode_budget, scan_threads};
-use super::common::{artifacts_ready, is_video, known_mtimes, mtime_secs};
+use super::common::{artifacts_ready, is_video, known_mtimes};
 
 static VIDEO_DECODE_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -17,36 +16,8 @@ pub fn scan_videos<F>(state: &WallState, on_item: F) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
-    let mut directories = Vec::new();
-    for directory in
-        [PathBuf::from(state.config().video_dir()), PathBuf::from(state.config().wallpaper_dir())]
-    {
-        if directory.is_dir() && !directories.iter().any(|seen| seen == &directory) {
-            directories.push(directory);
-        }
-    }
-    if directories.is_empty() {
-        return 0;
-    }
-
     let known = known_mtimes(state);
-    let candidates: Vec<(PathBuf, String, i64)> = directories
-        .iter()
-        .flat_map(|directory| {
-            WalkDir::new(directory)
-                .follow_links(false)
-                .into_iter()
-                .filter_entry(|entry| !paths::is_internal_library_path(entry.path()))
-                .filter_map(Result::ok)
-                .filter(|entry| entry.file_type().is_file() && is_video(entry.path()))
-                .filter_map(|entry| {
-                    let relative =
-                        entry.path().strip_prefix(directory).ok()?.to_string_lossy().into_owned();
-                    Some((entry.path().to_path_buf(), relative, mtime_secs(entry.path())))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    let candidates = super::common::candidates(state, is_video);
 
     let pending: Vec<&(PathBuf, String, i64)> = candidates
         .iter()

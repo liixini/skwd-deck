@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use crate::infrastructure::renderers::kill_held_renderer;
 
+pub const SCENE_PROJECT_TYPE: &str = "scene";
 const SCENE_FREEZE_TIMEOUT: Duration = Duration::from_secs(5);
+const MIXED_SCENE_FILL: &str = "native scene outputs require one placement mode";
 static SCENE_FREEZE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct NativeSceneCandidate<'a> {
@@ -94,10 +96,11 @@ pub(crate) fn commit_scene_set(
 
 pub fn read_project_type(item_dir: &Path) -> (String, String) {
     let Ok(project) = paper_control::we_project::Project::resolve(item_dir) else {
-        return ("scene".to_string(), String::new());
+        return (SCENE_PROJECT_TYPE.to_string(), String::new());
     };
     let val = project.document;
-    let ty = val.get("type").and_then(|node| node.as_str()).unwrap_or("scene").to_lowercase();
+    let ty =
+        val.get("type").and_then(|node| node.as_str()).unwrap_or(SCENE_PROJECT_TYPE).to_lowercase();
     let file = val.get("file").and_then(|node| node.as_str()).unwrap_or("").to_string();
     (ty, file)
 }
@@ -107,7 +110,7 @@ pub fn is_video_project(proj_type: &str, file: &str) -> bool {
 }
 
 pub fn is_supported_project(proj_type: &str) -> bool {
-    proj_type.eq_ignore_ascii_case("scene") || proj_type.eq_ignore_ascii_case("video")
+    proj_type.eq_ignore_ascii_case(SCENE_PROJECT_TYPE) || proj_type.eq_ignore_ascii_case("video")
 }
 
 pub fn read_project_title(item_dir: &Path) -> Option<String> {
@@ -168,6 +171,30 @@ pub(crate) fn spawn_scene_for<'a>(
         allow_warm_swap,
         transition,
     )
+}
+
+pub(crate) fn scene_output_groups(state: &WallState, outputs: &[String]) -> Vec<Vec<String>> {
+    let mut modes = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for output in outputs {
+        modes
+            .entry(state.config().renderer().we_scene_fill_mode(output))
+            .or_default()
+            .push(output.clone());
+    }
+    let independent = apply::independent_playback(state);
+    let mut groups: Vec<Vec<String>> = modes
+        .into_values()
+        .flat_map(|mut group| {
+            group.sort();
+            if independent {
+                group.into_iter().map(|output| vec![output]).collect()
+            } else {
+                vec![group]
+            }
+        })
+        .collect();
+    groups.sort_by(|left, right| left[0].cmp(&right[0]));
+    groups
 }
 
 pub(crate) fn scene_overrides(
@@ -331,7 +358,13 @@ fn native_scene<'a>(
 ) -> anyhow::Result<NativeSceneCandidate<'a>> {
     paper_control::we_project::Project::scene_package_at(item_dir)?;
     let dir = item_dir.display().to_string();
-    let fill = state.config().renderer().we_scene_fill_mode();
+    let fill = state.config().renderer().we_scene_fill_mode(
+        outputs.first().map_or(wall_proto::apply_fields::ALL_OUTPUTS, String::as_str),
+    );
+    anyhow::ensure!(
+        outputs.iter().all(|output| state.config().renderer().we_scene_fill_mode(output) == fill),
+        MIXED_SCENE_FILL
+    );
     let (transitions, shader, duration_ms) = {
         let config = state.config();
         let configured = config.transition();
@@ -427,15 +460,14 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
     let dir = item_dir.display().to_string();
     let outs = outputs::names();
     let keys: Vec<String> = if outs.is_empty() { vec!["*".to_string()] } else { outs };
-    let size = if apply::independent_playback(state) { 1 } else { keys.len().max(1) };
     let assignments = state.renderers().assignments();
-    let renderer_keys: Vec<String> = keys
-        .chunks(size)
-        .map(scene_renderer_key)
+    let assigned: Vec<String> =
+        keys.into_iter().filter(|output| assignments.get(output) == Some(&dir)).collect();
+    let renderer_keys: Vec<String> = scene_output_groups(state, &assigned)
+        .iter()
+        .map(|outputs| scene_renderer_key(outputs))
         .filter(|key| {
-            key.split(',').all(|output| assignments.get(output).is_some_and(|path| *path == dir))
-                && state.renderers().is_scene_paper(key)
-                && state.renderers().has_video_paper(key)
+            state.renderers().is_scene_paper(key) && state.renderers().has_video_paper(key)
         })
         .collect();
     if renderer_keys.is_empty() {
@@ -597,10 +629,10 @@ pub fn apply_we(
         }
         let (groups, we_audio) = apply::resolve_we_from_state(&map);
         let (scene_mute, scene_volume) = we_audio.get(we_id).copied().unwrap_or((true, 100));
-        let size = if apply::independent_playback(state) { 1 } else { keys.len().max(1) };
+        let scene_groups = scene_output_groups(state, &keys);
         let mut candidates = Vec::new();
         let mut renderer_keys = Vec::new();
-        for (index, chunk) in keys.chunks(size).enumerate() {
+        for (index, chunk) in scene_groups.iter().enumerate() {
             renderer_keys.push(scene_renderer_key(chunk));
             candidates.push(spawn_scene_for(
                 state,

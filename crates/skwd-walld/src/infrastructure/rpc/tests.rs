@@ -77,7 +77,7 @@ fn unknown_method_32601() {
 #[test]
 fn status_answers_ok() {
     let (_guard, _root) = testenv::lock();
-    testenv::write_config(json!({}));
+    testenv::write_config(json!({"steam":{"backend":"steamcmd"}}));
     let (state, subs, stats) = harness();
     let val = rr(call(&state, &subs, &stats, "status", json!({})));
     assert_eq!(val["ok"], json!(true));
@@ -89,6 +89,7 @@ fn status_answers_ok() {
     assert_eq!(val["capabilities"], json!(wall_proto::CAPABILITIES));
     assert!(val["renderers"].is_array());
     assert!(val["library_watch"].is_object());
+    assert_eq!(val[wall_proto::STEAM_CLIENT_AVAILABLE_FIELD], false);
     assert!(val["library_watch"]["mode"].is_string());
     assert!(
         !val["renderers"].as_array().unwrap().is_empty()
@@ -242,6 +243,64 @@ fn steam_download_gates() {
     let resp = call(&state, &subs, &stats, "steam.download", json!({"id": "123456789"}));
     assert_eq!(ecode(&resp), -1);
     assert!(emsg(&resp).contains("disabled"));
+}
+
+#[test]
+fn workshop_id_search_result() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_guard, root) = testenv::lock();
+    let helper = root.join("steam-search-fixture");
+    let request_path = root.join("steam-search-request.json");
+    std::fs::write(
+        &helper,
+        r#"#!/bin/sh
+printf '%s\n' "$2" > "$SKWD_STEAM_TEST_REQUEST"
+printf '%s\n' '{"results":[{"id":"123456789","title":"Forest","tags":"Scene, Everyone"}]}'
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    unsafe { std::env::set_var("SKWD_STEAM_BIN", &helper) };
+    unsafe { std::env::set_var("SKWD_STEAM_TEST_REQUEST", &request_path) };
+    testenv::write_config(json!({"steam":{"backend":"steam"}}));
+    let (state, subs, stats) = harness();
+    let item = state.config().we_dir().join("123456789");
+    std::fs::create_dir_all(&item).unwrap();
+    std::fs::write(item.join("project.json"), r#"{"type":"scene"}"#).unwrap();
+    std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+
+    let response = call(
+        &state,
+        &subs,
+        &stats,
+        "steam.search",
+        json!({
+            "query":"https://steamcommunity.com/sharedfiles/filedetails/?id=123456789",
+            "tags":["Scene"]
+        }),
+    );
+    let result = response.result.unwrap();
+    assert_eq!(result["results"][0]["id"], "123456789");
+    assert_eq!(result["results"][0]["downloaded"], true);
+    assert_eq!(result["current_page"], 1);
+    assert_eq!(result["last_page"], 1);
+    let helper_request: Value =
+        serde_json::from_slice(&std::fs::read(&request_path).unwrap()).unwrap();
+    assert_eq!(helper_request["query"], "123456789");
+
+    let filtered = call(
+        &state,
+        &subs,
+        &stats,
+        "steam.search",
+        json!({
+            "query":"123456789", "tags":["Video"]
+        }),
+    );
+    assert_eq!(filtered.result.unwrap()["results"], json!([]));
+    unsafe { std::env::remove_var("SKWD_STEAM_BIN") };
+    unsafe { std::env::remove_var("SKWD_STEAM_TEST_REQUEST") };
 }
 
 #[test]
@@ -607,6 +666,7 @@ fn tinier_production_rpc_terminal_results_cover_all_outcomes() {
         testenv::write_config(json!({"paper":{"videoEngine":"tinier"}, "pickOnlyMode":true}));
         testenv::set_tinier_outcome(outcome);
         let (state, subscribers, stats) = harness();
+        skwd_wall_core::audio::write_state(&state.config().cache_dir(), &json!({}));
         let mut rx = subscribe(&subscribers);
         let response = rr(call(
             &state,
@@ -642,7 +702,7 @@ fn tinier_production_rpc_terminal_results_cover_all_outcomes() {
         match expected_terminal {
             Some(ok) => {
                 assert_eq!(results.len(), 2, "queued plus one terminal result");
-                assert_eq!(results[1].data["ok"], ok);
+                assert_eq!(results[1].data["ok"], ok, "{:?}", results[1].data);
             }
             None => {
                 assert_eq!(results.len(), 1, "cancelled/superseded work emits no false terminal");
@@ -1021,6 +1081,170 @@ fn pinned_preview_and_transient_overrides_leave_global_configuration_unchanged()
 }
 
 #[test]
+fn refreshes_static_without_source() {
+    let (_guard, root) = testenv::lock();
+    let template = root.join("static.tpl");
+    let output = root.join("custom.colors");
+    let global = root.join("cache/skwd-wall-v2/colors.json");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+    std::fs::write(&global, "global").unwrap();
+    testenv::write_config(json!({
+        "theme": {"policy": "off", "mode": "dark"},
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": "dracula"}]
+    }));
+    let (state, subs, stats) = harness();
+    let result = rr(call(
+        &state,
+        &subs,
+        &stats,
+        wall_proto::rpc::THEME_APPS_REFRESH,
+        json!({"integration": 0}),
+    ));
+    assert!(result["apps"].is_array());
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#bd93f9");
+    assert_eq!(std::fs::read_to_string(&global).unwrap(), "global");
+}
+
+#[test]
+fn refreshes_follow_palette() {
+    let (_guard, root) = testenv::lock();
+    let template = root.join("follow.tpl");
+    let output = root.join("follow.colors");
+    let global = root.join("cache/skwd-wall-v2/colors.json");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+    std::fs::write(&global, "global").unwrap();
+    testenv::write_config(json!({
+        "theme": {"policy": "off", "mode": "dark"},
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": "dracula"}]
+    }));
+    let (state, subs, stats) = harness();
+    state.theme().set_source("/active.jpg");
+    let palette =
+        skwd_wall_core::theme::static_palette_named(&state.config(), "nord", true).unwrap();
+    state.theme().set_applied_theme(json!({"palette": palette, "dark": true}));
+    rr(call(
+        &state,
+        &subs,
+        &stats,
+        wall_proto::rpc::THEME_APPS_REFRESH,
+        json!({"profile": "dracula"}),
+    ));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#bd93f9");
+
+    testenv::write_config(json!({
+        "theme": {"policy": "off", "mode": "dark"},
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": ""}]
+    }));
+    rr(call(&state, &subs, &stats, wall_proto::rpc::THEME_APPS_REFRESH, json!({"integration": 0})));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#88c0d0");
+    assert_eq!(std::fs::read_to_string(&global).unwrap(), "global");
+
+    state.theme().set_applied_theme(json!({}));
+    let result =
+        call(&state, &subs, &stats, wall_proto::rpc::THEME_APPS_REFRESH, json!({"integration": 0}));
+    assert_eq!(ecode(&result), 1);
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#88c0d0");
+}
+
+#[test]
+fn refresh_respects_mode() {
+    let (_guard, root) = testenv::lock();
+    let template = root.join("mode.tpl");
+    let output = root.join("mode.colors");
+    std::fs::write(&template, "{{colors.error.default.hex}}").unwrap();
+    testenv::write_config(json!({
+        "theme": {"policy": "off", "mode": "auto"},
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": "dracula"}]
+    }));
+    let (state, subs, stats) = harness();
+    state.theme().set_applied_theme(json!({"dark": false}));
+    rr(call(&state, &subs, &stats, wall_proto::rpc::THEME_APPS_REFRESH, json!({"integration": 0})));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#b3261e");
+
+    state.theme().set_applied_theme(json!({"dark": true}));
+    std::fs::remove_file(&output).unwrap();
+    testenv::write_config(json!({
+        "theme": {"policy": "off", "mode": "light"},
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": "dracula"}]
+    }));
+    rr(call(&state, &subs, &stats, wall_proto::rpc::THEME_APPS_REFRESH, json!({"integration": 0})));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#b3261e");
+}
+
+#[test]
+fn rejects_invalid_refresh() {
+    let (_guard, root) = testenv::lock();
+    let template = root.join("invalid.tpl");
+    let output = root.join("invalid.colors");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::write(&output, "existing").unwrap();
+    testenv::write_config(json!({
+        "integrations": [{"name": "custom", "template": template, "output": output,
+            "profile": "missing"}]
+    }));
+    let (state, subs, stats) = harness();
+    for params in [json!({"integration": 0}), json!({"integration": 1})] {
+        let result = call(&state, &subs, &stats, wall_proto::rpc::THEME_APPS_REFRESH, params);
+        assert_eq!(ecode(&result), 1);
+    }
+    let result = call(
+        &state,
+        &subs,
+        &stats,
+        wall_proto::rpc::THEME_APPS_REFRESH,
+        json!({"integration": 0, "profile": "nord"}),
+    );
+    assert_eq!(ecode(&result), 1);
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "existing");
+
+    let result = call(
+        &state,
+        &subs,
+        &stats,
+        wall_proto::rpc::WALL_RETHEME,
+        json!({"output": "missing-output"}),
+    );
+    assert_eq!(ecode(&result), 1);
+    assert!(emsg(&result).contains("no current wallpaper"));
+}
+
+#[test]
+fn refresh_continues() {
+    let (_guard, root) = testenv::lock();
+    let template = root.join("profile.tpl");
+    let output = root.join("valid.colors");
+    let global = root.join("cache/skwd-wall-v2/colors.json");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+    std::fs::write(&global, "global").unwrap();
+    testenv::write_config(json!({
+        "theme": {"policy": "off"},
+        "integrations": [
+            {"name": "bad", "template": template, "output": global, "profile": "nord"},
+            {"name": "good", "template": template, "output": output, "profile": "nord"}
+        ]
+    }));
+    let (state, subs, stats) = harness();
+    let result = call(
+        &state,
+        &subs,
+        &stats,
+        wall_proto::rpc::THEME_APPS_REFRESH,
+        json!({"profile": "nord"}),
+    );
+    assert_eq!(ecode(&result), 1);
+    assert_eq!(std::fs::read_to_string(&global).unwrap(), "global");
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), "#88c0d0");
+}
+
+#[test]
 fn theme_backends_detected() {
     let (_guard, _root) = testenv::lock();
     let (state, subs, stats) = harness();
@@ -1186,4 +1410,24 @@ fn remove_reconciles_video() {
     let dest = state.with_db(|conn| db::tinier_convert_entry(conn, &vid_path)).unwrap();
     assert!(dest.is_none());
     assert!(!root.join("cache/skwd-wall-v2/last-wallpaper.json").exists());
+}
+
+#[test]
+fn scan_hides_stale_items() {
+    let (_guard, root) = testenv::lock();
+    testenv::write_config(
+        json!({"paths":{"wallpaper":root.join("walls")},"library":{"excludedFolders":["Sus"]}}),
+    );
+    let (state, subs, stats) = harness();
+    let total = state.with_db(db::item_count).unwrap();
+    state.with_db(|connection| connection.execute("INSERT INTO meta(key, type, name, library_excluded) VALUES('static:Sus/new.png', 'static', 'Sus/new.png', 1)", [])).unwrap();
+    let mut receiver = subscribe(&subs);
+    rr(call(&state, &subs, &stats, "scan.item", json!({"key":"static:Sus/new.png"})));
+    assert!(events(&mut receiver).is_empty());
+    assert_eq!(state.with_db(db::item_count).unwrap(), total);
+    state.with_db(|connection| connection.execute("INSERT INTO meta(key, type, name) VALUES('static:Sus/later.png', 'static', 'Sus/later.png')", [])).unwrap();
+    rr(call(&state, &subs, &stats, "scan.done", json!({"count":2})));
+    let received = events(&mut receiver);
+    let done = received.iter().find(|event| event.event == "skwd.wall.scan_done").unwrap();
+    assert_eq!(done.data["total"], total);
 }

@@ -21,3 +21,6 @@ pub(super) use crate::infrastructure::steam_download::{
     steam_inflight_begin, steam_inflight_end,
 };
 pub(super) use crate::infrastructure::{sources, steam, wallhaven};
+
+pub(super) const INVALID_PARAMS: i32 = -32602;
+pub(super) const LIBRARY_FOLDER_REQUIRED: &str = "add a library folder before downloading";

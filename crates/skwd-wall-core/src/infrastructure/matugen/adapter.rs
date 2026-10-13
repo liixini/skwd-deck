@@ -3,6 +3,9 @@ use std::process::{Command, Stdio};
 
 use crate::config::Config;
 
+const SCHEME_DARK_KEY: &str = "is_dark_mode";
+const LIGHT_MODE: &str = "light";
+
 pub fn notify_change(config: &Config) {
     if config.notify_on_change() {
         run_sh_detached(
@@ -55,7 +58,7 @@ pub fn generate_config(config: &Config) -> PathBuf {
     let mut lines = vec!["[config]".to_string(), "reload_apps = false".to_string(), String::new()];
     let mut emitted = 0usize;
     for (idx, integ) in config.theme().integrations().iter().enumerate() {
-        if integ.template.is_empty() || integ.output.is_empty() {
+        if integ.template.is_empty() || integ.output.is_empty() || !integ.profile.is_empty() {
             continue;
         }
         let input_path = if integ.template.contains('/') {
@@ -133,9 +136,9 @@ fn invoke(
                     let published = crate::theme::profiles::publish_document(
                         config,
                         &val,
-                        val.get("is_dark_mode")
+                        val.get(SCHEME_DARK_KEY)
                             .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(mode != "light"),
+                            .unwrap_or(mode != LIGHT_MODE),
                         false,
                     );
                     if !published {
@@ -228,6 +231,17 @@ pub fn run_with(
         run_sh(&cmd_str);
     }
 
+    let dark = std::fs::read(crate::theme::scheme_path(config))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|scheme| scheme.get(SCHEME_DARK_KEY).and_then(serde_json::Value::as_bool))
+        .unwrap_or(mode != LIGHT_MODE);
+    crate::static_templates::render_integrations_where(
+        config,
+        &serde_json::Value::Null,
+        dark,
+        |integ| !integ.profile.is_empty(),
+    );
     run_reloads(config);
     true
 }

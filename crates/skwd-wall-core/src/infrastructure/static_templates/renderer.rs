@@ -8,6 +8,8 @@ use crate::config::Config;
 pub use skwd_palette::Rgb;
 use skwd_palette::{from_hsl, parse_hex as parse, to_hsl};
 
+const BRIDGE_FILE: &str = "colors.json";
+
 pub fn material_map(palette: &Value, dark: bool) -> HashMap<&'static str, Rgb> {
     let get = |key: &str, dflt: &str| {
         palette
@@ -174,7 +176,7 @@ pub(crate) fn render_palette(template: &str, palette: &Value, dark: bool) -> Str
 }
 
 pub fn render_bridge(config: &Config, palette: &Value, dark: bool) -> Option<String> {
-    let bridge = PathBuf::from(config.cache_dir()).join("colors.json");
+    let bridge = PathBuf::from(config.cache_dir()).join(BRIDGE_FILE);
     let template_dir = config.theme().templates_dir();
     for integ in config.theme().integrations() {
         if integ.template.is_empty() || integ.output.is_empty() {
@@ -207,6 +209,21 @@ pub fn integration_output(config: &Config, output: &str) -> PathBuf {
     }
 }
 
+pub fn is_bridge_output(config: &Config, output: &std::path::Path) -> bool {
+    if std::fs::symlink_metadata(output).is_ok_and(|meta| meta.file_type().is_symlink())
+        && output.canonicalize().is_err()
+    {
+        return true;
+    }
+    [
+        PathBuf::from(config.cache_dir()).join(BRIDGE_FILE),
+        config.theme().native_colors_path(),
+        crate::theme::scheme_path(config),
+    ]
+    .iter()
+    .any(|protected| crate::paths::same(output, protected))
+}
+
 pub fn render_integrations(config: &Config, palette: &Value, dark: bool) {
     render_integrations_where(config, palette, dark, |_| true);
 }
@@ -233,14 +250,26 @@ pub fn render_integrations_where(
             continue;
         };
         let output = integration_output(config, &integ.output);
+        if !integ.profile.is_empty() && is_bridge_output(config, &output) {
+            log::warn!("custom output {} targets the global palette; skipped", integ.name);
+            continue;
+        }
         if crate::theme::apps::protects_output(&output) {
             log::warn!("custom output {} targets a managed Waybar file; skipped", integ.name);
             continue;
         }
+        let selected =
+            match crate::theme::profiles::app_palette(config, &integ.profile, palette, dark) {
+                Ok(selected) => selected,
+                Err(err) => {
+                    log::warn!("custom output {}: {err}", integ.name);
+                    continue;
+                }
+            };
         if let Some(parent) = output.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        match std::fs::write(&output, render_palette(&text, palette, dark)) {
+        match std::fs::write(&output, render_palette(&text, &selected, dark)) {
             Ok(()) => written += 1,
             Err(err) => log::warn!("static templates: write {} failed: {err}", output.display()),
         }

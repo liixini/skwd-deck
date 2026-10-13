@@ -9,6 +9,7 @@ use crate::backend::events::EventPublisher;
 use crate::backend::history::{ApplySource, HistoryRepository};
 use crate::composition::apply::apply_core;
 use crate::composition::runtime::playlist;
+use crate::composition::runtime::profile::Visibility;
 use crate::infrastructure::stats::Stats;
 use crate::infrastructure::wake::wake_or_timeout;
 
@@ -87,18 +88,17 @@ pub(crate) fn rotate_once(
     exclude: Option<&str>,
     source: ApplySource,
 ) -> Option<String> {
+    let visibility = Visibility::load(state);
+    let visible = |entry: db::RandomEntry<'_>| visibility.shows(entry.key, entry.name, entry.video);
+    let filter = visibility.scoped().then_some(&visible as &dyn Fn(db::RandomEntry<'_>) -> bool);
     let (_key, ty, name, video_file, we_id) =
-        state.with_db(|conn| db::random_pick(conn, exclude, types, fav)).ok().flatten()?;
+        state.with_db(|conn| db::random_pick(conn, exclude, types, fav, filter)).ok().flatten()?;
     let (path, mute, volume) = {
         let cfg = state.config();
-        let path = match ty.as_str() {
-            wall_proto::kind::STATIC => std::path::Path::new(&cfg.wallpaper_dir())
-                .join(&name)
-                .to_string_lossy()
-                .into_owned(),
-            wall_proto::kind::VIDEO => video_file,
-            _ => String::new(),
-        };
+        let path =
+            db::entry_path(std::path::Path::new(&cfg.wallpaper_dir()), &ty, &name, &video_file)
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default();
         let (mute, volume) = skwd_wall_core::audio::resolve_defaults(
             &cfg.cache_dir(),
             "*",

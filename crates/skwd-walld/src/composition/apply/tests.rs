@@ -166,6 +166,14 @@ fn theme_delay_zero() {
 #[test]
 fn key_apply_shapes() {
     assert_eq!(
+        key_apply_args("static:/other/a.png", "/w", "/v"),
+        ("static", "/other/a.png".to_string(), String::new())
+    );
+    assert_eq!(
+        key_apply_args("video:/other/a.mp4", "/w", "/v"),
+        ("video", "/other/a.mp4".to_string(), String::new())
+    );
+    assert_eq!(
         key_apply_args("static:sub/a.jpg", "/w", "/v"),
         ("static", "/w/sub/a.jpg".to_string(), String::new())
     );
@@ -776,4 +784,142 @@ fn failed_external_handoff_cannot_publish_for_any_media_or_output_scope() {
     );
     assert_eq!(stats.counters_json()["applies"], 0);
     assert!(!cache.join("last-applied.json").exists());
+}
+
+#[test]
+fn manual_cancels_queued_weather() {
+    use crate::composition::runtime::weather;
+    let (_guard, root) = testenv::lock();
+    testenv::write_config(serde_json::json!({"weather":{"enabled":true}}));
+    let (state, publisher, stats) = testenv::harness();
+    state.with_db(|conn| skwd_wall_core::db::playlist_assign_clear(conn, None)).unwrap();
+    let id =
+        state.with_db(|conn| skwd_wall_core::db::playlist_create(conn, "queued weather")).unwrap();
+    state
+        .with_db(|conn| {
+            skwd_wall_core::db::playlist_add_member(conn, id, "static:weather-manual.png")
+        })
+        .unwrap();
+    testenv::write_config(
+        serde_json::json!({"weather":{"enabled":true,"playlists":{"clear":id.to_string()}}}),
+    );
+    state.reload_config();
+    let history =
+        crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
+    crate::testenv::cache_item(&state, "weather-manual.png");
+    let path = root.join("walls/weather-manual.png");
+    std::fs::write(&path, "fixture").unwrap();
+    weather::test_status(
+        &state,
+        Some(wall_proto::WeatherStatus {
+            enabled: true,
+            weather: vec!["clear".into()],
+            category: Some("clear".into()),
+            playlist_id: Some(id),
+            member_keys: vec!["static:weather-manual.png".into()],
+            status: wall_proto::WeatherState::Active,
+            ..wall_proto::WeatherStatus::default()
+        }),
+    );
+    let attempt = |source, application: &dyn WallpaperApplication| {
+        apply_core(
+            &state,
+            application,
+            &history,
+            publisher.as_ref(),
+            &stats,
+            "static",
+            path.to_str().unwrap(),
+            "",
+            true,
+            0,
+            source,
+            "DP-1",
+            false,
+            false,
+            None,
+            None,
+        )
+    };
+    assert!(attempt(ApplySource::User, &FailingApplication).is_err());
+    assert!(weather::allows(&state, "DP-1", Some(id), 1, "static:weather-manual.png"));
+    attempt(ApplySource::User, &FlakyApplication(std::sync::atomic::AtomicBool::new(true)))
+        .unwrap();
+    assert!(!weather::allows(&state, "DP-1", Some(id), 1, "static:weather-manual.png"));
+    let error = attempt(ApplySource::Weather { playlist_id: id, revision: 1 }, &FailingApplication)
+        .unwrap_err();
+    assert!(error.downcast_ref::<SupersededApply>().is_some());
+    assert_eq!(stats.counters_json()["applies"], 1);
+    weather::test_status(&state, None);
+    state.with_db(|conn| skwd_wall_core::db::playlist_delete(conn, id)).unwrap();
+}
+
+#[test]
+fn failed_renderer_keeps_follow() {
+    let (_guard, root) = testenv::lock();
+    testenv::write_config(serde_json::json!({"weather":{"enabled":true,"source":"outdoors"}}));
+    let (state, events, stats) = testenv::harness();
+    let ctx = testenv::context(&state, &events, &stats);
+    crate::composition::runtime::outdoors::follow(&ctx, true).unwrap();
+    let path = root.join("manual-renderer.png");
+    std::fs::write(&path, b"image").unwrap();
+    let result = apply_core(
+        &state,
+        &FailingApplication,
+        ctx.history.as_ref(),
+        ctx.events.as_ref(),
+        &stats,
+        wall_proto::kind::STATIC,
+        path.to_str().unwrap(),
+        "",
+        true,
+        100,
+        ApplySource::User,
+        "DP-1",
+        false,
+        true,
+        None,
+        None,
+    );
+    assert!(result.is_err());
+    assert!(crate::composition::runtime::outdoors::active(&state.config()));
+    assert!(crate::composition::runtime::outdoors::follow(&ctx, true).unwrap().enabled);
+}
+
+#[test]
+fn current_choice_stops_follow() {
+    let (_guard, _root) = testenv::lock();
+    testenv::write_config(serde_json::json!({"weather":{"enabled":true,"source":"outdoors"}}));
+    let (state, events, stats) = testenv::harness();
+    let ctx = testenv::context(&state, &events, &stats);
+    crate::composition::runtime::outdoors::follow(&ctx, true).unwrap();
+    skwd_wall_core::audio::write_state(
+        &state.config().cache_dir(),
+        &serde_json::json!({"*":{"type":"static","path":"/current.jpg"}}),
+    );
+    crate::infrastructure::persistence::persist_last("static", "/current.jpg", "", true, 100, "");
+    state.apply().set_render_fill(&state.config().display().fill_mode());
+    let child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    state.renderers().set_base_still(child, None);
+    let result = apply_core(
+        &state,
+        &FailingApplication,
+        ctx.history.as_ref(),
+        ctx.events.as_ref(),
+        &stats,
+        wall_proto::kind::STATIC,
+        "/current.jpg",
+        "",
+        true,
+        100,
+        ApplySource::User,
+        "*",
+        false,
+        true,
+        None,
+        None,
+    );
+    state.renderers().kill_base_still();
+    assert_eq!(result.unwrap()["noop"], true);
+    assert!(!crate::composition::runtime::outdoors::active(&state.config()));
 }

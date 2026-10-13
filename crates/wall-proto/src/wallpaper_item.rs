@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[expect(clippy::struct_excessive_bools, reason = "wire fields mirror the daemon list JSON")]
 pub struct WallpaperItem {
     pub key: Option<String>,
     pub name: Option<String>,
@@ -13,7 +14,13 @@ pub struct WallpaperItem {
     pub thumb_sm: Option<String>,
     #[serde(default)]
     pub thumbnail_generated: bool,
+    #[serde(default, skip_serializing_if = "crate::is_false")]
+    pub steam_subscribed: bool,
+    #[serde(default, skip_serializing_if = "crate::is_false")]
+    pub steam_confirmation_required: bool,
     pub favourite: Option<i64>,
+    #[serde(default)]
+    pub hidden: bool,
     pub hue: Option<i64>,
     pub sat: Option<i64>,
     pub tags: Option<String>,
@@ -34,3 +41,7 @@ pub struct WallpaperItem {
     pub apply_count: Option<i64>,
     pub last_applied: Option<i64>,
 }
+
+#[cfg(test)]
+#[path = "wallpaper_item_tests.rs"]
+mod tests;

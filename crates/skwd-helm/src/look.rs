@@ -112,16 +112,10 @@ pub(super) fn import(socket: &Path, mut args: Vec<String>) -> Result<(), CliErro
 
 pub(super) fn asset_present(config: &crate::config::Config, key: &str) -> bool {
     if let Some(relative) = key.strip_prefix("static:") {
-        return Path::new(&format!(
-            "{}/{}",
-            config.wallpaper_dir().trim_end_matches('/'),
-            relative
-        ))
-        .exists();
+        return Path::new(&config.wallpaper_dir()).join(relative).exists();
     }
     if let Some(relative) = key.strip_prefix("video:") {
-        return Path::new(&format!("{}/{}", config.video_dir().trim_end_matches('/'), relative))
-            .exists();
+        return Path::new(&config.video_dir()).join(relative).exists();
     }
     false
 }
@@ -135,11 +129,15 @@ fn current_wallpaper_key(socket: &Path, config: &crate::config::Config) -> Optio
             return Some(format!("we:{workshop_id}"));
         }
         let path = skwd_config::str_ref(output, "path", "");
+        if let Some(key) = skwd_wall_core::db::open().ok().and_then(|connection| {
+            skwd_wall_core::db::key_for_video_file(&connection, path).ok().flatten()
+        }) {
+            return Some(key);
+        }
         if !path.is_empty()
             && let Some(key) = skwd_wall_core::paths::key_for_path(
                 Path::new(path),
-                &config.wallpaper_dir(),
-                &config.video_dir(),
+                &skwd_wall_core::config::Config::from_root(config.root().clone()),
             )
         {
             return Some(key);

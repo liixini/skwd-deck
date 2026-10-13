@@ -1,6 +1,16 @@
 use serde::Deserialize;
 
 pub const APP_ID: &str = "431960";
+pub const CLIENT_BACKEND: &str = "steam";
+const APP_ID_NUMBER: u32 = 431_960;
+const SCENE_TAG: &str = "Scene";
+const VIDEO_TAG: &str = "Video";
+const USER_AGENT_HEADER: &str = "User-Agent";
+const ITEM_COUNT_PARAM: &str = "itemcount";
+const ITEM_ID_PARAM: &str = "publishedfileids[0]";
+const ONE_ITEM: &str = "1";
+const ITEM_DETAILS_URL: &str =
+    "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
 
 pub struct SearchParams {
     pub query: String,
@@ -66,7 +76,11 @@ struct ApiDetail {
     #[serde(default)]
     preview_url: String,
     #[serde(default)]
-    file_size: String,
+    file_size: serde_json::Value,
+    #[serde(default)]
+    consumer_app_id: Option<u32>,
+    #[serde(default)]
+    result: Option<u32>,
     #[serde(default)]
     subscriptions: u64,
     #[serde(default)]
@@ -84,6 +98,17 @@ struct ApiResponse {
 #[derive(Deserialize)]
 struct ApiRoot {
     response: Option<ApiResponse>,
+}
+
+#[derive(Deserialize)]
+struct ItemDetailsResponse {
+    #[serde(default)]
+    publishedfiledetails: Vec<ApiDetail>,
+}
+
+#[derive(Deserialize)]
+struct ItemDetailsRoot {
+    response: Option<ItemDetailsResponse>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,22 +136,9 @@ pub fn parse_search(json: &str, page: u32, numperpage: u32) -> anyhow::Result<Se
         .filter(|det| {
             !det.publishedfileid.is_empty()
                 && det.publishedfileid != "0"
-                && det.tags.iter().any(|tag| tag.tag == "Scene" || tag.tag == "Video")
+                && det.tags.iter().any(|tag| tag.tag == SCENE_TAG || tag.tag == VIDEO_TAG)
         })
-        .map(|det| SteamResult {
-            id: det.publishedfileid,
-            title: det.title,
-            preview_url: det.preview_url,
-            file_size: det.file_size.parse().unwrap_or(0),
-            subscriptions: det.subscriptions,
-            tags: det
-                .tags
-                .into_iter()
-                .map(|tag| tag.tag)
-                .filter(|tag| !tag.is_empty())
-                .collect::<Vec<_>>()
-                .join(", "),
-        })
+        .map(result_from_detail)
         .collect();
     let per = numperpage.max(1);
     Ok(SearchPage {
@@ -134,6 +146,57 @@ pub fn parse_search(json: &str, page: u32, numperpage: u32) -> anyhow::Result<Se
         last_page: resp.total.div_ceil(per).max(1),
         current_page: page.max(1),
     })
+}
+
+fn result_from_detail(det: ApiDetail) -> SteamResult {
+    SteamResult {
+        id: det.publishedfileid,
+        title: det.title,
+        preview_url: det.preview_url,
+        file_size: det
+            .file_size
+            .as_u64()
+            .or_else(|| det.file_size.as_str()?.parse().ok())
+            .unwrap_or(0),
+        subscriptions: det.subscriptions,
+        tags: det
+            .tags
+            .into_iter()
+            .map(|tag| tag.tag)
+            .filter(|tag| !tag.is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+    }
+}
+
+pub fn parse_item_details(json: &str, id: u64) -> anyhow::Result<SearchPage> {
+    let root: ItemDetailsRoot = serde_json::from_str(json)?;
+    let response = root.response.ok_or_else(|| anyhow::anyhow!("steam: empty response"))?;
+    let results = response
+        .publishedfiledetails
+        .into_iter()
+        .filter(|det| det.publishedfileid == id.to_string())
+        .filter(|det| det.result == Some(1))
+        .filter(|det| det.consumer_app_id == Some(APP_ID_NUMBER))
+        .filter(|det| det.tags.iter().any(|tag| tag.tag == SCENE_TAG || tag.tag == VIDEO_TAG))
+        .map(result_from_detail)
+        .collect();
+    Ok(SearchPage { results, last_page: 1, current_page: 1 })
+}
+
+pub fn matches_tags(item: &SteamResult, params: &SearchParams) -> bool {
+    let tags: Vec<&str> = item.tags.split(',').map(str::trim).collect();
+    params.tags.iter().all(|tag| tags.contains(&tag.as_str()))
+        && params.excluded_tags.iter().all(|tag| !tags.contains(&tag.as_str()))
+}
+
+pub fn item_details(id: u64) -> anyhow::Result<SearchPage> {
+    let id_text = id.to_string();
+    let response = crate::infrastructure::http::agent()
+        .post(ITEM_DETAILS_URL)
+        .set(USER_AGENT_HEADER, crate::infrastructure::http::USER_AGENT)
+        .send_form(&[(ITEM_COUNT_PARAM, ONE_ITEM), (ITEM_ID_PARAM, &id_text)])?;
+    parse_item_details(&response.into_string()?, id)
 }
 
 pub fn parse_helper_search(json: &str, page: u32) -> anyhow::Result<SearchPage> {

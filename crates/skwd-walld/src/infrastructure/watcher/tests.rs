@@ -164,7 +164,10 @@ fn polling_status_reports_failed_sweeps() {
         "/definitely/not/a/library".into(),
         String::from("operation unsupported"),
     );
-    assert!(matches!(root.advance(1), super::polling::PollAdvance::Failed(_)));
+    assert!(matches!(
+        root.advance(1, &skwd_config::LibraryPolicy::new(&serde_json::json!({}))),
+        super::polling::PollAdvance::Failed(_)
+    ));
     let mut runtime = super::status::RuntimeStatus::default();
     let status = runtime.polling(&[root], std::time::Duration::from_secs(60));
     assert!(!status.ok);
@@ -296,6 +299,16 @@ fn config_events_flag() {
     assert_eq!(out, vec![std::path::PathBuf::from("/wp/a.png")]);
     assert!(!super::split_config_events(vec!["/wp/b.png".into()], &cfg, &mut out));
     assert_eq!(out.len(), 2);
+}
+
+#[test]
+fn manifest_requests_scan() {
+    let mut cfg = super::ConfigWatch::new("/config/config.json".into());
+    cfg.steam_manifests = vec!["/steam/steamapps/workshop/appworkshop_431960.acf".into()];
+    cfg.workshop = Some("/steam/steamapps/workshop/content/431960".into());
+    let mut pending = Vec::new();
+    assert!(!super::split_config_events(cfg.steam_manifests.clone(), &cfg, &mut pending,));
+    assert_eq!(pending, vec![cfg.workshop.unwrap()]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -507,5 +520,20 @@ fn config_effects_filter_unrelated_edits_and_track_other_effects() {
     assert_eq!(
         cfg.update_effects(&state.config()),
         super::ConfigEffectChanges { backdrop: true, lock_screen: false, semantic: true }
+    );
+}
+
+#[test]
+fn lockscreen_targets_trigger_sync() {
+    let (_guard, _) = crate::testenv::lock();
+    write_effects_config(json!({"lockScreens":{"mode":"static","swaylock":false}}));
+    let (state, _, _) = crate::testenv::harness();
+    let mut watcher = super::ConfigWatch::new(skwd_wall_core::config::config_path());
+    watcher.update_effects(&state.config());
+    write_effects_config(json!({"lockScreens":{"mode":"static","swaylock":true}}));
+    state.reload_config();
+    assert_eq!(
+        watcher.update_effects(&state.config()),
+        super::ConfigEffectChanges { backdrop: false, lock_screen: true, semantic: false }
     );
 }

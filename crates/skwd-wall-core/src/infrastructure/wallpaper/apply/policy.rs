@@ -119,9 +119,9 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
 pub fn independent_playback(state: &WallState) -> bool {
     let config = state.config();
     state.renderers().independent_playback()
-        || crate::outputs::names().iter().any(|output| {
-            config.display().background_for(output) != config.display().background_for("*")
-        })
+        || crate::outputs::names()
+            .iter()
+            .any(|output| config.display().background_differs_for(output))
         || (config.playback().window_pause_enabled()
             && config.playback().fullscreen_scope() == "display")
 }

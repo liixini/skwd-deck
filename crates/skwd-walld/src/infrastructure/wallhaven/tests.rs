@@ -71,6 +71,20 @@ fn query_defaults() {
 }
 
 #[test]
+fn collection_query_purity() {
+    let params = SearchParams {
+        query: "forest".into(),
+        categories: "010".into(),
+        purity: "011".into(),
+        atleast: "3840x2160".into(),
+        ratios: "16x9".into(),
+        page: 3,
+        ..Default::default()
+    };
+    assert_eq!(collection_query_pairs(&params), [("page", "3".into()), ("purity", "011".into())]);
+}
+
+#[test]
 fn resolutions_beat_atleast() {
     let exact = SearchParams {
         atleast: "1920x1080".into(),

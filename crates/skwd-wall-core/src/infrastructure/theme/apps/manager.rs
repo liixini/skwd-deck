@@ -8,11 +8,20 @@ use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use wall_proto::{AppThemeStatus, AppThemesResult};
 
-use super::catalogue::{KDE_RECIPE, RECIPES, Recipe};
+use super::catalogue::{KDE_RECIPE, RECIPES, Recipe, WAYBAR_ID};
 use super::files::{self, Receipt};
 use super::reload::reload;
 
 pub(super) static SERIAL: Mutex<()> = Mutex::new(());
+
+fn palette_for(
+    config: &crate::config::Config,
+    id: &str,
+    palette: &Value,
+    dark: bool,
+) -> Result<Value> {
+    super::super::profiles::app_palette(config, config.theme().app_profile(id), palette, dark)
+}
 
 pub(super) struct Environment {
     pub home: PathBuf,
@@ -379,6 +388,8 @@ pub(super) fn set_with(
         !super::customization::disconnected(env, id),
         "Reconnect the app theme before changing its colours"
     );
+    let selected = if enabled { palette_for(config, id, palette, dark)? } else { palette.clone() };
+    let palette = &selected;
     if id == "waybar" {
         return super::waybar::set(env, config, enabled, palette, dark);
     }
@@ -505,6 +516,34 @@ pub fn apply(config: &crate::config::Config, palette: &Value, dark: bool) {
     apply_with(&Environment::current(), config, palette, dark);
 }
 
+pub fn refresh_profile(config: &crate::config::Config, profile: &str, dark: bool) -> Result<bool> {
+    let _serial = crate::lock(&SERIAL);
+    refresh_with(&Environment::current(), config, profile, dark)
+}
+
+pub(super) fn refresh_with(
+    env: &Environment,
+    config: &crate::config::Config,
+    profile: &str,
+    dark: bool,
+) -> Result<bool> {
+    let mut refreshed = false;
+    let mut errors = Vec::new();
+    for app in list_with(env, config).apps {
+        if !app.enabled || config.theme().app_profile(&app.id) != profile {
+            continue;
+        }
+        match set_with(env, config, &app.id, true, &Value::Null, dark) {
+            Ok(()) => refreshed = true,
+            Err(error) => errors.push(format!("{}: {error:#}", app.id)),
+        }
+    }
+    if !errors.is_empty() {
+        anyhow::bail!("{}", errors.join(super::super::profiles::ERROR_SEPARATOR));
+    }
+    Ok(refreshed)
+}
+
 pub(super) fn apply_with(
     env: &Environment,
     config: &crate::config::Config,
@@ -514,20 +553,23 @@ pub(super) fn apply_with(
     if !env.receipts.exists() {
         return;
     }
-    if !super::customization::disconnected(env, "waybar")
-        && let Err(error) = super::waybar::update(env, config, palette, dark)
+    if !super::customization::disconnected(env, WAYBAR_ID)
+        && let Err(error) = palette_for(config, WAYBAR_ID, palette, dark)
+            .and_then(|selected| super::waybar::update(env, config, &selected, dark))
     {
         log::warn!("app theme waybar: {error:#}");
     }
-    if !super::customization::disconnected(env, "kde")
-        && let Err(error) = super::plasma::update(env, config, palette, dark)
+    if !super::customization::disconnected(env, KDE_RECIPE.id)
+        && let Err(error) = palette_for(config, KDE_RECIPE.id, palette, dark)
+            .and_then(|selected| super::plasma::update(env, config, &selected, dark))
     {
         log::warn!("app theme kde: {error:#}");
     }
     for app in &super::structured::APPS {
         if !super::customization::disconnected(env, app.id)
             && app.inspect(env, config).enabled
-            && let Err(error) = app.set(env, config, true, palette, dark)
+            && let Err(error) = palette_for(config, app.id, palette, dark)
+                .and_then(|selected| app.set(env, config, true, &selected, dark))
         {
             log::warn!("app theme {}: {error:#}", app.id);
         }
@@ -552,7 +594,8 @@ pub(super) fn apply_with(
                 files::read(&receipt.output)?.as_deref() == Some(&receipt.rendered),
                 "The generated theme was edited outside Skwd"
             );
-            let text = rendered(env, recipe, palette, dark)?;
+            let selected = palette_for(config, recipe.id, palette, dark)?;
+            let text = rendered(env, recipe, &selected, dark)?;
             if text == receipt.rendered && receipt.result != "reload-needed" {
                 return Ok(());
             }
@@ -598,6 +641,8 @@ pub(super) fn customize_with(
         "reset-template" => super::customization::edit_template(env, id, true),
         "disconnect" => super::customization::disconnect(env, id),
         "reconnect" => {
+            let selected = palette_for(config, id, palette, dark)?;
+            let palette = &selected;
             super::customization::backup(env, id)?;
             super::customization::disconnect(env, id)?;
             if id == "kde" {

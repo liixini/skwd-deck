@@ -149,7 +149,7 @@ fn assignment_carries_only_the_requested_transition() {
 #[test]
 fn plasma_script_publishes_one_connector_map() {
     let payload = serde_json::json!({"DP-1": {"kind": "video"}});
-    let source = script(&payload);
+    let source = script(&payload, "activity-a", true, &["DP-1".into()]).unwrap();
     assert!(source.contains("JSON.stringify(a)"));
     assert!(source.contains("writeConfig(\"Assignments\",encoded)"));
     assert!(source.contains("\"DP-1\""));

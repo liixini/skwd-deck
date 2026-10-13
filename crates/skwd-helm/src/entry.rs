@@ -14,6 +14,39 @@ pub fn run() -> i32 {
         println!("skwd-helm {}", env!("CARGO_PKG_VERSION"));
         return 0;
     }
+    if verb == skwd_wall_core::infrastructure::lock_screens::sddm::VERB {
+        if args.get(1).map(String::as_str)
+            == Some(skwd_wall_core::infrastructure::lock_screens::sddm::CHOICES)
+            && args.len() == 2
+        {
+            return match skwd_wall_core::infrastructure::lock_screens::sddm::choices() {
+                Ok(selection) => match serde_json::to_string(&selection) {
+                    Ok(json) => {
+                        println!("{json}");
+                        0
+                    }
+                    Err(error) => {
+                        eprintln!("skwd-helm {verb}: {error}");
+                        1
+                    }
+                },
+                Err(error) => {
+                    eprintln!("skwd-helm {verb}: {error:#}");
+                    1
+                }
+            };
+        }
+        return match skwd_wall_core::infrastructure::lock_screens::sddm::run(&args[1..]) {
+            Ok(path) => {
+                println!("{}", path.display());
+                0
+            }
+            Err(error) => {
+                eprintln!("skwd-helm {verb}: {error:#}");
+                1
+            }
+        };
+    }
     if !VERBS.contains(&verb.as_str()) {
         eprintln!("skwd-helm {verb}: unknown verb '{verb}'");
         return 4;
@@ -51,6 +84,7 @@ VERBS:\n\
   mute | unmute [-o OUT]          mute / unmute wallpaper audio\n\
   volume <0-100> [-o OUT]         set wallpaper audio volume\n\
   favourite <key> [--off]         mark / unmark a wallpaper as favourite\n\
+  profile [NAME]                  show or set the library profile (everything shows all)\n\
   export [--out DIR] [--name N] [--include-library] [--assets reference|bundle]\n\
                                   write a shareable look pack (portable config + palette)\n\
   import <DIR> [--merge|--replace] [--dry-run] [--allow-hooks]\n\

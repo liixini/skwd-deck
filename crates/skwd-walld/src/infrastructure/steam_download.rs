@@ -1,9 +1,13 @@
 use anyhow::Context;
 use skwd_wall_core::lock;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
+use serde::Deserialize;
 use serde_json::json;
 use wall_proto::ev;
 
@@ -12,9 +16,45 @@ use crate::infrastructure::steam;
 
 pub(crate) mod presets;
 
+const INVENTORY_COMMAND: &str = "inventory";
+const UNSUBSCRIBE_COMMAND: &str = "unsub";
+const STEAM_BIN_OVERRIDE: &str = "SKWD_STEAM_BIN";
+const INVENTORY_TIMEOUT: Duration = Duration::from_secs(5);
+const UNSUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(25);
+
+#[derive(Deserialize)]
+pub(crate) struct SteamInventory {
+    pub account: String,
+    pub subscribed: HashSet<String>,
+    pub installed: HashMap<String, PathBuf>,
+}
+
+pub(crate) fn inventory(ids: &[String]) -> Result<SteamInventory, String> {
+    require_steam_helper().map_err(|error| error.to_string())?;
+    let output = helper_output(INVENTORY_COMMAND, ids, INVENTORY_TIMEOUT)?;
+    if !output.status.success() {
+        return Err("Steam is unavailable or signed out".into());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let record = stdout
+        .lines()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
+        .ok_or("Steam Client returned no inventory")?;
+    let inventory: SteamInventory = serde_json::from_str(record)
+        .map_err(|error| format!("Steam Client returned an invalid inventory: {error}"))?;
+    if inventory.account.is_empty() {
+        return Err("Steam Client returned no account".into());
+    }
+    Ok(inventory)
+}
+
 const MISSING_STEAM_HELPER: &str = "Steam Client support needs the optional skwd-deck-steamworks package (skwd-steam). Install it, or select SteamCMD in Settings > Steam.";
 
 fn steam_bin() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os(STEAM_BIN_OVERRIDE) {
+        return path.into();
+    }
     resolve_steam_bin(std::env::current_exe().ok().as_deref(), std::env::var_os("PATH").as_deref())
         .unwrap_or_else(|| "skwd-steam".into())
 }
@@ -34,6 +74,10 @@ fn resolve_steam_bin(
 }
 
 pub(crate) fn require_steam_helper() -> anyhow::Result<()> {
+    if std::env::var_os(STEAM_BIN_OVERRIDE).is_some() {
+        anyhow::ensure!(steam_bin().is_file(), MISSING_STEAM_HELPER);
+        return Ok(());
+    }
     anyhow::ensure!(
         resolve_steam_bin(
             std::env::current_exe().ok().as_deref(),
@@ -53,30 +97,46 @@ fn helper_spawn_error(error: &std::io::Error) -> String {
     }
 }
 
+fn helper_output(
+    command: &str,
+    ids: &[String],
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    let mut helper = crate::infrastructure::proc::tool_async(steam_bin());
+    helper
+        .arg(command)
+        .args(ids)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    crate::infrastructure::proc::runtime().block_on(async {
+        tokio::time::timeout(timeout, helper.output())
+            .await
+            .map_err(|_| format!("Steam Client helper timed out after {timeout:?}"))?
+            .map_err(|error| helper_spawn_error(&error))
+    })
+}
+
 pub(crate) fn run_unsubscribe(
     id: &str,
-    subscriptions_expected: bool,
+    warn_on_failure: bool,
     publisher: &dyn EventPublisher,
-) {
-    let out = crate::infrastructure::proc::tool(steam_bin())
-        .arg("unsub")
-        .arg(id)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    let ok = out.as_ref().is_ok_and(std::process::ExitStatus::success);
+) -> Result<(), String> {
+    let out = helper_output(UNSUBSCRIBE_COMMAND, &[id.to_string()], UNSUBSCRIBE_TIMEOUT);
+    let ok = out.as_ref().is_ok_and(|output| output.status.success());
     match &out {
         Ok(_) if ok => log::info!("steam unsub {id}: ok"),
-        Ok(status) => {
-            log::warn!("steam unsub {id}: helper exited {status} (Steam down or not subscribed)");
+        Ok(output) => {
+            log::warn!(
+                "steam unsub {id}: helper exited {} (Steam down or not subscribed)",
+                output.status
+            );
         }
         Err(err) => log::warn!("steam unsub {id}: spawn failed: {err}"),
     }
-    publisher.publish(
-        ev::UNSUBSCRIBED,
-        json!({ "id": id, "ok": ok, "warn": !ok && subscriptions_expected }),
-    );
+    publisher
+        .publish(ev::UNSUBSCRIBED, json!({ "id": id, "ok": ok, "warn": !ok && warn_on_failure }));
+    if ok { Ok(()) } else { Err("Steam did not confirm the unsubscribe".into()) }
 }
 
 static STEAM_INFLIGHT: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
@@ -254,7 +314,8 @@ fn run_steamcmd_batch(
     };
     let auth_error = pump_steamcmd_progress(publisher, ids, stdout);
     let _ = child.wait();
-    let content = std::path::Path::new(install_root).join("steamapps/workshop/content/431960");
+    let content =
+        std::path::Path::new(install_root).join(skwd_wall_core::paths::STEAM_WORKSHOP_CONTENT);
     let folders: std::collections::HashMap<String, String> = ids
         .iter()
         .map(|id| (id.clone(), content.join(id).to_string_lossy().into_owned()))

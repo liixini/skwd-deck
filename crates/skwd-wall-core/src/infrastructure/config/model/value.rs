@@ -7,11 +7,13 @@ use skwd_config::home;
 use super::source::read_root;
 
 mod display;
+mod library;
 mod niri;
 mod playback;
 mod renderer;
 mod theme;
 mod transition;
+mod weather;
 
 pub use display::DisplayConfig;
 pub use playback::PlaybackConfig;
@@ -19,13 +21,13 @@ pub use renderer::RendererConfig;
 pub use theme::{Integration, ThemeConfig};
 pub use transition::TransitionConfig;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Config {
     pub(super) root: Value,
 }
 
 impl Config {
-    fn root(&self) -> &Value {
+    pub fn root(&self) -> &Value {
         &self.root
     }
 
@@ -156,6 +158,14 @@ impl Config {
 
     pub fn resolve(&self, path: &str) -> String {
         skwd_config::resolve(path)
+    }
+
+    pub fn library_destination(&self, video: bool) -> Option<String> {
+        skwd_config::library_destination(self.root(), video)
+    }
+
+    pub fn library_folders(&self) -> Vec<String> {
+        skwd_config::library_folders(self.root())
     }
 
     pub fn wallpaper_dir(&self) -> String {
@@ -321,7 +331,7 @@ impl Config {
         if !ws.is_empty() {
             return PathBuf::from(self.resolve(&ws));
         }
-        self.steam_dir().join("steamapps/workshop/content/431960")
+        self.steam_dir().join(crate::paths::STEAM_WORKSHOP_CONTENT)
     }
 
     pub fn post_processing(&self) -> Vec<(String, String)> {
@@ -404,10 +414,8 @@ impl Config {
 
     pub fn steam_install_root(&self) -> PathBuf {
         let we = self.we_dir();
-        if we.ends_with("steamapps/workshop/content/431960")
-            && let Some(root) = we.ancestors().nth(4)
-        {
-            return root.to_path_buf();
+        if let Some(root) = crate::paths::steam_root_for_content(&we) {
+            return root;
         }
         self.steam_dir()
     }

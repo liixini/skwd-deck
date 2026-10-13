@@ -126,10 +126,7 @@ fn generate_palette(config: &Config, image: &str, scheme: &str, variant: &str) -
 }
 
 pub fn preview_palette(config: &Config, image: &str, dark: bool) -> Option<serde_json::Value> {
-    let scheme = config
-        .theme()
-        .noctalia_scheme_override()
-        .unwrap_or_else(|| active_gen_scheme(config, None));
+    let scheme = generation_scheme(config, None);
     let variant = if dark { "--dark" } else { "--light" };
     let bytes = generate_palette(config, image, &scheme, variant)?;
     serde_json::from_slice(&bytes).ok()
@@ -143,11 +140,12 @@ fn active_gen_scheme(config: &Config, stored: Option<&(String, String)>) -> Stri
     }
 }
 
+fn generation_scheme(config: &Config, stored: Option<&(String, String)>) -> String {
+    config.theme().noctalia_scheme_override().unwrap_or_else(|| active_gen_scheme(config, stored))
+}
+
 pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
-    let scheme = config
-        .theme()
-        .noctalia_scheme_override()
-        .unwrap_or_else(|| active_gen_scheme(config, None));
+    let scheme = generation_scheme(config, None);
     let Some(json) = generate_palette(config, image, &scheme, "--both") else {
         log::warn!("noctalia palette bridge: generation failed for {image}");
         return false;
@@ -298,7 +296,7 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     }
     let config = crate::theme::profiles::configuration(state, image);
     let stored = state.theme().noctalia_preview_orig();
-    let scheme = active_gen_scheme(&config, stored.as_ref());
+    let scheme = generation_scheme(&config, stored.as_ref());
     let key = format!("{scheme}\u{0}{image}");
     let palette = if let Some(bytes) = state.theme().shell_palette_cached(&key) {
         bytes

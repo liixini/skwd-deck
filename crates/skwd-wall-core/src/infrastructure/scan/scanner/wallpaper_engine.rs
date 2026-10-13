@@ -9,7 +9,7 @@ use crate::state::WallState;
 use crate::{db, media, paths};
 
 use super::super::concurrency::{decode_budget, image_decode_weight, scan_threads};
-use super::common::{artifacts_ready, mtime_secs};
+use super::common::{artifacts_ready, mtime_secs, we_sources_unchanged};
 
 pub fn scan_we<F>(state: &WallState, on_item: F) -> usize
 where
@@ -28,12 +28,19 @@ where
                 .collect()
         })
         .unwrap_or_default();
+    let tracking = crate::we::SteamTracking::load();
 
     let candidates: Vec<(PathBuf, String, i64)> = std::fs::read_dir(&directory)
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir() && entry.path().join("project.json").is_file())
+        .filter(|entry| {
+            let item = entry.path();
+            let id = entry.file_name().to_string_lossy().into_owned();
+            item.is_dir()
+                && item.join("project.json").is_file()
+                && !tracking.hides(&directory, &id, &item)
+        })
         .map(|entry| {
             let wallpaper_engine_id = entry.file_name().to_string_lossy().into_owned();
             let mtime = mtime_secs(&entry.path().join("project.json"));
@@ -132,7 +139,7 @@ where
     let fresh = known.get(&key).is_some_and(|(known_mtime, known_type, known_video_file)| {
         *known_mtime == mtime && known_type == entry_type && *known_video_file == video_file
     }) && artifacts_ready(&thumb)
-        && sources_unchanged(item_directory, video_path.as_deref(), &thumb);
+        && we_sources_unchanged(item_directory, video_path.as_deref(), &thumb);
     if fresh {
         return false;
     }
@@ -220,16 +227,6 @@ where
         "last_applied": 0,
     }));
     true
-}
-
-fn sources_unchanged(item: &Path, video: Option<&Path>, thumb: &Path) -> bool {
-    let modified = |path: &Path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
-    let Some(generated) = modified(thumb) else { return false };
-    let preview = crate::we::find_preview(item);
-    [Some(item), Some(item.join("project.json").as_path()), preview.as_deref(), video]
-        .into_iter()
-        .flatten()
-        .all(|source| modified(source).is_some_and(|modified| modified <= generated))
 }
 
 #[cfg(test)]

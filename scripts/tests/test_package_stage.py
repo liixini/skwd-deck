@@ -48,6 +48,12 @@ class PackageStageTests(unittest.TestCase):
                 "usr/share/licenses/skwd-deck/ffmpeg-sys-the-third-LICENSE"
             )
             self.assertEqual(installed.read_bytes(), LICENSE.read_bytes())
+            licenses = destination / "usr/share/licenses/skwd-deck"
+            self.assertEqual((licenses / "LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes())
+            self.assertEqual(
+                (licenses / "steamworks-sys-MIT.txt").read_bytes(),
+                (ROOT / "LICENSES/steamworks-sys-MIT.txt").read_bytes(),
+            )
             self.assertEqual(stat.S_IMODE(installed.stat().st_mode), 0o644)
             for name in BINARIES:
                 mode = stat.S_IMODE((destination / "usr/bin" / name).stat().st_mode)

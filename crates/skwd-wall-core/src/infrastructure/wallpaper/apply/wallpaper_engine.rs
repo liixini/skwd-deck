@@ -63,16 +63,14 @@ impl CommitReadyWe<'_> {
                 if audio_changed {
                     for (we_id, outputs) in &self.groups {
                         let (mute, volume) = self.audio.get(we_id).copied().unwrap_or((true, 100));
-                        if super::policy::independent_playback(state) {
-                            for (index, output) in outputs.iter().enumerate() {
-                                state.renderers().send_audio(
-                                    Some(std::slice::from_ref(output)),
-                                    Some(mute || index > 0),
-                                    Some(volume),
-                                );
-                            }
-                        } else {
-                            state.renderers().send_audio(Some(outputs), Some(mute), Some(volume));
+                        for (index, chunk) in
+                            crate::we::scene_output_groups(state, outputs).iter().enumerate()
+                        {
+                            state.renderers().send_audio(
+                                Some(chunk),
+                                Some(mute || index > 0),
+                                Some(volume),
+                            );
                         }
                     }
                     state.renderers().set_we_render(self.groups, self.audio);
@@ -109,10 +107,9 @@ pub(super) fn prepare_we<'a>(
     for outputs in groups.values_mut() {
         outputs.sort();
     }
-    let independent = super::policy::independent_playback(state);
     let render_groups: Vec<_> = groups
         .values()
-        .flat_map(|outputs| outputs.chunks(if independent { 1 } else { outputs.len().max(1) }))
+        .flat_map(|outputs| crate::we::scene_output_groups(state, outputs))
         .collect();
     let native_alive = render_groups
         .iter()
@@ -132,9 +129,7 @@ pub(super) fn prepare_we<'a>(
     for (we_id, outputs) in &groups {
         let (mute, volume) = audio.get(we_id).copied().unwrap_or((true, 100));
         // Warm swap mutates a live renderer and cannot be rolled back as a batch.
-        for (index, chunk) in
-            outputs.chunks(if independent { 1 } else { outputs.len().max(1) }).enumerate()
-        {
+        for (index, chunk) in crate::we::scene_output_groups(state, outputs).iter().enumerate() {
             native.push(crate::we::spawn_scene_for(
                 state,
                 chunk,

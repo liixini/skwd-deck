@@ -73,6 +73,7 @@ impl Profile {
 }
 
 struct Options {
+    policy: skwd_config::LibraryPolicy,
     wallpaper_dir: PathBuf,
     trash_dir: PathBuf,
     legacy_trash_dir: PathBuf,
@@ -88,6 +89,7 @@ impl Options {
         let wallpaper_dir = PathBuf::from(config.wallpaper_dir());
         let internal = wallpaper_dir.join(skwd_wall_core::paths::INTERNAL_LIBRARY_DIR);
         Self {
+            policy: config.library_policy(),
             wallpaper_dir,
             trash_dir: internal.join("trash/images"),
             legacy_trash_dir: PathBuf::from(config.cache_dir()).join("wallpaper/trash/images"),
@@ -335,6 +337,11 @@ fn run_worker_batch(
     database: &Database,
     request: &PendingRequest,
 ) -> WorkerResult {
+    if !options.policy.contains(&options.wallpaper_dir)
+        || options.policy.excludes(&options.wallpaper_dir)
+    {
+        return WorkerResult::default();
+    }
     clean_work_dir(&options.work_dir);
     let mut result = WorkerResult::default();
     result.status.running = true;
@@ -378,8 +385,8 @@ fn optimize_library(
         .map(|(source, profile, size, optimized_at)| (source, (profile, size, optimized_at)))
         .collect();
     let sources = requested.map_or_else(
-        || image_sources(&options.wallpaper_dir),
-        |paths| image_sources_from(&options.wallpaper_dir, paths),
+        || image_sources(&options.wallpaper_dir, &options.policy),
+        |paths| image_sources_from(&options.wallpaper_dir, paths, &options.policy),
     );
     status.candidates = sources.len();
     log::info!("image optimize: {} candidate(s), profile {}", sources.len(), options.profile_key);
@@ -549,11 +556,14 @@ fn image_artifacts_ready(name: &str) -> bool {
         && Path::new(&format!("{base}.bc1")).is_file()
 }
 
-fn image_sources(root: &Path) -> Vec<PathBuf> {
+fn image_sources(root: &Path, policy: &skwd_config::LibraryPolicy) -> Vec<PathBuf> {
     let mut sources: Vec<PathBuf> = walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| !skwd_wall_core::paths::is_internal_library_path(entry.path()))
+        .filter_entry(|entry| {
+            !skwd_wall_core::paths::is_internal_library_path(entry.path())
+                && !policy.excludes(entry.path())
+        })
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .map(walkdir::DirEntry::into_path)
@@ -568,11 +578,14 @@ fn image_sources(root: &Path) -> Vec<PathBuf> {
     sources
 }
 
-fn image_sources_from(root: &Path, paths: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+fn image_sources_from(
+    root: &Path,
+    paths: &BTreeSet<PathBuf>,
+    policy: &skwd_config::LibraryPolicy,
+) -> Vec<PathBuf> {
     paths
         .iter()
-        .filter(|path| path.is_file())
-        .filter(|path| path.starts_with(root))
+        .filter(|path| path.starts_with(root) && policy.allows_file(path))
         .filter(|path| !skwd_wall_core::paths::is_internal_library_path(path))
         .filter(|path| {
             path.extension()

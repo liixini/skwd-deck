@@ -17,13 +17,12 @@ pub fn scan_paths<F>(state: &WallState, changed: &[PathBuf], on_item: F) -> usiz
 where
     F: Fn(&serde_json::Value) + Sync,
 {
-    let wallpaper_directory = PathBuf::from(state.config().wallpaper_dir());
-    let video_directory = PathBuf::from(state.config().video_dir());
+    let config = state.config().clone();
     let known = known_mtimes(state);
     let count = AtomicUsize::new(0);
     let work = || {
         changed.par_iter().for_each(|path| {
-            if scan_path(state, &known, path, &wallpaper_directory, &video_directory, &on_item) {
+            if scan_path(state, &known, path, &config, &on_item) {
                 count.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -39,19 +38,27 @@ fn scan_path<F>(
     state: &WallState,
     known: &HashMap<String, i64>,
     path: &Path,
-    wallpaper_directory: &Path,
-    video_directory: &Path,
+    config: &crate::config::Config,
     on_item: &F,
 ) -> bool
 where
     F: Fn(&serde_json::Value),
 {
-    if !path.is_file() {
+    if !state.config().library_policy().allows_file(path) {
         return false;
     }
-    let Some((kind, name)) = changed_kind(path, wallpaper_directory, video_directory) else {
+    let Some((kind, mut name)) = changed_kind(path, config) else {
         return false;
     };
+    if kind == wall_proto::kind::VIDEO {
+        let Some(key) = state.library_key(path) else {
+            return false;
+        };
+        let Some((_, stored)) = key.split_once(':') else {
+            return false;
+        };
+        name = stored.to_string();
+    }
     let mtime = mtime_secs(path);
     let key = format!("{kind}:{name}");
     let thumb = match kind {
@@ -80,24 +87,15 @@ where
 
 pub(super) fn changed_kind(
     path: &Path,
-    wallpaper_directory: &Path,
-    video_directory: &Path,
+    config: &crate::config::Config,
 ) -> Option<(&'static str, String)> {
-    if paths::is_internal_library_path(path) {
+    if !is_image(path) && !is_video(path) {
         return None;
     }
-    if is_image(path) {
-        let relative = path.strip_prefix(wallpaper_directory).ok()?;
-        return Some((wall_proto::kind::STATIC, relative.to_string_lossy().into_owned()));
-    }
-    if is_video(path) {
-        let relative = path
-            .strip_prefix(video_directory)
-            .or_else(|_| path.strip_prefix(wallpaper_directory))
-            .ok()?;
-        return Some((wall_proto::kind::VIDEO, relative.to_string_lossy().into_owned()));
-    }
-    None
+    let key = paths::key_for_path(path, config)?;
+    let (_, name) = key.split_once(':')?;
+    let kind = if is_video(path) { wall_proto::kind::VIDEO } else { wall_proto::kind::STATIC };
+    Some((kind, name.to_string()))
 }
 
 pub(super) fn needs_regen(

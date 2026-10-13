@@ -114,26 +114,5 @@ pub(super) fn css_path(path: &Path) -> String {
 }
 
 pub(super) fn same(left: &Path, right: &Path) -> bool {
-    fn resolved(path: &Path) -> PathBuf {
-        if let Ok(path) = path.canonicalize() {
-            return path;
-        }
-        let mut normalized = PathBuf::new();
-        for part in path.components() {
-            match part {
-                std::path::Component::CurDir => {}
-                std::path::Component::ParentDir => {
-                    normalized.pop();
-                }
-                other => normalized.push(other.as_os_str()),
-            }
-        }
-        if let (Some(parent), Some(name)) = (normalized.parent(), normalized.file_name())
-            && let Ok(parent) = parent.canonicalize()
-        {
-            return parent.join(name);
-        }
-        normalized
-    }
-    resolved(left) == resolved(right)
+    crate::paths::same(left, right)
 }

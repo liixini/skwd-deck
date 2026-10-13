@@ -5,7 +5,7 @@ use skwd_wall_core::infrastructure::config::ConfigStore;
 use skwd_wall_core::infrastructure::database::Database;
 
 use crate::backend::events::EventPublisher;
-use crate::backend::workers::{MediaWorkerSupervisor, TinierPreparation};
+use crate::backend::workers::{MediaWorkerSupervisor, TinierPreparation, TinierRequest};
 use crate::infrastructure::stats::Stats;
 use crate::infrastructure::tasks::TaskRegistry;
 
@@ -90,8 +90,8 @@ impl MediaWorkerSupervisor for ProcessSupervisor {
         self.image_optimizer.status().to_value()
     }
 
-    fn prepare_tinier(&self, source: &str) -> TinierPreparation {
-        self.video_optimizer.prepare(source)
+    fn prepare_tinier(&self, request: TinierRequest<'_>) -> TinierPreparation {
+        self.video_optimizer.prepare(request)
     }
 
     fn stop_tinier(&self, task_id: &str) -> bool {

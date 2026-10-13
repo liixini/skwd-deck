@@ -1,3 +1,6 @@
+pub const LOCKSCREEN_SYSTEM: &str = "lockscreen-system";
+pub const LOCKSCREEN_CHOICES: &str = "choices";
+
 pub const VERBS: &[&str] = &[
     "ui",
     "hw-probe",
@@ -19,6 +22,7 @@ pub const VERBS: &[&str] = &[
     "unmute",
     "volume",
     "favourite",
+    "profile",
     "export",
     "import",
     "watch",

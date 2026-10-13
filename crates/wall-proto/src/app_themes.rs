@@ -1,6 +1,22 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AppThemeSet {
+    pub id: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub adopt: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AppThemeRefresh {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct AppThemeStatus {
     pub id: String,
@@ -29,3 +45,7 @@ pub struct AppThemeStatus {
 pub struct AppThemesResult {
     pub apps: Vec<AppThemeStatus>,
 }
+
+#[cfg(test)]
+#[path = "app_themes_tests.rs"]
+mod tests;

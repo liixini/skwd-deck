@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
-use std::io::Read;
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, OnceLock};
-use std::time::Instant;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use skwd_wall_core::infrastructure::config::ConfigStore;
 use skwd_wall_core::infrastructure::database::Database;
@@ -18,13 +19,36 @@ use crate::infrastructure::events::EventHub;
 use crate::infrastructure::tasks::TaskRegistry;
 
 use skwd_lens_proto::{
-    BuildEntry, BuildProgress, BuildRequest, ImageView, cache_index_name, manifest_identity,
+    BuildEntry, BuildProgress, BuildRequest, ImageView, SearchRequest, SearchResponse,
+    cache_index_name, manifest_identity,
 };
+use skwd_wall_core::{WallState, lock};
+
+mod outdoors;
 
 static REFRESH: OnceLock<Sender<()>> = OnceLock::new();
 static SETTINGS_CHANGED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 static CONTROL: OnceLock<Sender<TaskControl>> = OnceLock::new();
+type WeatherCacheEntry = (u64, Instant, Result<Vec<String>, String>);
+type WeatherSearchSnapshot = (Option<SemanticPaths>, Option<BuildRequest>, u64);
+static WEATHER_CACHE: Mutex<Option<WeatherCacheEntry>> = Mutex::new(None);
+const WEATHER_SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
+const WEATHER_SEARCH_WAIT: Duration = Duration::from_millis(25);
+const WEATHER_SEARCH_THREADS: &str = "2";
+const WEATHER_RESPONSE_BYTES: u64 = 33_554_432;
+const LENS_SERVE_ARG: &str = "--serve";
+const LENS_MANIFEST_ARG: &str = "--manifest";
+const LENS_INDEX_ARG: &str = "--index";
+const LENS_RUNTIME_ARG: &str = "--runtime";
+const LENS_THREADS_ARG: &str = "--threads";
+const SEARCH_LINE_END: &[u8] = b"\n";
+const WEATHER_INDEX_UNAVAILABLE: &str = "semantic index unavailable";
+const WEATHER_SEARCH_SUPERSEDED: &str = "semantic search superseded";
+const WEATHER_SEARCH_TIMED_OUT: &str = "semantic search timed out";
+const WEATHER_RESPONSE_TOO_LARGE: &str = "semantic response exceeds size limit";
+const WEATHER_READER_FAILED: &str = "semantic reader failed";
+const WEATHER_GENERATION_MISMATCH: &str = "semantic response generation mismatch";
 
 struct SemanticPaths {
     helper: PathBuf,
@@ -142,6 +166,7 @@ async fn refresh(
             ev::SEMANTIC_INDEX_READY,
             serde_json::json!({"items": 0, "fingerprint": request.fingerprint}),
         );
+        crate::composition::runtime::weather::reload();
         return Ok(());
     }
     if rebuilt {
@@ -158,8 +183,346 @@ async fn refresh(
             ev::SEMANTIC_INDEX_READY,
             serde_json::json!({"items": request.entries.len(), "fingerprint": request.fingerprint}),
         );
+        crate::composition::runtime::weather::reload();
     }
     Ok(())
+}
+
+pub(crate) fn weather_search(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+) -> Result<Vec<String>, String> {
+    let (paths, catalog, signature) =
+        weather_snapshot(state, query, max_results, score_window, min_score_prominence);
+    if let Some(entry) = lock(&WEATHER_CACHE).as_ref()
+        && weather_cache_fresh(entry, signature)
+    {
+        return entry.2.clone();
+    }
+    let result = checked_weather_search(
+        state,
+        query,
+        max_results,
+        score_window,
+        min_score_prominence,
+        (paths, catalog, signature),
+    );
+    *lock(&WEATHER_CACHE) = Some((signature, Instant::now(), result.clone()));
+    result
+}
+
+pub(crate) fn outdoors_search(
+    state: &Arc<WallState>,
+    context: &wall_rules::outdoors::Context,
+    resolve: bool,
+) -> Option<Result<Vec<String>, String>> {
+    let config = state.config().clone();
+    let query = context.query();
+    let negative = context.negative_query();
+    let identity = format!("{query}\n{negative}\n{}", config.outdoors_contrast_margin());
+    let snapshot = || {
+        weather_snapshot(
+            state,
+            &identity,
+            config.weather_semantic_max_results(),
+            config.weather_semantic_score_window(),
+            config.weather_semantic_prominence(),
+        )
+    };
+    let (paths, catalog, signature) = snapshot();
+    if let Some(entry) = lock(&WEATHER_CACHE).as_ref()
+        && weather_cache_fresh(entry, signature)
+    {
+        return Some(entry.2.clone());
+    }
+    if !resolve {
+        return None;
+    }
+    let result = match (paths, catalog) {
+        (Some(paths), Some(catalog))
+            if config.semantic_enabled() && index_current(&paths, catalog.fingerprint) =>
+        {
+            let count =
+                catalog.entries.iter().map(|item| item.key.as_str()).collect::<HashSet<_>>().len();
+            outdoors::search(&paths, context, count, config.outdoors_contrast_margin())
+        }
+        _ => Err(String::from(WEATHER_INDEX_UNAVAILABLE)),
+    };
+    state.reload_config();
+    if snapshot().2 != signature {
+        return Some(Err(String::from(WEATHER_SEARCH_SUPERSEDED)));
+    }
+    *lock(&WEATHER_CACHE) = Some((signature, Instant::now(), result.clone()));
+    Some(result)
+}
+
+pub(crate) fn weather_preview_search(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+) -> Result<Vec<String>, String> {
+    let snapshot = weather_snapshot(state, query, max_results, score_window, min_score_prominence);
+    checked_weather_search(state, query, max_results, score_window, min_score_prominence, snapshot)
+}
+
+fn checked_weather_search(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+    (paths, catalog, signature): WeatherSearchSnapshot,
+) -> Result<Vec<String>, String> {
+    let result =
+        weather_search_snapshot(state, query, score_window, min_score_prominence, paths, catalog);
+    state.reload_config();
+    let (_, _, current) =
+        weather_snapshot(state, query, max_results, score_window, min_score_prominence);
+    if current != signature {
+        return Err(String::from(WEATHER_SEARCH_SUPERSEDED));
+    }
+    result
+}
+
+fn weather_search_snapshot(
+    state: &Arc<WallState>,
+    query: &str,
+    score_window: f32,
+    min_score_prominence: f32,
+    paths: Option<SemanticPaths>,
+    catalog: Option<BuildRequest>,
+) -> Result<Vec<String>, String> {
+    match (paths, catalog) {
+        (Some(paths), Some(catalog))
+            if state.config().semantic_enabled() && index_current(&paths, catalog.fingerprint) =>
+        {
+            let unique = catalog
+                .entries
+                .iter()
+                .map(|entry| entry.key.as_str())
+                .collect::<HashSet<_>>()
+                .len();
+            search_weather_index(
+                &paths,
+                &WeatherQuery {
+                    query,
+                    negative: None,
+                    top_k: unique,
+                    score_window,
+                    prominence: min_score_prominence,
+                },
+            )
+        }
+        _ => Err(String::from(WEATHER_INDEX_UNAVAILABLE)),
+    }
+}
+
+pub(crate) fn weather_cached(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+) -> Option<Result<Vec<String>, String>> {
+    let (_, _, signature) =
+        weather_snapshot(state, query, max_results, score_window, min_score_prominence);
+    lock(&WEATHER_CACHE)
+        .as_ref()
+        .and_then(|entry| weather_cache_fresh(entry, signature).then(|| entry.2.clone()))
+}
+
+fn weather_cache_fresh(entry: &WeatherCacheEntry, signature: u64) -> bool {
+    entry.0 == signature
+        && (entry.2.is_ok()
+            || entry.1.elapsed() < crate::infrastructure::weather::refresh_interval())
+}
+
+pub(crate) fn clear_failed_weather_search() {
+    let mut cache = lock(&WEATHER_CACHE);
+    if cache.as_ref().is_some_and(|(_, _, result)| result.is_err()) {
+        *cache = None;
+    }
+}
+
+pub(crate) fn weather_cached_match(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+    key: &str,
+) -> bool {
+    weather_cached(state, query, max_results, score_window, min_score_prominence)
+        .is_some_and(|result| result.is_ok_and(|keys| keys.iter().any(|member| member == key)))
+}
+
+fn weather_snapshot(
+    state: &Arc<WallState>,
+    query: &str,
+    max_results: usize,
+    score_window: f32,
+    min_score_prominence: f32,
+) -> (Option<SemanticPaths>, Option<BuildRequest>, u64) {
+    let paths = discover_paths(&state.config_store());
+    let catalog =
+        paths.as_ref().and_then(|paths| catalog_request(&state.database(), paths.multiview).ok());
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    query.hash(&mut hasher);
+    max_results.hash(&mut hasher);
+    score_window.to_bits().hash(&mut hasher);
+    min_score_prominence.to_bits().hash(&mut hasher);
+    state.config().semantic_enabled().hash(&mut hasher);
+    if let Some(paths) = &paths {
+        for path in [&paths.helper, &paths.manifest, &paths.runtime, &paths.index] {
+            path.hash(&mut hasher);
+            if let Ok(meta) = std::fs::metadata(path) {
+                meta.len().hash(&mut hasher);
+                meta.modified().ok().hash(&mut hasher);
+            }
+        }
+        let sidecar = PathBuf::from(format!("{}.fingerprint", paths.index.display()));
+        std::fs::read(sidecar).ok().hash(&mut hasher);
+    }
+    catalog.as_ref().map(|request| request.fingerprint).hash(&mut hasher);
+    (paths, catalog, hasher.finish())
+}
+
+struct WeatherQuery<'a> {
+    query: &'a str,
+    negative: Option<&'a str>,
+    top_k: usize,
+    score_window: f32,
+    prominence: f32,
+}
+
+fn search_weather_index(
+    paths: &SemanticPaths,
+    spec: &WeatherQuery<'_>,
+) -> Result<Vec<String>, String> {
+    let request = SearchRequest {
+        generation: 0,
+        query: spec.query.to_owned(),
+        negative_query: spec.negative.map(str::to_owned),
+        negative_weight: 0.5,
+        top_k: spec.top_k,
+        score_window: Some(spec.score_window),
+        min_score_prominence: Some(spec.prominence),
+        max_results: None,
+        min_results: 0,
+        embedding_only: false,
+    };
+    search_requests(paths, &[request], Vec::new(), |keys, response| {
+        keys.extend(response.matches.into_iter().map(|item| item.key));
+    })
+}
+
+pub(crate) fn available(state: &Arc<WallState>) -> bool {
+    discover_paths(&state.config_store()).is_some()
+}
+
+fn search_requests<T: Send + 'static>(
+    paths: &SemanticPaths,
+    requests: &[SearchRequest],
+    initial: T,
+    consume: fn(&mut T, SearchResponse),
+) -> Result<T, String> {
+    let args = [
+        OsStr::new(LENS_SERVE_ARG),
+        OsStr::new(LENS_MANIFEST_ARG),
+        paths.manifest.as_os_str(),
+        OsStr::new(LENS_INDEX_ARG),
+        paths.index.as_os_str(),
+        OsStr::new(LENS_RUNTIME_ARG),
+        paths.runtime.as_os_str(),
+        OsStr::new(LENS_THREADS_ARG),
+        OsStr::new(WEATHER_SEARCH_THREADS),
+    ];
+    let mut child = crate::infrastructure::proc::tool(&paths.helper)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let stdout = child.stdout.take().ok_or("semantic stdout unavailable")?;
+    let generations: Vec<_> = requests.iter().map(|request| request.generation).collect();
+    let reader = std::thread::spawn(move || {
+        read_responses(
+            &mut std::io::BufReader::new(stdout),
+            &generations,
+            initial,
+            consume,
+            WEATHER_RESPONSE_BYTES,
+        )
+    });
+    let result = (|| {
+        let mut stdin = child.stdin.take().ok_or("semantic stdin unavailable")?;
+        for request in requests {
+            serde_json::to_writer(&mut stdin, request).map_err(|error| error.to_string())?;
+            stdin.write_all(SEARCH_LINE_END).map_err(|error| error.to_string())?;
+        }
+        drop(stdin);
+        let deadline = Instant::now() + WEATHER_SEARCH_TIMEOUT;
+        loop {
+            if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(String::from(WEATHER_SEARCH_TIMED_OUT));
+            }
+            std::thread::sleep(WEATHER_SEARCH_WAIT);
+        }
+        let status = child.wait().map_err(|error| error.to_string())?;
+        if !status.success() {
+            return Err(format!("semantic search exited with {status}"));
+        }
+        reader.join().map_err(|_| String::from(WEATHER_READER_FAILED))?
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
+}
+
+fn read_responses<T>(
+    reader: &mut impl BufRead,
+    generations: &[u64],
+    mut result: T,
+    consume: fn(&mut T, SearchResponse),
+    limit: u64,
+) -> Result<T, String> {
+    let mut line = Vec::new();
+    for generation in generations {
+        line.clear();
+        reader
+            .by_ref()
+            .take(limit + 1)
+            .read_until(SEARCH_LINE_END[0], &mut line)
+            .map_err(|error| error.to_string())?;
+        if line.len() as u64 > limit {
+            return Err(String::from(WEATHER_RESPONSE_TOO_LARGE));
+        }
+        let response: SearchResponse =
+            serde_json::from_slice(&line).map_err(|error| error.to_string())?;
+        if response.generation != *generation {
+            return Err(String::from(WEATHER_GENERATION_MISMATCH));
+        }
+        if let Some(error) = &response.error {
+            return Err(error.clone());
+        }
+        consume(&mut result, response);
+    }
+    let mut extra = [0];
+    if reader.read(&mut extra).map_err(|error| error.to_string())? != 0 {
+        return Err(String::from(WEATHER_GENERATION_MISMATCH));
+    }
+    Ok(result)
 }
 
 fn clear_index(index: &Path) -> std::io::Result<()> {

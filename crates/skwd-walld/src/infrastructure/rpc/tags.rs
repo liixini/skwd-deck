@@ -14,7 +14,10 @@ pub(super) fn update_tags(state: &Arc<WallState>, req: &Request, stats: &Arc<Sta
         return Response::err(req.id, -32602, "missing tags");
     };
     match state.with_db(|conn| db::update_user_tags(conn, key, tags)) {
-        Ok(_) => Response::ok(req.id, json!({"updated": key})),
+        Ok(_) => {
+            crate::composition::runtime::playlist::reload();
+            Response::ok(req.id, json!({"updated": key}))
+        }
         Err(err) => fail(stats, req.id, err),
     }
 }

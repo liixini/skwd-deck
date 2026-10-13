@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+const PURITY_PARAM: &str = "purity";
+
 pub struct SearchParams {
     pub query: String,
     pub categories: String,
@@ -38,7 +40,7 @@ pub fn query_pairs(params: &SearchParams) -> Vec<(&'static str, String)> {
         pairs.push(("q", params.query.clone()));
     }
     pairs.push(("categories", params.categories.clone()));
-    pairs.push(("purity", params.purity.clone()));
+    pairs.push((PURITY_PARAM, params.purity.clone()));
     pairs.push(("sorting", params.sorting.clone()));
     pairs.push(("order", params.order.clone()));
     if params.sorting == "toplist" && !params.top_range.is_empty() {
@@ -57,6 +59,10 @@ pub fn query_pairs(params: &SearchParams) -> Vec<(&'static str, String)> {
     }
     pairs.push(("page", params.page.to_string()));
     pairs
+}
+
+pub fn collection_query_pairs(params: &SearchParams) -> [(&'static str, String); 2] {
+    [("page", params.page.max(1).to_string()), (PURITY_PARAM, params.purity.clone())]
 }
 
 #[derive(Deserialize)]
@@ -227,13 +233,15 @@ pub fn collections(username: &str, api_key: &str) -> anyhow::Result<Vec<Collecti
 pub fn collection_page(
     username: &str,
     id: &str,
-    page: u32,
+    params: &SearchParams,
     api_key: &str,
 ) -> anyhow::Result<SearchPage> {
     let mut req = crate::infrastructure::http::agent()
         .get(&format!("https://wallhaven.cc/api/v1/collections/{username}/{id}"))
-        .set("User-Agent", crate::infrastructure::http::USER_AGENT)
-        .query("page", &page.to_string());
+        .set("User-Agent", crate::infrastructure::http::USER_AGENT);
+    for (key, val) in collection_query_pairs(params) {
+        req = req.query(key, &val);
+    }
     if !api_key.is_empty() {
         req = req.query("apikey", api_key);
     }

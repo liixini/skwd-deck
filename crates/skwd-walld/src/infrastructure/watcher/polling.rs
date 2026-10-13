@@ -51,9 +51,13 @@ struct Sweep {
 }
 
 impl Sweep {
-    fn start(root: &Path) -> std::io::Result<Self> {
+    fn start(root: &Path, policy: &skwd_config::LibraryPolicy) -> std::io::Result<Self> {
         Ok(Self {
-            directories: vec![std::fs::read_dir(root)?],
+            directories: if policy.excludes(root) {
+                Vec::new()
+            } else {
+                vec![std::fs::read_dir(root)?]
+            },
             files: BTreeMap::new(),
             #[cfg(test)]
             entries_examined: 0,
@@ -64,7 +68,11 @@ impl Sweep {
         })
     }
 
-    fn advance(&mut self, budget: usize) -> Result<bool, String> {
+    fn advance(
+        &mut self,
+        budget: usize,
+        policy: &skwd_config::LibraryPolicy,
+    ) -> Result<bool, String> {
         let mut consumed = 0;
         while consumed < budget {
             let Some(directory) = self.directories.last_mut() else { return Ok(true) };
@@ -83,7 +91,7 @@ impl Sweep {
                 self.entries_examined += 1;
             }
             let path = entry.path();
-            if skwd_wall_core::paths::is_internal_library_path(&path) {
+            if skwd_wall_core::paths::is_internal_library_path(&path) || policy.excludes(&path) {
                 continue;
             }
             #[cfg(test)]
@@ -163,17 +171,22 @@ impl PollingRoot {
         }
     }
 
-    pub(super) fn advance(&mut self, budget: usize) -> PollAdvance {
+    pub(super) fn advance(
+        &mut self,
+        budget: usize,
+        policy: &skwd_config::LibraryPolicy,
+    ) -> PollAdvance {
         if self.sweep.is_none() {
-            match Sweep::start(&self.path) {
+            match Sweep::start(&self.path, policy) {
                 Ok(sweep) => self.sweep = Some(sweep),
                 Err(error) => return self.fail(error.to_string()),
             }
         }
-        let finished = match self.sweep.as_mut().expect("sweep initialized above").advance(budget) {
-            Ok(finished) => finished,
-            Err(error) => return self.fail(error),
-        };
+        let finished =
+            match self.sweep.as_mut().expect("sweep initialized above").advance(budget, policy) {
+                Ok(finished) => finished,
+                Err(error) => return self.fail(error),
+            };
         if !finished {
             return PollAdvance::Pending;
         }

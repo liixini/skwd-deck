@@ -8,9 +8,9 @@ use wall_proto::rpc;
 use crate::reporter::Reporter;
 
 pub(crate) fn full_scan(state: &WallState, reporter: &Reporter, request_id: Option<&str>) {
-    log::info!("scanning images in {}", state.config().wallpaper_dir());
+    log::info!("scanning images in {:?}", state.config().library_folders());
     let image_count = scan::scan(state, |item| reporter.send(rpc::SCAN_ITEM, item));
-    log::info!("scanning videos in {}", state.config().video_dir());
+    log::info!("scanning videos in {:?}", state.config().library_folders());
     let video_count = scan::scan_videos(state, |item| reporter.send(rpc::SCAN_ITEM, item));
     log::info!("scanning WE in {}", state.config().we_dir().display());
     let wallpaper_engine_count = scan::scan_we(state, |item| reporter.send(rpc::SCAN_ITEM, item));
@@ -110,7 +110,13 @@ pub(crate) fn key_present(
         Path::new(video_directory).join(relative).exists()
             || Path::new(wallpaper_directory).join(relative).exists()
     } else if let Some(workshop_id) = key.strip_prefix("we:") {
-        wallpaper_engine_directory.join(workshop_id).join("project.json").is_file()
+        let item = wallpaper_engine_directory.join(workshop_id);
+        item.join("project.json").is_file()
+            && !skwd_wall_core::we::SteamTracking::load().hides(
+                wallpaper_engine_directory,
+                workshop_id,
+                &item,
+            )
     } else {
         true
     }
@@ -143,7 +149,22 @@ fn prune(state: &WallState, reporter: &Reporter) -> usize {
     };
     let mut gone = Vec::new();
     for key in keys {
-        if key_present(&key, &wallpaper_directory, &video_directory, &wallpaper_engine_directory) {
+        if !state.with_db(|connection| db::library_visible(connection, &key)).unwrap_or(true) {
+            continue;
+        }
+        let source =
+            state.with_db(|connection| db::video_file_for_key(connection, &key)).ok().flatten();
+        if source.map_or_else(
+            || {
+                key_present(
+                    &key,
+                    &wallpaper_directory,
+                    &video_directory,
+                    &wallpaper_engine_directory,
+                )
+            },
+            |path| Path::new(&path).exists(),
+        ) {
             continue;
         }
         for target in prune_targets(&key) {

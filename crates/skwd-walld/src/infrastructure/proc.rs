@@ -39,4 +39,34 @@ pub(crate) fn tool_async(program: impl AsRef<std::ffi::OsStr>) -> tokio::process
     command
 }
 
+const DBUS_MONITOR: &str = "dbus-monitor";
+const DBUS_SESSION: &str = "--session";
+
+pub(crate) fn monitor_signals(
+    filters: &[&str],
+    mut changed: impl FnMut(&str),
+) -> std::io::Result<()> {
+    use std::io::BufRead;
+    use std::process::Stdio;
+
+    let mut child = tool(DBUS_MONITOR)
+        .arg(DBUS_SESSION)
+        .args(filters)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let result = if let Some(stdout) = child.stdout.take() {
+        std::io::BufReader::new(stdout).lines().try_for_each(|line| {
+            changed(&line?);
+            Ok(())
+        })
+    } else {
+        Ok(())
+    };
+    let _ = child.kill();
+    let _ = child.wait();
+    result
+}
+
 mod tests;

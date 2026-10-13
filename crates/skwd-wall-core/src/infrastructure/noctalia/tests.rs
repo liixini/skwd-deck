@@ -147,10 +147,34 @@ fn sanitize_skips_preview() {
     );
 }
 
+#[test]
+fn generation_scheme_fallback() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("noctalia");
+    std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' 'custom skwd-wall'\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let paths = || serde_json::json!({ "cache": dir.path(), "noctaliaBin": &script });
+
+    let configured = Config::from_root(
+        serde_json::json!({ "paths": paths(), "theme": { "noctaliaScheme": "muted" } }),
+    );
+    assert_eq!(generation_scheme(&configured, None), "muted");
+    let stored = ("custom".to_string(), "skwd-wall".to_string());
+    assert_eq!(generation_scheme(&configured, Some(&stored)), "muted");
+
+    let plain = Config::from_root(serde_json::json!({ "paths": paths(), "theme": {} }));
+    assert_eq!(generation_scheme(&plain, None), FALLBACK_SCHEME);
+    assert_eq!(
+        generation_scheme(&plain, Some(&("wallpaper".to_string(), "nord".to_string()))),
+        "nord"
+    );
+}
+
 fn marker_config(dir: &std::path::Path) -> Config {
     Config::from_root(serde_json::json!({
-        "paths": { "cache": dir.to_string_lossy() },
-        "noctalia": { "bin": dir.join("noctalia-does-not-exist").to_string_lossy() },
+        "paths": { "cache": dir.to_string_lossy(), "noctaliaBin": dir.join("noctalia-does-not-exist").to_string_lossy() },
     }))
 }
 
@@ -178,8 +202,7 @@ fn failed_restore_keeps_marker() {
 fn failed_end_keeps_state() {
     let tmp = tempfile::tempdir().unwrap();
     let st = WallState::test_new(serde_json::json!({
-        "paths": { "cache": tmp.path().to_string_lossy() },
-        "noctalia": { "bin": tmp.path().join("noctalia-does-not-exist").to_string_lossy() },
+        "paths": { "cache": tmp.path().to_string_lossy(), "noctaliaBin": tmp.path().join("noctalia-does-not-exist").to_string_lossy() },
     }));
     let orig = ("wallpaper".to_string(), "m3-content".to_string());
     st.theme().set_noctalia_preview_orig(orig.clone());

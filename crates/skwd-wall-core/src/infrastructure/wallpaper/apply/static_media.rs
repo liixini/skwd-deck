@@ -90,10 +90,7 @@ pub(super) fn apply_static_owned(
     let fills: Vec<String> =
         outputs.iter().map(|candidate| state.config().display().fill_mode_for(candidate)).collect();
     let fills_uniform = fills.windows(2).all(|pair| pair[0] == pair[1])
-        && outputs.iter().all(|output| {
-            state.config().display().background_for(output)
-                == state.config().display().background_for("*")
-        });
+        && outputs.iter().all(|output| !state.config().display().background_differs_for(output));
     let fill_mode =
         if fills_uniform { fills.first().map_or(fill_mode, String::as_str) } else { fill_mode };
     let want_transition = transition.enabled() && from.is_some_and(|previous| previous != path);
@@ -184,10 +181,9 @@ pub(super) fn apply_static_smart_with_outputs(
         .collect();
     let uniform = resolved.iter().all(|(_, assigned)| *assigned == resolved[0].1)
         && fills.iter().all(|fill| *fill == fills[0])
-        && resolved.iter().all(|(output, _)| {
-            state.config().display().background_for(output)
-                == state.config().display().background_for("*")
-        });
+        && resolved
+            .iter()
+            .all(|(output, _)| !state.config().display().background_differs_for(output));
     let reuse = if super::policy::paper_policy_matches(state) {
         ReusePolicy::WarmAllowed
     } else {
@@ -324,8 +320,12 @@ pub(super) fn reconcile_static_multi<'a>(
             .entry((
                 path.to_string(),
                 state.config().display().fill_mode_for(output),
-                serde_json::to_string(&state.config().display().background_for(output))
-                    .expect("background serializes"),
+                if state.config().display().background_affects_for(output) {
+                    serde_json::to_string(&state.config().display().background_for(output))
+                        .expect("background serializes")
+                } else {
+                    String::new()
+                },
             ))
             .or_default()
             .push(output.clone());

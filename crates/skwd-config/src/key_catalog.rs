@@ -1,4 +1,72 @@
 pub mod keys {
+    pub mod lock_screens {
+        pub const ROOT: &str = "lockScreens";
+        pub const MODE: &str = "lockScreens.mode";
+        pub const IMAGE: &str = "lockScreens.image";
+        pub const HYPRLOCK: &str = "lockScreens.hyprlock";
+        pub const SWAYLOCK: &str = "lockScreens.swaylock";
+        pub const DMS: &str = "lockScreens.dms";
+        pub const NOCTALIA: &str = "lockScreens.noctalia";
+        pub const TARGET_FLAGS: [&str; 4] = [HYPRLOCK, SWAYLOCK, DMS, NOCTALIA];
+        pub const SDDM_IMAGE: &str = "lockScreens.sddmImage";
+        pub const OFF: &str = "off";
+        pub const FOLLOW: &str = "follow";
+        pub const STATIC: &str = "static";
+    }
+    pub mod weather {
+        pub const PREFIX: &str = "weather.";
+        pub const ENABLED: &str = "weather.enabled";
+        pub const SOURCE: &str = "weather.source";
+        pub const SOURCE_PLAYLISTS: &str = "playlists";
+        pub const SOURCE_OUTDOORS: &str = "outdoors";
+        pub const OUTDOORS_CONTRAST_MARGIN: &str = "weather.outdoors.contrastMargin";
+        pub const OUTDOORS_DWELL_SECONDS: &str = "weather.outdoors.dwellSeconds";
+        pub const OUTDOORS_TRANSITION_SHADER: &str = "weather.outdoors.transitionShader";
+        pub const OUTDOORS_RETHEME: &str = "weather.outdoors.retheme";
+        pub const OUTDOORS_STABLE_SECONDS: &str = "weather.outdoors.stableForSeconds";
+        pub const SOURCE_SEMANTIC: &str = "semantic";
+        pub const SEMANTIC_SELECTION: &str = "weather.semantic.selection";
+        pub const SELECTION_AUTOMATIC: &str = "automatic";
+        pub const SELECTION_APPROVED: &str = "approved";
+        pub const APPROVED_CLEAR: &str = "weather.semantic.approved.clear";
+        pub const APPROVED_CLOUDY: &str = "weather.semantic.approved.cloudy";
+        pub const APPROVED_RAINY: &str = "weather.semantic.approved.rainy";
+        pub const APPROVED_SNOWY: &str = "weather.semantic.approved.snowy";
+        pub const APPROVED_STORMY: &str = "weather.semantic.approved.stormy";
+        pub const APPROVED_FOGGY: &str = "weather.semantic.approved.foggy";
+        pub const APPROVED_WINDY: &str = "weather.semantic.approved.windy";
+        const APPROVED: [(&str, &str); 7] = [
+            ("clear", APPROVED_CLEAR),
+            ("cloudy", APPROVED_CLOUDY),
+            ("rainy", APPROVED_RAINY),
+            ("snowy", APPROVED_SNOWY),
+            ("stormy", APPROVED_STORMY),
+            ("foggy", APPROVED_FOGGY),
+            ("windy", APPROVED_WINDY),
+        ];
+
+        pub fn approved_key(category: &str) -> Option<&'static str> {
+            APPROVED.iter().find(|(name, _)| *name == category).map(|(_, key)| *key)
+        }
+        pub const SEMANTIC_CLEAR: &str = "weather.semantic.queries.clear";
+        pub const SEMANTIC_CLOUDY: &str = "weather.semantic.queries.cloudy";
+        pub const SEMANTIC_RAINY: &str = "weather.semantic.queries.rainy";
+        pub const SEMANTIC_SNOWY: &str = "weather.semantic.queries.snowy";
+        pub const SEMANTIC_STORMY: &str = "weather.semantic.queries.stormy";
+        pub const SEMANTIC_FOGGY: &str = "weather.semantic.queries.foggy";
+        pub const SEMANTIC_WINDY: &str = "weather.semantic.queries.windy";
+        pub const SEMANTIC_MAX_RESULTS: &str = "weather.semantic.maxResults";
+        pub const SEMANTIC_SCORE_WINDOW: &str = "weather.semantic.scoreWindow";
+        pub const SEMANTIC_MIN_SCORE_PROMINENCE: &str = "weather.semantic.minScoreProminence";
+        pub const SEMANTIC_DWELL_SECONDS: &str = "weather.semantic.dwellSeconds";
+        pub const CLEAR: &str = "weather.playlists.clear";
+        pub const CLOUDY: &str = "weather.playlists.cloudy";
+        pub const RAINY: &str = "weather.playlists.rainy";
+        pub const SNOWY: &str = "weather.playlists.snowy";
+        pub const STORMY: &str = "weather.playlists.stormy";
+        pub const FOGGY: &str = "weather.playlists.foggy";
+        pub const WINDY: &str = "weather.playlists.windy";
+    }
     pub mod playback {
         pub const PROCESS_ENABLED: &str = "playback.processEnabled";
         pub const PROCESSES: &str = "playback.processes";
@@ -106,8 +174,19 @@ pub mod keys {
     }
     pub mod integrations {
         pub const LIST: &str = "integrations";
+        pub const ENABLED: &str = "enabled";
+        pub const PROFILE: &str = "profile";
     }
     pub mod library {
+        pub const FOLDERS: &str = "library.folders";
+        pub const EXCLUDED_FOLDERS: &str = "library.excludedFolders";
+        pub const PROFILE: &str = "library.profile";
+        pub const PROFILES: &str = "library.profiles";
+        pub mod profile {
+            pub const ID: &str = "id";
+            pub const NAME: &str = "name";
+            pub const WORKSHOP: &str = "workshop";
+        }
         pub const POLLING_FALLBACK: &str = "library.pollingFallback";
         pub const POLLING_INTERVAL_SECONDS: &str = "library.pollingIntervalSeconds";
     }
@@ -472,8 +551,10 @@ pub mod keys {
     }
     pub mod theme {
         pub const PREFIX: &str = "theme.";
+        pub const APP_PROFILES: &str = "theme.appProfiles";
         pub const BACKEND: &str = "theme.backend";
         pub const POLICY: &str = "theme.policy";
+        pub const POLICY_WALLPAPER: &str = "wallpaper";
         pub const AUTHORITY: &str = "theme.authority";
         pub const ENGINE: &str = "theme.engine";
         pub const CUSTOM_COLORS: &str = "theme.customColors";
@@ -488,6 +569,7 @@ pub mod keys {
         pub const PYWAL_SATURATE: &str = "theme.pywalSaturate";
         pub const WALLPAPER_PROFILES: &str = "theme.wallpaperProfiles";
         pub const SAVED_THEMES: &str = "theme.savedThemes";
+        pub const SAVED_THEME_NAME: &str = "name";
         pub const STATIC_THEME: &str = "theme.staticTheme";
         pub const WALLUST_COLORSPACE: &str = "theme.wallustColorspace";
         pub const WALLUST_PALETTE: &str = "theme.wallustPalette";

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -13,7 +14,10 @@ pub struct Sandbox {
 
 impl Sandbox {
     pub fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("skwd-e2e-{name}-{}", std::process::id()));
+        let mut hash = std::hash::DefaultHasher::new();
+        name.hash(&mut hash);
+        let root =
+            std::env::temp_dir().join(format!("e2e-{:x}-{}", hash.finish(), std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for sub in
             ["runtime/skwd-wall-v2", "config/skwd-wall-v2", "cache", "data", "state", "library"]

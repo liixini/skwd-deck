@@ -1,6 +1,5 @@
 use std::io::{BufRead, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 fn ppid() -> Option<u32> {
@@ -15,10 +14,7 @@ fn is_long_lived(args: &[String]) -> bool {
 }
 
 fn signal_ready(pid: u32) {
-    let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR") else {
-        return;
-    };
-    let sock = Path::new(&runtime).join("skwd-wall-v2/wall.sock");
+    let sock = wall_proto::resolve_socket();
     if let Ok(mut stream) = UnixStream::connect(&sock) {
         let _ = writeln!(
             stream,

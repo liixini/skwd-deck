@@ -300,7 +300,7 @@ fn history_disabled_noop() {
 #[test]
 fn reapply_live_noop() {
     let (_g, root) = testenv::lock();
-    testenv::write_config(json!({}));
+    testenv::write_config(json!({"weather":{"enabled":true}}));
     let wall = root.join("walls/noop-test.png");
     std::fs::write(&wall, b"png").unwrap();
     let path = wall.to_str().unwrap().to_string();
@@ -318,6 +318,17 @@ fn reapply_live_noop() {
     )
     .unwrap();
     let (state, subs, stats) = harness();
+    crate::composition::runtime::weather::test_status(
+        &state,
+        Some(wall_proto::WeatherStatus {
+            enabled: true,
+            status: wall_proto::WeatherState::Active,
+            playlist_id: Some(1),
+            member_keys: vec!["static:noop-test.png".into()],
+            ..wall_proto::WeatherStatus::default()
+        }),
+    );
+    assert!(crate::composition::runtime::weather::assignment("*").is_some());
     let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
     state.renderers().set_base_still(child, None);
     state.apply().set_render_fill("fill");
@@ -333,6 +344,8 @@ fn reapply_live_noop() {
     assert_eq!(v["noop"], json!(true));
     assert_eq!(v["applied"], json!(path));
     assert!(!state.apply().no_transition());
+    assert!(crate::composition::runtime::weather::assignment("*").is_none());
+    crate::composition::runtime::weather::test_status(&state, None);
 }
 
 #[test]

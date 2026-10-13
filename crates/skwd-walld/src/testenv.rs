@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Receiver;
 use skwd_wall_core::WallState;
 use wall_proto::{Request, Response};
 
-use crate::backend::workers::{MediaWorkerSupervisor, TinierPreparation};
+use crate::backend::workers::{MediaWorkerSupervisor, TinierPreparation, TinierRequest};
 use crate::infrastructure::events::EventHub;
 
 static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
@@ -124,7 +124,7 @@ impl MediaWorkerSupervisor for TestWorkers {
         serde_json::json!({ "running": false })
     }
 
-    fn prepare_tinier(&self, _source: &str) -> TinierPreparation {
+    fn prepare_tinier(&self, _request: TinierRequest<'_>) -> TinierPreparation {
         let (sender, result) = std::sync::mpsc::channel();
         match *skwd_wall_core::lock(&TINIER_OUTCOME) {
             TinierTestOutcome::Success => {
@@ -159,6 +159,7 @@ fn test_workers() -> Arc<dyn MediaWorkerSupervisor> {
 pub(crate) fn harness() -> (Arc<WallState>, Arc<EventHub>, Arc<crate::infrastructure::stats::Stats>)
 {
     let state = Arc::new(WallState::open().unwrap());
+    state.reconcile_library().unwrap();
     let stats = Arc::new(crate::infrastructure::stats::Stats::new());
     let events = Arc::new(EventHub::new(Arc::clone(&stats)));
     (state, events, stats)
@@ -242,4 +243,28 @@ pub(crate) fn tmp(tag: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+pub(crate) fn cache_item(state: &WallState, name: &str) {
+    state
+        .with_db(|conn| {
+            skwd_wall_core::db::upsert_cache_entry(
+                conn,
+                &format!("{}:{name}", wall_proto::kind::STATIC),
+                wall_proto::kind::STATIC,
+                name,
+                "",
+                "",
+                "",
+                "",
+                1,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+            )
+        })
+        .unwrap();
 }

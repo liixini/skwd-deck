@@ -49,3 +49,30 @@ fn claim_current_generation() {
     assert_eq!(runtime.claim_generation(queued), None);
     assert_eq!(runtime.generation(), queued + 1);
 }
+
+#[test]
+fn distinct_targets_survive_commits() {
+    let runtime = ApplyRuntime::default();
+    let first = runtime.intent("work", "DP-1");
+    let second = runtime.intent("work", "DP-2");
+    let other = runtime.intent("home", "DP-1");
+    assert!(runtime.claim_intent(&first).is_some());
+    assert!(runtime.claim_intent(&second).is_some());
+    assert!(runtime.claim_intent(&other).is_some());
+    assert!(runtime.claim_intent(&first).is_none());
+}
+
+#[test]
+fn overlapping_targets_supersede() {
+    let runtime = ApplyRuntime::default();
+    let old = runtime.intent("work", "DP-1");
+    let latest = runtime.intent("work", "DP-1");
+    assert!(!runtime.intent_current(&old));
+    assert!(runtime.intent_current(&latest));
+    let all = runtime.intent("work", "*");
+    assert!(!runtime.intent_current(&latest));
+    let one = runtime.intent("work", "DP-2");
+    assert!(!runtime.intent_current(&all));
+    runtime.next_generation();
+    assert!(!runtime.intent_current(&one));
+}

@@ -102,7 +102,7 @@ fn run_model(name: &str, transitions: bool, seed: u64) {
         "pickOnlyMode": false,
         "restoreOnStartup": false,
         "general": { "randomInterval": 0 },
-        "effects": { "autoRecolor": false, "autoTheme": "" },
+        "theme": { "policy": "off" },
         "transition": { "enabled": transitions, "durationMs": 120 },
     }));
 

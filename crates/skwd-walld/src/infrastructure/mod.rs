@@ -1,3 +1,4 @@
+pub(crate) mod activities;
 pub(crate) mod bug_report;
 pub(crate) mod dlqueue;
 pub(crate) mod effects_preview;
@@ -27,6 +28,7 @@ pub(crate) mod sources;
 pub(crate) mod stats;
 pub(crate) mod steam;
 pub(crate) mod steam_download;
+pub(crate) mod steam_subscriptions;
 pub(crate) mod tasks;
 pub(crate) mod templates_seed;
 pub(crate) mod theme_worker;
@@ -38,3 +40,5 @@ pub(crate) mod watcher;
 pub(crate) mod weather;
 pub(crate) mod workspaces;
 pub(crate) mod youtube_download;
+
+pub(crate) mod outdoors;

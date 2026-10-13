@@ -1,3 +1,3 @@
 mod supervisor;
 
-pub(crate) use supervisor::{MediaWorkerSupervisor, TinierPreparation};
+pub(crate) use supervisor::{MediaWorkerSupervisor, TinierPreparation, TinierRequest};

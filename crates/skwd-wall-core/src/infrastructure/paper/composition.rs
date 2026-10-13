@@ -195,6 +195,7 @@ fn composition_assignment(
     live_outputs: &[OutputInfo],
     video_source: &impl Fn(&str) -> Result<Source>,
 ) -> Result<Assignment> {
+    let we_scene = we_scene_project(config, entry);
     let entry = entry
         .as_object()
         .with_context(|| format!("Paper composition entry for {output} must be an object"))?;
@@ -226,10 +227,10 @@ fn composition_assignment(
         .map_or_else(|| config.renderer().volume(), |volume| volume.min(100) as u32);
     let fill_mode = if output == "*" {
         live_outputs.first().map_or_else(FillMode::default, |output| {
-            fill_mode(&config.display().fill_mode_for(&output.name))
+            composition_fill_mode(config, &output.name, we_scene)
         })
     } else {
-        fill_mode(&config.display().fill_mode_for(output))
+        composition_fill_mode(config, output, we_scene)
     };
     let mut assignment = assignment_with_options(
         vec![output.to_string()],
@@ -286,7 +287,7 @@ fn selected_entries(
     let has_live_override = map.keys().any(|output| outputs.contains(output.as_str()));
     if let Some(entry) = wildcard
         && !has_live_override
-        && has_uniform_fill(config, live_outputs)
+        && has_uniform_fill(config, live_outputs, entry)
     {
         return Ok(BTreeMap::from([("*".to_string(), entry.clone())]));
     }
@@ -299,10 +300,35 @@ fn selected_entries(
     Ok(selected)
 }
 
-fn has_uniform_fill(config: &Config, outputs: &[OutputInfo]) -> bool {
+fn we_scene_project(config: &Config, entry: &Value) -> bool {
+    if entry.get(wall_proto::apply_fields::TYPE).and_then(Value::as_str)
+        != Some(wall_proto::kind::WE)
+    {
+        return false;
+    }
+    let Some(we_id) = entry
+        .get(wall_proto::apply_fields::WE_ID)
+        .and_then(Value::as_str)
+        .filter(|id| crate::we::valid_we_id(id))
+    else {
+        return false;
+    };
+    crate::we::read_project_type(&config.we_dir().join(we_id)).0 == crate::we::SCENE_PROJECT_TYPE
+}
+
+fn composition_fill_mode(config: &Config, output: &str, we_scene: bool) -> FillMode {
+    if we_scene {
+        fill_mode(&config.renderer().we_scene_fill_mode(output))
+    } else {
+        fill_mode(&config.display().fill_mode_for(output))
+    }
+}
+
+fn has_uniform_fill(config: &Config, outputs: &[OutputInfo], entry: &Value) -> bool {
+    let we_scene = we_scene_project(config, entry);
     let mut fills = outputs.iter().map(|output| {
         (
-            fill_mode(&config.display().fill_mode_for(&output.name)),
+            composition_fill_mode(config, &output.name, we_scene),
             config.display().background_for(&output.name),
         )
     });

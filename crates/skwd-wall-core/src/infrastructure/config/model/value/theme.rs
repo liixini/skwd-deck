@@ -84,6 +84,14 @@ impl<'a> ThemeConfig<'a> {
         self.array(skwd_config::keys::theme::SAVED_THEMES)
     }
 
+    pub fn app_profile(&self, id: &str) -> &'a str {
+        self.config
+            .get(skwd_config::keys::theme::APP_PROFILES)
+            .and_then(|profiles| profiles.get(id))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    }
+
     pub fn static_custom(&self) -> Vec<String> {
         match self.config.get(skwd_config::keys::theme::CUSTOM_COLORS) {
             Some(Value::Array(colors)) => {

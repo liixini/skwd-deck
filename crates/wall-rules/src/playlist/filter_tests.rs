@@ -12,7 +12,7 @@ fn item<'a>(
     width: i64,
     height: i64,
 ) -> Item<'a> {
-    Item { key, tags, kind, hue, width, height }
+    Item { key, path: "", tags, kind, hue, width, height }
 }
 
 #[test]
@@ -21,6 +21,54 @@ fn folder_from_key() {
     assert_eq!(folder_of("video:a/b/c.mp4"), "a/b");
     assert_eq!(folder_of("static:top.png"), "");
     assert_eq!(folder_of("we:123"), "");
+}
+
+fn at<'a>(key: &'a str, path: &'a str, tags: &'a [String]) -> Item<'a> {
+    Item { key, path, tags, kind: "static", hue: 99, width: 1, height: 1 }
+}
+
+#[test]
+fn subfolders_match() {
+    let deep = at("static:games/mh/a.png", "/w/games/mh/a.png", &[]);
+    assert!(matches(&deep, "folder:/w/games"));
+    assert!(matches(&deep, "folder:/w/games/"));
+    assert!(matches(&deep, "folder:games"));
+    assert!(!matches(&deep, "folder:/w/game"));
+}
+
+#[test]
+fn folder_rules_or() {
+    let deep = at("static:games/mh/a.png", "/w/games/mh/a.png", &[]);
+    let anime = at("static:anime/c.png", "/w/anime/c.png", &[]);
+    let other = at("static:/p/b.png", "/p/b.png", &[]);
+    for item in [&deep, &anime] {
+        assert!(matches(item, "folder:/w/games folder:/w/anime type:image"));
+    }
+    assert!(!matches(&other, "folder:/w/games folder:/w/anime"));
+}
+
+#[test]
+fn folder_rules_narrow() {
+    let anime = at("static:anime/c.png", "/w/anime/c.png", &[]);
+    assert!(!matches(&anime, "folder:/w/anime type:video"));
+}
+
+#[test]
+fn quoted_folder_matches() {
+    let spaced = at("static:/p/Gwenni good/b.png", "/p/Gwenni good/b.png", &[]);
+    assert!(matches(&spaced, r#"folder:"/p/Gwenni good""#));
+}
+
+#[test]
+fn empty_folder_is_root() {
+    assert!(matches(&at("static:top.png", "/w/top.png", &[]), "folder:"));
+    assert!(!matches(&at("static:a/b.png", "/w/a/b.png", &[]), "folder:"));
+}
+
+#[test]
+fn favourites_ignore_paths() {
+    assert!(!source_wants_favourites(r#"folder:"/w/my favourites x""#));
+    assert!(source_wants_favourites("favourites folder:/w"));
 }
 
 #[test]

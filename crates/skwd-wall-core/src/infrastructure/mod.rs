@@ -11,6 +11,7 @@ pub mod database;
 pub mod diagnostics;
 #[cfg(feature = "daemon")]
 pub mod dms;
+pub mod lock_screens;
 #[cfg(feature = "daemon")]
 pub mod matugen;
 #[cfg(feature = "media")]

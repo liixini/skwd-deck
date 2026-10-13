@@ -12,27 +12,31 @@ fn internal_library_paths() {
 fn key_for_path_dirs() {
     let walls = "/home/u/wallpaper";
     let videos = "/home/u/wallpaper-videos";
+    let config = crate::config::Config::from_root(
+        serde_json::json!({"paths":{"wallpaper":walls,"videoWallpaper":videos}}),
+    );
     assert_eq!(
-        key_for_path(Path::new("/home/u/wallpaper/a.png"), walls, videos),
+        key_for_path(Path::new("/home/u/wallpaper/a.png"), &config),
         Some("static:a.png".into())
     );
     assert_eq!(
-        key_for_path(Path::new("/home/u/wallpaper-videos/sub/c.mp4"), walls, videos),
+        key_for_path(Path::new("/home/u/wallpaper-videos/sub/c.mp4"), &config),
         Some("video:sub/c.mp4".into())
     );
-    assert_eq!(key_for_path(Path::new("/etc/passwd"), walls, videos), None);
-    assert_eq!(key_for_path(Path::new("/home/u/wallpaper"), walls, videos), None);
+    assert_eq!(key_for_path(Path::new("/etc/passwd"), &config), None);
+    assert_eq!(key_for_path(Path::new("/home/u/wallpaper"), &config), None);
 }
 
 #[test]
 fn key_same_dir_ext() {
     let dir = "/home/u/wallpaper";
+    let config = crate::config::Config::from_root(serde_json::json!({"paths":{"wallpaper":dir}}));
     assert_eq!(
-        key_for_path(Path::new("/home/u/wallpaper/clip.mp4"), dir, dir),
+        key_for_path(Path::new("/home/u/wallpaper/clip.mp4"), &config),
         Some("video:clip.mp4".into()),
     );
     assert_eq!(
-        key_for_path(Path::new("/home/u/wallpaper/sub/a.webp"), dir, dir),
+        key_for_path(Path::new("/home/u/wallpaper/sub/a.webp"), &config),
         Some("static:sub/a.webp".into())
     );
 }
@@ -148,4 +152,27 @@ fn safe_component_traversal() {
     for bad in ["", ".", "..", "../4242", "a/b", "a\\b", "a b", "we:4242"] {
         assert!(!safe_component(bad), "{bad}");
     }
+}
+
+#[test]
+fn source_identity_stable() {
+    let mut root = serde_json::json!({"paths":{"wallpaper":"/old"},"library":{"folders":["/old","/new","/new/nested"]}});
+    let config = crate::config::Config::from_root(root.clone());
+    assert_eq!(key_for_path(Path::new("/old/same.png"), &config).unwrap(), "static:same.png");
+    assert_eq!(key_for_path(Path::new("/new/same.png"), &config).unwrap(), "static:/new/same.png");
+    let nested = Path::new("/new/nested/clip.mp4");
+    let key = key_for_path(nested, &config).unwrap();
+    assert_eq!(key, "video:/new/nested/clip.mp4");
+    root["library"]["folders"] = serde_json::json!(["/new/nested", "/old", "/new"]);
+    assert_eq!(key_for_path(nested, &crate::config::Config::from_root(root.clone())).unwrap(), key);
+    root["library"]["folders"] = serde_json::json!([]);
+    assert!(key_for_path(nested, &crate::config::Config::from_root(root)).is_none());
+}
+
+#[test]
+fn source_thumbnail_identity() {
+    assert_ne!(thumb_name("/one/a.png"), thumb_name("/two/a.png"));
+    assert_ne!(thumb_name("/one/a.png"), thumb_name("/one/a.jpg"));
+    assert_ne!(thumb_name("/one/a--b.png"), thumb_name("/one/a/b.png"));
+    assert!(thumb_name(&format!("/{}a.png", "deep/".repeat(100))).len() < 64);
 }

@@ -92,6 +92,27 @@ enum PostCommitStep {
 }
 
 impl CommittedApply {
+    fn publish_theme(&self, state: &WallState, connected: impl FnOnce() -> Vec<String>) {
+        let config = state.config().clone();
+        if !config.display().themes_from(&self.0.decision.committed_outputs, connected) {
+            return;
+        }
+        let outdoors = matches!(self.0.decision.source, ApplySource::WeatherSemantic { .. })
+            && crate::composition::runtime::outdoors::active(&config);
+        if outdoors && !config.outdoors_retheme() {
+            state.theme().invalidate_source();
+            return;
+        }
+        if let Some(source) = self.0.theme_source.as_deref() {
+            state.theme().set_source(source);
+            crate::infrastructure::theme_worker::theme_apply_after_async(
+                source,
+                super::theme_delay(),
+                outdoors.then(|| state.theme().source_generation()),
+            );
+        }
+    }
+
     fn drive_publication(mut effect: impl FnMut(PostCommitStep)) {
         for step in [
             PostCommitStep::Theme,
@@ -120,24 +141,23 @@ impl CommittedApply {
         publisher: &dyn EventPublisher,
         stats: &Stats,
     ) -> Value {
-        let receipt = self.0;
+        let receipt = &self.0;
         let decision = &receipt.decision;
         crate::composition::history::note_apply_source(decision.source);
+        crate::composition::runtime::weather::note_apply(
+            state,
+            decision.source,
+            &decision.committed_outputs,
+            Some(&super::applied_library_key(
+                state,
+                decision.media.wire(),
+                &decision.path,
+                &decision.we_id,
+            )),
+        );
         let config = state.config().clone();
         Self::drive_publication(|step| match step {
-            PostCommitStep::Theme => {
-                if let Some(theme_source) = receipt.theme_source.as_deref()
-                    && config
-                        .display()
-                        .themes_from(&decision.committed_outputs, skwd_wall_core::outputs::names)
-                {
-                    state.theme().set_source(theme_source);
-                    crate::infrastructure::theme_worker::theme_apply_after_async(
-                        theme_source,
-                        super::theme_delay(),
-                    );
-                }
-            }
+            PostCommitStep::Theme => self.publish_theme(state, skwd_wall_core::outputs::names),
             PostCommitStep::Stats => {
                 for _ in &decision.committed_outputs {
                     stats.applied(decision.media.wire(), applied_identity(decision));
@@ -298,5 +318,41 @@ mod tests {
     fn retry_uses_a_fresh_commit_generation() {
         assert!(authorize_commit(41, 42).is_err(), "failed attempt cannot publish on retry");
         assert!(authorize_commit(42, 42).is_ok(), "retry owns the current publication slot");
+    }
+    #[test]
+    fn missing_preview_invalidates_weather() {
+        let (_guard, _root) = crate::testenv::lock();
+        crate::testenv::write_config(json!({
+            "weather": {"enabled": true, "source": "outdoors", "outdoors": {"retheme": false}},
+            "display": {"themeOutput": "DP-1"}
+        }));
+        let (state, _, _) = crate::testenv::harness();
+        for media in [MediaKind::Static, MediaKind::Video, MediaKind::WallpaperEngine] {
+            for output in ["DP-1", "DP-2"] {
+                state.theme().set_source("/previous.jpg");
+                let generation = state.theme().source_generation();
+                let decision = ApplyDecision {
+                    generation: state.apply().generation(),
+                    media,
+                    path: "/new".into(),
+                    we_id: "42".into(),
+                    output: output.into(),
+                    committed_outputs: vec![output.into()],
+                    mute: true,
+                    volume: 0,
+                    source: ApplySource::WeatherSemantic { revision: 1 },
+                    notify: false,
+                    random: false,
+                    library_key: "new".into(),
+                    prior_entry: None,
+                };
+                ExecutionReceipt::new(decision, None, String::new())
+                    .commit(&state)
+                    .unwrap()
+                    .publish_theme(&state, || vec!["DP-1".into(), "DP-2".into()]);
+                assert_eq!(state.theme().source_generation() != generation, output == "DP-1");
+                assert_eq!(state.theme().source().as_deref(), Some("/previous.jpg"));
+            }
+        }
     }
 }

@@ -12,6 +12,7 @@ pub mod ev {
     pub const FOLDER_REMOVED: &str = "skwd.wall.folder_removed";
     pub const SCAN_DONE: &str = "skwd.wall.scan_done";
     pub const SEMANTIC_INDEX_READY: &str = "skwd.wall.semantic_index_ready";
+    pub const WEATHER_CHANGED: &str = "skwd.wall.weather_changed";
     pub const CONFIG_CHANGED: &str = "skwd.wall.config_changed";
     pub const POWER_CHANGED: &str = "skwd.wall.power_changed";
     pub const OUTPUTS_CHANGED: &str = "skwd.wall.outputs_changed";
@@ -144,6 +145,18 @@ pub mod ev {
         pub detail: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub queued: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub activity: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub apply_token: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub task_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub visible: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub cancelled: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub superseded: Option<bool>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -193,7 +206,10 @@ pub mod ev {
     }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-    pub struct ConfigChanged {}
+    pub struct ConfigChanged {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pub library_changed: bool,
+    }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
     pub struct WatchError {

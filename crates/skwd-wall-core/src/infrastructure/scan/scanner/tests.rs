@@ -30,26 +30,24 @@ fn scan_thread_count_is_bounded() {
 
 #[test]
 fn changed_kind_routing() {
-    let wallpapers = Path::new("/wp");
-    let videos = Path::new("/vid");
+    let config = crate::config::Config::from_root(
+        serde_json::json!({"paths":{"wallpaper":"/wp","videoWallpaper":"/vid"}}),
+    );
     assert_eq!(
-        changed_kind(Path::new("/wp/sub/a.png"), wallpapers, videos),
+        changed_kind(Path::new("/wp/sub/a.png"), &config),
         Some(("static", "sub/a.png".to_string()))
     );
     assert_eq!(
-        changed_kind(Path::new("/vid/clip.mp4"), wallpapers, videos),
+        changed_kind(Path::new("/vid/clip.mp4"), &config),
         Some(("video", "clip.mp4".to_string()))
     );
     assert_eq!(
-        changed_kind(Path::new("/wp/clip.mp4"), wallpapers, videos),
-        Some(("video", "clip.mp4".to_string())),
+        changed_kind(Path::new("/wp/clip.mp4"), &config),
+        Some(("video", "/wp/clip.mp4".to_string())),
     );
-    assert_eq!(changed_kind(Path::new("/wp/notes.txt"), wallpapers, videos), None);
-    assert_eq!(
-        changed_kind(Path::new("/wp/.skwd-wall-v2/trash/images/a.png"), wallpapers, videos,),
-        None
-    );
-    assert_eq!(changed_kind(Path::new("/elsewhere/a.png"), wallpapers, videos), None);
+    assert_eq!(changed_kind(Path::new("/wp/notes.txt"), &config), None);
+    assert_eq!(changed_kind(Path::new("/wp/.skwd-wall-v2/trash/images/a.png"), &config), None);
+    assert_eq!(changed_kind(Path::new("/elsewhere/a.png"), &config), None);
 }
 
 #[test]
@@ -211,4 +209,23 @@ fn row_json_wire_shape() {
     assert_eq!(item.path.as_deref(), Some("/data/壁纸/a.png"));
     assert_eq!(json["width"], 1920);
     assert!(json.get("thumb_sm").is_some());
+}
+
+#[test]
+fn excluded_media_skips_decode() {
+    let directory = tempfile::tempdir().unwrap();
+    let hidden = directory.path().join("Sus/deep");
+    std::fs::create_dir_all(&hidden).unwrap();
+    let image = hidden.join("invalid.png");
+    let video = hidden.join("invalid.mp4");
+    for path in [&image, &video] {
+        std::fs::write(path, b"invalid media").unwrap();
+    }
+    let state = crate::WallState::test_new(
+        serde_json::json!({"paths":{"wallpaper":directory.path()},"library":{"excludedFolders":["Sus/"]}}),
+    );
+    assert_eq!(super::scan(&state, |_| panic!("excluded image")), 0);
+    assert_eq!(super::scan_videos(&state, |_| panic!("excluded video")), 0);
+    assert_eq!(super::scan_paths(&state, &[image, video], |_| panic!("excluded delta")), 0);
+    assert_eq!(state.with_db(crate::db::item_count).unwrap(), 0);
 }

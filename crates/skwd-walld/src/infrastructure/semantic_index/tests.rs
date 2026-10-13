@@ -1,5 +1,78 @@
 use super::*;
 
+#[cfg(unix)]
+#[test]
+fn weather_query_uses_relevance() {
+    let directory = tempfile::tempdir().unwrap();
+    let helper = directory.path().join("lens-helper");
+    let request_path = directory.path().join("request.json");
+    let script = format!(
+        "#!/bin/sh\nread request\nprintf '%s\\n' \"$request\" > '{}'\nprintf '%s\\n' '{{\"generation\":0,\"queryMs\":1.0,\"searchMs\":1.0,\"matches\":[{{\"rank\":1,\"key\":\"static:first.png\",\"score\":0.5}},{{\"rank\":2,\"key\":\"static:second.png\",\"score\":0.4}}],\"error\":null}}'\n",
+        request_path.display()
+    );
+    make_executable(&helper);
+    std::fs::write(&helper, script).unwrap();
+    let paths = SemanticPaths {
+        helper,
+        manifest: directory.path().join("manifest.json"),
+        runtime: directory.path().join("runtime.so"),
+        index: directory.path().join("index.sidx"),
+        multiview: false,
+    };
+    let keys = search_weather_index(
+        &paths,
+        &WeatherQuery {
+            query: "rainy skyline",
+            negative: None,
+            top_k: 8,
+            score_window: 0.022,
+            prominence: 0.015,
+        },
+    )
+    .unwrap();
+    assert_eq!(keys, ["static:first.png", "static:second.png"]);
+    let request: SearchRequest =
+        serde_json::from_slice(&std::fs::read(request_path).unwrap()).unwrap();
+    assert_eq!(request.query, "rainy skyline");
+    assert_eq!(request.top_k, 8);
+    assert_eq!(request.score_window, Some(0.022));
+    assert_eq!(request.min_score_prominence, Some(0.015));
+    assert_eq!(request.max_results, None);
+    assert_eq!(request.min_results, 0);
+}
+
+#[test]
+fn weather_failure_retries() {
+    let result = Err(String::from("helper unavailable"));
+    let recent = (7, Instant::now(), result.clone());
+    let expired = (
+        7,
+        Instant::now().checked_sub(crate::infrastructure::weather::refresh_interval()).unwrap(),
+        result,
+    );
+    assert!(weather_cache_fresh(&recent, 7));
+    assert!(!weather_cache_fresh(&expired, 7));
+    assert!(!weather_cache_fresh(&recent, 8));
+    let success = (7, expired.1, Ok(vec![String::from("static:one.png")]));
+    assert!(weather_cache_fresh(&success, 7));
+}
+
+#[test]
+fn preview_preserves_weather_cache() {
+    let (_guard, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({"weather":{"source":"semantic"}}));
+    let state = Arc::new(WallState::open().unwrap());
+    let previous = lock(&WEATHER_CACHE).take();
+    *lock(&WEATHER_CACHE) =
+        Some((17, Instant::now(), Ok(vec![String::from("static:current.png")])));
+    assert!(weather_preview_search(&state, "rainy", 32, 0.022, 0.015).is_err());
+    assert_eq!(
+        lock(&WEATHER_CACHE).as_ref().unwrap().2,
+        Ok(vec![String::from("static:current.png")])
+    );
+    *lock(&WEATHER_CACHE) = previous;
+}
+
 #[tokio::test]
 async fn refresh_requests_coalesce() {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -227,4 +300,52 @@ fn empty_catalog_removes_index_and_fingerprint() {
     assert!(!index.exists());
     assert!(!fingerprint.exists());
     clear_index(&index).unwrap();
+}
+
+#[test]
+fn response_limits_are_independent() {
+    let responses: Vec<_> = (0..3)
+        .map(|generation| SearchResponse::from_matches(generation, Vec::new(), 0.0, 0.0))
+        .collect();
+    let lines: Vec<_> =
+        responses.iter().map(|response| serde_json::to_string(response).unwrap()).collect();
+    let limit = lines[0].len() as u64 + 1;
+    let wire = format!("{}\n", lines.join("\n"));
+    assert!(wire.len() as u64 > limit);
+    let decoded =
+        read_responses(&mut wire.as_bytes(), &[0, 1, 2], Vec::new(), Vec::push, limit).unwrap();
+    assert_eq!(decoded, responses);
+    let oversized =
+        read_responses(&mut wire.as_bytes(), &[0, 1, 2], Vec::new(), Vec::push, limit - 1)
+            .unwrap_err();
+    assert_eq!(oversized, WEATHER_RESPONSE_TOO_LARGE);
+}
+
+#[test]
+fn response_generations_are_checked() {
+    let response = SearchResponse::from_matches(7, Vec::new(), 0.0, 0.0);
+    let wire = format!("{}\n", serde_json::to_string(&response).unwrap());
+    let wrong =
+        read_responses(&mut wire.as_bytes(), &[8], Vec::new(), Vec::push, WEATHER_RESPONSE_BYTES)
+            .unwrap_err();
+    assert_eq!(wrong, WEATHER_GENERATION_MISMATCH);
+    let extra = read_responses(
+        &mut wire.repeat(2).as_bytes(),
+        &[7],
+        Vec::new(),
+        Vec::push,
+        WEATHER_RESPONSE_BYTES,
+    )
+    .unwrap_err();
+    assert_eq!(extra, WEATHER_GENERATION_MISMATCH);
+    assert!(
+        read_responses(
+            &mut wire.as_bytes(),
+            &[7, 8],
+            Vec::new(),
+            Vec::push,
+            WEATHER_RESPONSE_BYTES,
+        )
+        .is_err()
+    );
 }

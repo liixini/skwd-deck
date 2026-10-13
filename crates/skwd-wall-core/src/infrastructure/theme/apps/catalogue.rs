@@ -8,6 +8,8 @@ pub(super) struct Recipe {
     pub signal: Option<i32>,
 }
 
+pub(super) const WAYBAR_ID: &str = "waybar";
+
 pub(super) const RECIPES: [Recipe; 9] = [
     Recipe {
         id: "foot",
@@ -82,7 +84,7 @@ pub(super) const RECIPES: [Recipe; 9] = [
         signal: None,
     },
     Recipe {
-        id: "waybar",
+        id: WAYBAR_ID,
         name: "Waybar",
         config: "waybar/style.css",
         output: "skwd-colors.css",

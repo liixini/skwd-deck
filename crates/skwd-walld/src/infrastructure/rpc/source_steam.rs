@@ -23,7 +23,7 @@ pub(super) fn steam_search(ctx: &Ctx, request: &Request) -> Response {
         0 | 1 | 3 | 9 | 21 => requested_query_type as u32,
         _ => 3,
     };
-    let params = steam::SearchParams {
+    let mut params = steam::SearchParams {
         query: request.str_param("query", "").to_string(),
         query_type,
         days: request.opt_i64("days").unwrap_or(7).max(0) as u32,
@@ -32,11 +32,23 @@ pub(super) fn steam_search(ctx: &Ctx, request: &Request) -> Response {
         page: request.opt_i64("page").unwrap_or(1).max(1) as u32,
         numperpage: request.opt_i64("numperpage").unwrap_or(30).clamp(1, 50) as u32,
     };
+    let item_id = wall_proto::workshop_id(&params.query);
+    if let Some(id) = item_id {
+        params.query = id.to_string();
+    }
     let (backend, api_key, wallpaper_engine_dir) = {
         let config = state.config();
         (config.steam_backend(), config.steam_api_key(), config.we_dir())
     };
-    let page = match if backend == "steam" {
+    let mut page = match if let Some(id) = item_id {
+        if params.page > 1 {
+            Ok(steam::SearchPage { results: Vec::new(), last_page: 1, current_page: params.page })
+        } else if backend == steam::CLIENT_BACKEND {
+            steam_helper_search(&params)
+        } else {
+            steam::item_details(id)
+        }
+    } else if backend == "steam" {
         steam_helper_search(&params)
     } else {
         steam::search(&params, &api_key)
@@ -51,6 +63,11 @@ pub(super) fn steam_search(ctx: &Ctx, request: &Request) -> Response {
             );
         }
     };
+    if item_id.is_some() {
+        page.results.retain(|item| steam::matches_tags(item, &params));
+        page.current_page = 1;
+        page.last_page = 1;
+    }
     let local = steam::downloaded_ids(&wallpaper_engine_dir);
     let items: Vec<wall_proto::sources::ListItem> = page
         .results

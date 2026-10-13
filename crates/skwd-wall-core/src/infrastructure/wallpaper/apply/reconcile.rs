@@ -302,11 +302,11 @@ fn reconcile_outputs_inner(
     }
 
     for outputs in we_groups.values() {
-        if super::policy::independent_playback(state) {
-            keep_video.extend(outputs.iter().cloned());
-        } else {
-            keep_video.push(crate::we::scene_renderer_key(outputs));
-        }
+        keep_video.extend(
+            crate::we::scene_output_groups(state, outputs)
+                .iter()
+                .map(|group| crate::we::scene_renderer_key(group)),
+        );
     }
     keep_video.sort();
     keep_video.dedup();

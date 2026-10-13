@@ -172,6 +172,73 @@ fn distinct_we_launch_audio() {
 }
 
 #[test]
+fn native_scene_display_placement() {
+    let cases = [
+        (
+            serde_json::json!({"fillMode": "fill", "fillModes": {"DP-2": "fit"}}),
+            vec![("DP-1", "fill", false), ("DP-2", "fit", true)],
+        ),
+        (
+            serde_json::json!({"fillMode": "fill", "fillModes": {"DP-1": "fit", "DP-2": "fit"}}),
+            vec![("DP-1,DP-2", "fit", false)],
+        ),
+    ];
+    for (display, expected) in cases {
+        let st = Stub::with_display(&display);
+        let item = st.config().we_dir().join("42");
+        std::fs::create_dir_all(&item).unwrap();
+        std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+        let groups = std::collections::BTreeMap::from([(
+            "42".to_string(),
+            vec!["DP-1".to_string(), "DP-2".to_string()],
+        )]);
+        let audio = std::collections::BTreeMap::from([("42".to_string(), (false, 45))]);
+        with_readiness(&st, || rebuild_we(&st, groups.clone(), audio)).unwrap();
+        let launches: std::collections::BTreeMap<_, _> =
+            settled_spawns(st.path()).into_iter().map(|args| (args[0].clone(), args)).collect();
+        assert_eq!(launches.len(), expected.len());
+        for &(output, mode, mute) in &expected {
+            assert!(launches[output].windows(2).any(|pair| pair == ["--fill-mode", mode]));
+            let mute = if mute { "true" } else { "false" };
+            assert!(launches[output].windows(2).any(|pair| pair == ["--mute", mute]));
+            assert!(st.renderers().has_video_paper(output));
+        }
+        let updated_audio = std::collections::BTreeMap::from([("42".to_string(), (false, 64))]);
+        with_readiness(&st, || rebuild_we(&st, groups, updated_audio)).unwrap();
+        assert_eq!(settled_spawns(st.path()).len(), expected.len());
+        for (pid, args) in launch_order(st.path()) {
+            let output = args[0].as_str();
+            let mute = expected.iter().find(|(name, _, _)| *name == output).unwrap().2;
+            let commands = wait_stdin_lines(&st.path().join(format!("{pid}.stdin")), 1);
+            assert_eq!(commands[0], serde_json::json!({"to": "", "mute": mute, "volume": 64}));
+        }
+    }
+}
+
+#[test]
+fn reconcile_scene_placement() {
+    let display = serde_json::json!({"fillMode": "fill", "fillModes": {"DP-2": "fit"}});
+    let st = Stub::with_display(&display);
+    let item = st.config().we_dir().join("42");
+    std::fs::create_dir_all(&item).unwrap();
+    std::fs::write(item.join("scene.pkg"), b"fixture").unwrap();
+    for output in ["DP-1", "DP-2"] {
+        seed(&st, output, "we", "", "42", true, 50);
+    }
+
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], false, "", 0).unwrap();
+
+    let launches: std::collections::BTreeMap<_, _> =
+        settled_spawns(st.path()).into_iter().map(|args| (args[0].clone(), args)).collect();
+    assert_eq!(launches.len(), 2);
+    for (output, fill) in [("DP-1", "fill"), ("DP-2", "fit")] {
+        assert!(launches[output].windows(2).any(|pair| pair == ["--fill-mode", fill]));
+        let pid = st.renderers().video_paper_pid(output).unwrap();
+        assert!(Path::new(&format!("/proc/{pid}")).exists());
+    }
+}
+
+#[test]
 fn resolve_we_empty() {
     let st = serde_json::json!({ "DP-1": {"type": "static", "path": "/w/a.webp"} });
     let (groups, _) = resolve_we_from_state(st.as_object().unwrap());
@@ -1612,7 +1679,7 @@ fn multi_manifest_audio_and_from() {
     )
     .unwrap();
 
-    let launches = settled_spawns(st.path());
+    let launches = wait_spawns(st.path(), 1);
     assert_eq!(launches.len(), 1);
     let args = &launches[0];
     assert_eq!(args.first().map(String::as_str), Some("--multi-json"));
@@ -2135,6 +2202,11 @@ fn maximized_display_pause_uses_independent_renderers() {
         }}));
         assert_eq!(super::policy::independent_playback(&state), independent);
     }
+    let state = WallState::test_new(serde_json::json!({"display": {
+        "fillMode": "fill", "backgroundModes": {"DP-1": "blur"}
+    }}));
+    state.renderers().set_independent_playback(true);
+    assert!(super::policy::independent_playback(&state));
 }
 
 #[test]
@@ -2320,8 +2392,10 @@ fn background_policy_refresh_replaces_same_path_still() {
     st.renderers().set_policy(PAPER_POLICY_KEY, "previous-background");
     reconcile_outputs(&st, &["DP-1".into()], &ReconcileIntent::PolicyRefresh).unwrap();
     let current = st.renderers().wallpaper_pids();
+    assert!(!previous.is_empty());
     assert!(!current.is_empty());
     assert!(current.iter().all(|pid| !previous.contains(pid)));
+    wait_spawns(st.path(), previous.len() + current.len());
     for pid in current {
         let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
         let environment = String::from_utf8_lossy(&environment);
@@ -2368,4 +2442,106 @@ fn background_overrides_split_shared_video_and_disable_awww_wildcard() {
     assert!(st.renderers().has_video_paper("DP-1"));
     assert!(st.renderers().has_video_paper("DP-2"));
     assert!(!st.renderers().has_video_paper("*"));
+}
+
+#[test]
+fn covered_video_backgrounds_share() {
+    let _guard = crate::outputs::enum_exclusive();
+    let st = Stub::with_display(&serde_json::json!({
+        "fillMode": "fill",
+        "outputLocks": {"DP-2": true},
+        "backgroundModes": {"DP-1": "blur", "DP-3": "color"},
+        "backgroundColors": {"DP-1": "#6e4080", "DP-3": "#534080"}
+    }));
+    let fake = st.path().join("outputs");
+    std::fs::write(&fake, "DP-1:1920x1080,DP-2:1920x1080,DP-3:1920x1080").unwrap();
+    let previous_env = std::env::var_os("SKWD_FAKE_OUTPUTS_FILE");
+    unsafe { std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", &fake) };
+    seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
+    seed(&st, "DP-2", "static", "/w/b.png", "", true, 0);
+    seed(&st, "DP-3", "video", "/v/a.mp4", "", true, 80);
+    let independent = super::policy::independent_playback(&st);
+    let result =
+        reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into(), "DP-3".into()], false, "", 0);
+    unsafe {
+        match previous_env {
+            Some(value) => std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", value),
+            None => std::env::remove_var("SKWD_FAKE_OUTPUTS_FILE"),
+        }
+    }
+    result.unwrap();
+    assert!(!independent);
+    let launches = settled_spawns(st.path());
+    let multi: Vec<_> = launches
+        .iter()
+        .filter(|args| args.first().is_some_and(|arg| arg == "--multi-json"))
+        .collect();
+    assert_eq!(multi.len(), 1);
+    let entries: Vec<paper_control::MultiVideoEntry> = serde_json::from_str(&multi[0][1]).unwrap();
+    assert_eq!(
+        entries.iter().map(|entry| entry.output.as_str()).collect::<Vec<_>>(),
+        ["DP-1", "DP-3"]
+    );
+    assert!(st.renderers().has_video_paper("multi"));
+    assert!(!st.renderers().has_video_paper("DP-1"));
+    assert!(!st.renderers().has_video_paper("DP-3"));
+}
+
+#[test]
+fn mixed_video_fills_split() {
+    let st = Stub::with_display(&serde_json::json!({
+        "fillMode": "fill", "fillModes": {"DP-3": "fit"}
+    }));
+    seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
+    seed(&st, "DP-3", "video", "/v/a.mp4", "", true, 80);
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-3".into()], false, "", 0).unwrap();
+    assert!(st.renderers().has_video_paper("DP-1"));
+    assert!(st.renderers().has_video_paper("DP-3"));
+    assert!(!st.renderers().has_video_paper("multi"));
+}
+
+#[test]
+fn covered_stills_share() {
+    let st = Stub::with_display(&serde_json::json!({
+        "fillMode": "fill",
+        "backgroundModes": {"DP-1": "blur", "DP-3": "color"},
+        "backgroundColors": {"DP-3": "#534080"}
+    }));
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-3", "static", "/w/a.png", "", true, 0);
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-3".into()], false, "", 0).unwrap();
+    assert!(st.renderers().has_output_still("DP-1,DP-3"));
+    assert!(!st.renderers().has_output_still("DP-1"));
+    assert!(!st.renderers().has_output_still("DP-3"));
+}
+
+#[test]
+fn visible_video_backgrounds_split() {
+    let _guard = crate::outputs::enum_exclusive();
+    for mode in ["fit", "center"] {
+        let st = Stub::with_display(&serde_json::json!({
+            "fillMode": mode,
+            "backgroundModes": {"DP-1": "blur", "DP-3": "color"},
+            "backgroundColors": {"DP-3": "#534080"}
+        }));
+        let fake = st.path().join("outputs");
+        std::fs::write(&fake, "DP-1:1920x1080,DP-3:1920x1080").unwrap();
+        let previous_env = std::env::var_os("SKWD_FAKE_OUTPUTS_FILE");
+        unsafe { std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", &fake) };
+        seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
+        seed(&st, "DP-3", "video", "/v/a.mp4", "", true, 80);
+        let independent = super::policy::independent_playback(&st);
+        let result = reconcile_ready(&st, mode, &["DP-1".into(), "DP-3".into()], false, "", 0);
+        unsafe {
+            match previous_env {
+                Some(value) => std::env::set_var("SKWD_FAKE_OUTPUTS_FILE", value),
+                None => std::env::remove_var("SKWD_FAKE_OUTPUTS_FILE"),
+            }
+        }
+        result.unwrap();
+        assert!(independent);
+        assert!(st.renderers().has_video_paper("DP-1"));
+        assert!(st.renderers().has_video_paper("DP-3"));
+        assert!(!st.renderers().has_video_paper("multi"));
+    }
 }

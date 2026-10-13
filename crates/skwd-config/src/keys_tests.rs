@@ -559,3 +559,14 @@ fn launch_keys_pinned() {
     assert_eq!(keys::motion::LAUNCH_SPEED, "motion.launchSpeed");
     assert_eq!(keys::motion::FILTER_SWAP_SPEED, "motion.filterSwapSpeed");
 }
+
+#[test]
+fn lockscreen_key_contract() {
+    assert_eq!(keys::lock_screens::MODE, "lockScreens.mode");
+    assert_eq!(keys::lock_screens::IMAGE, "lockScreens.image");
+    assert_eq!(keys::lock_screens::HYPRLOCK, "lockScreens.hyprlock");
+    assert_eq!(keys::lock_screens::SWAYLOCK, "lockScreens.swaylock");
+    assert_eq!(keys::lock_screens::DMS, "lockScreens.dms");
+    assert_eq!(keys::lock_screens::NOCTALIA, "lockScreens.noctalia");
+    assert_eq!(keys::lock_screens::SDDM_IMAGE, "lockScreens.sddmImage");
+}

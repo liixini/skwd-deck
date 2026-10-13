@@ -44,6 +44,7 @@ for path in \
     "$root/LICENSES/Apache-2.0.txt" \
     "$root/LICENSES/MIT.txt" \
     "$root/LICENSES/cosmic-protocols.txt" \
+    "$root/LICENSES/steamworks-sys-MIT.txt" \
     "$root/LICENSES/ffmpeg-sys-the-third-WTFPL.txt"
 do
     if [ ! -f "$path" ]; then
@@ -72,6 +73,7 @@ install -m644 "$root/LICENSE" "$license_directory/LICENSE"
 install -m644 "$root/LICENSES/Apache-2.0.txt" "$license_directory/Apache-2.0.txt"
 install -m644 "$root/LICENSES/MIT.txt" "$license_directory/MIT.txt"
 install -m644 "$root/LICENSES/cosmic-protocols.txt" "$license_directory/cosmic-protocols.txt"
+install -m644 "$root/LICENSES/steamworks-sys-MIT.txt" "$license_directory/steamworks-sys-MIT.txt"
 install -m644 "$root/LICENSES/ffmpeg-sys-the-third-WTFPL.txt" \
     "$license_directory/ffmpeg-sys-the-third-LICENSE"
 for template in "$root"/data/matugen/templates/*; do

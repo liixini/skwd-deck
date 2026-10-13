@@ -6,6 +6,12 @@ use serde_json::Value;
 
 use crate::config::Config;
 
+const SHELL_ENTRY: &str = "shell.qml";
+
+pub(crate) fn shell_available(config_dir: &Path) -> bool {
+    shell_dir(config_dir).is_ok_and(|shell| shell.join(SHELL_ENTRY).is_file())
+}
+
 fn shell_dir(config_dir: &Path) -> anyhow::Result<PathBuf> {
     let valid = |path: &Path| path.join("matugen/configs/base.toml").is_file();
     if let Some(path) = skwd_config::env("DMS_SHELL_DIR").filter(|path| !path.is_empty()) {

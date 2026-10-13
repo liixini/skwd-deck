@@ -2,7 +2,21 @@ use serde_json::Value;
 
 use super::DisplayConfig;
 
+const GLOBAL_OUTPUT: &str = "*";
+
 impl DisplayConfig<'_> {
+    pub fn background_affects_for(&self, output: &str) -> bool {
+        matches!(
+            self.fill_mode_for(output).parse().unwrap_or_default(),
+            wall_geom::FillMode::Fit | wall_geom::FillMode::Center
+        )
+    }
+
+    pub fn background_differs_for(&self, output: &str) -> bool {
+        self.background_affects_for(output)
+            && self.background_for(output) != self.background_for(GLOBAL_OUTPUT)
+    }
+
     pub fn background_for(&self, output: &str) -> paper_control::Background {
         let output = output.split(',').next().unwrap_or(output);
         let mode = self

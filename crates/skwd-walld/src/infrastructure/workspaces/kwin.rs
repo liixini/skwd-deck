@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
 use skwd_wall_core::WallState;
@@ -115,29 +114,17 @@ fn refresh(engine: &Engine, state: &WallState) {
 
 fn listen(engine: &Engine, state: &WallState) -> std::io::Result<()> {
     refresh(engine, state);
-    let mut child = crate::infrastructure::proc::tool("dbus-monitor")
-        .args([
-            "--session",
+    crate::infrastructure::proc::monitor_signals(
+        &[
             &format!("type='signal',interface='{VDM_IFACE}'"),
             "type='signal',interface='org.kde.KWin',member='currentDesktopChanged'",
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Ok(());
-    };
-    for line in BufReader::new(stdout).lines() {
-        if is_desktop_signal(&line?) {
-            refresh(engine, state);
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-    Ok(())
+        ],
+        |line| {
+            if is_desktop_signal(line) {
+                refresh(engine, state);
+            }
+        },
+    )
 }
 
 pub(super) fn reader_loop(engine: &Arc<Engine>, state: &Arc<WallState>) {

@@ -166,6 +166,79 @@ fn render_integrations_filter() {
 }
 
 #[test]
+fn custom_profiles_keep_outputs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let template = tmp.path().join("t.conf");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    let nord = tmp.path().join("nord.conf");
+    let missing = tmp.path().join("missing.conf");
+    let bridge = tmp.path().join("colors.json");
+    let config = crate::config::Config::from_root(json!({"paths": {
+        "cache": tmp.path()
+    }, "integrations": [
+        {"name": "one", "template": template, "output": nord, "profile": "nord"},
+        {"name": "two", "template": template, "output": missing, "profile": "missing"},
+        {"name": "bridge", "template": template, "output": bridge, "profile": "nord"}
+    ]}));
+    std::fs::write(&missing, "existing").unwrap();
+    std::fs::write(&bridge, "global").unwrap();
+    assert_eq!(render_integrations_where(&config, &serde_json::Value::Null, true, |_| true), 1);
+    assert_eq!(std::fs::read_to_string(&missing).unwrap(), "existing");
+    assert_eq!(std::fs::read_to_string(&bridge).unwrap(), "global");
+    assert!(std::fs::read_to_string(&nord).unwrap().starts_with('#'));
+
+    let cleared = crate::config::Config::from_root(json!({"integrations": [
+        {"name": "one", "template": template, "output": nord, "profile": ""},
+        {"name": "two", "template": template, "output": missing, "enabled": false}
+    ]}));
+    let mut current = nordish();
+    current["primary"] = json!("#123456");
+    assert_eq!(render_integrations_where(&cleared, &current, true, |_| true), 1);
+    assert_eq!(std::fs::read_to_string(&nord).unwrap(), "#123456");
+    assert_eq!(std::fs::read_to_string(&missing).unwrap(), "existing");
+}
+
+#[test]
+fn custom_aliases_preserve_global() {
+    let tmp = tempfile::tempdir().unwrap();
+    let template = tmp.path().join("template");
+    let global = tmp.path().join("colors.json");
+    let alias = tmp.path().join("alias");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::write(&global, "global").unwrap();
+    std::os::unix::fs::symlink(&global, &alias).unwrap();
+    std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+    std::os::unix::fs::symlink(tmp.path().join("subdir"), tmp.path().join("dirlink")).unwrap();
+    let config = crate::config::Config::from_root(json!({"paths": {
+        "cache": tmp.path()
+    }, "integrations": [
+        {"template": template, "output": alias, "profile": "nord"},
+        {"template": template, "output": tmp.path().join("other/../colors.json"), "profile": "nord"},
+        {"template": template, "output": tmp.path().join("dirlink/../colors.json"), "profile": "nord"}
+    ]}));
+    assert_eq!(render_integrations_where(&config, &Value::Null, true, |_| true), 0);
+    assert_eq!(std::fs::read_to_string(&global).unwrap(), "global");
+}
+
+#[test]
+fn unrelated_alias_renders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let template = tmp.path().join("template");
+    let target = tmp.path().join("custom.colors");
+    let alias = tmp.path().join("alias");
+    std::fs::write(&template, "{{colors.primary.default.hex}}").unwrap();
+    std::fs::write(&target, "old").unwrap();
+    std::os::unix::fs::symlink(&target, &alias).unwrap();
+    let config = crate::config::Config::from_root(json!({"paths": {
+        "cache": tmp.path()
+    }, "integrations": [
+        {"template": template, "output": alias, "profile": "nord"}
+    ]}));
+    assert_eq!(render_integrations_where(&config, &Value::Null, true, |_| true), 1);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "#88c0d0");
+}
+
+#[test]
 fn render_keeps_unknown() {
     let map = material_map(&nordish(), true);
     for weird in [

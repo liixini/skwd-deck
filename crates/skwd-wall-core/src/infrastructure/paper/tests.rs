@@ -430,6 +430,53 @@ fn composition_wildcard_divergent_fills() {
 }
 
 #[test]
+fn composition_we_scaling_precedence() {
+    let adapter = composition_adapter();
+    let outputs = [output("DP-2", 60_000), output("DP-1", 60_000)];
+    let state = json!({"*": crate::audio::entry("we", "", "431960", true, 80)});
+    let display = json!({"fillMode": "fill", "fillModes": {"DP-2": "fit"}});
+    let default = Config::from_root(json!({
+        "display": display,
+        "weRender": {"scaling": "default"}
+    }));
+    let request = replacement(adapter.composition_plan(&default, &state, &outputs).unwrap());
+    assert_eq!(request.assignments.len(), 2);
+    assert_eq!(request.assignments[0].outputs, ["DP-1"]);
+    assert_eq!(request.assignments[0].fill_mode, FillMode::Fill);
+    assert_eq!(request.assignments[1].outputs, ["DP-2"]);
+    assert_eq!(request.assignments[1].fill_mode, FillMode::Fit);
+
+    let explicit = Config::from_root(json!({
+        "display": display,
+        "weRender": {"scaling": "fill"}
+    }));
+    let request = replacement(adapter.composition_plan(&explicit, &state, &outputs).unwrap());
+    assert_eq!(request.assignments.len(), 1);
+    assert_eq!(request.assignments[0].outputs, ["*"]);
+    assert_eq!(request.assignments[0].fill_mode, FillMode::Fill);
+}
+
+#[test]
+fn we_video_display_placement() {
+    let adapter = composition_adapter();
+    let workshop = tempfile::tempdir().unwrap();
+    let project = workshop.path().join("431960");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("project.json"), r#"{"type":"video","file":"clip.mp4"}"#).unwrap();
+    let config = Config::from_root(json!({
+        "paths": {"steamWorkshop": workshop.path().to_string_lossy()},
+        "display": {"fillMode": "fill", "fillModes": {"DP-2": "fit"}},
+        "weRender": {"scaling": "fill"}
+    }));
+    let state = json!({"*": crate::audio::entry("we", "", "431960", true, 80)});
+    let outputs = [output("DP-2", 60_000), output("DP-1", 60_000)];
+    let request = replacement(adapter.composition_plan(&config, &state, &outputs).unwrap());
+    assert_eq!(request.assignments.len(), 2);
+    assert_eq!(request.assignments[0].fill_mode, FillMode::Fill);
+    assert_eq!(request.assignments[1].fill_mode, FillMode::Fit);
+}
+
+#[test]
 fn composition_wildcard_override_dedup() {
     let adapter = composition_adapter();
     let config = Config::from_root(json!({

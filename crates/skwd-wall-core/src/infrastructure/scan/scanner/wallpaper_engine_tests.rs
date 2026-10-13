@@ -17,7 +17,7 @@ fn missing_and_corrupt_previews_keep_valid_thumbnail_artifacts() {
         assert_eq!((result.width, result.height), (0, 0));
         assert!(artifacts_ready(&thumb));
         assert!(small.is_file());
-        assert!(sources_unchanged(&item, None, &thumb));
+        assert!(we_sources_unchanged(&item, None, &thumb));
     }
     image::RgbImage::from_pixel(8, 8, image::Rgb([255, 0, 0]))
         .save(item.join("thumbnail.png"))
@@ -27,7 +27,7 @@ fn missing_and_corrupt_previews_keep_valid_thumbnail_artifacts() {
         .unwrap()
         .set_times(std::fs::FileTimes::new().set_modified(later))
         .unwrap();
-    assert!(!sources_unchanged(&item, None, &thumb));
+    assert!(!we_sources_unchanged(&item, None, &thumb));
     let result = generate_thumbnails(&item, "42", None, &thumb, &small).unwrap();
     assert_eq!((result.width, result.height), (8, 8));
 }

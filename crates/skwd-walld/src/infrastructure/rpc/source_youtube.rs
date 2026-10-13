@@ -19,7 +19,14 @@ pub(super) fn youtube_source_download(ctx: &Ctx, request: &Request) -> Response 
     }
     let (video_dir, max_height, max_minutes) = {
         let config = state.config();
-        (config.video_dir(), config.youtube_max_height(), config.youtube_max_minutes())
+        (
+            config.library_destination(true),
+            config.youtube_max_height(),
+            config.youtube_max_minutes(),
+        )
+    };
+    let Some(video_dir) = video_dir else {
+        return Response::err(request.id, INVALID_PARAMS, LIBRARY_FOLDER_REQUIRED);
     };
     let start = request.opt_i64("start").unwrap_or(0).max(0) as u64;
     let duration = match request.opt_i64("dur") {
@@ -27,7 +34,11 @@ pub(super) fn youtube_source_download(ctx: &Ctx, request: &Request) -> Response 
         Some(_) => 0,
         None => max_minutes.saturating_mul(60),
     };
-    if let Some(existing) = crate::infrastructure::youtube_download::finished_video(&video_dir, &id)
+    if let Some(existing) = state
+        .config()
+        .library_folders()
+        .iter()
+        .find_map(|folder| crate::infrastructure::youtube_download::finished_video(folder, &id))
     {
         return respond_exists(request.id, events.as_ref(), &id, &existing);
     }

@@ -196,10 +196,40 @@ pub fn picker_palette_json(cols: &[String]) -> Option<serde_json::Value> {
 pub const SWATCH_KEYS: [&str; 6] =
     ["primary", "tertiary", "surfaceVariant", "surfaceContainer", "surface", "outline"];
 
+fn snake_alias(key: &str) -> Option<&'static str> {
+    crate::material::UI_KEYS
+        .iter()
+        .zip(crate::material::ROLE_KEYS.iter())
+        .find(|(name, role)| **name == key && name != role)
+        .map(|(_, role)| *role)
+}
+
+pub(super) fn alias_ui_keys(palette: &mut serde_json::Value) {
+    for key in crate::material::UI_KEYS {
+        if palette.get(key).is_none()
+            && let Some(value) = snake_alias(key).and_then(|alias| palette.get(alias)).cloned()
+        {
+            palette[key] = value;
+        }
+    }
+}
+
+fn aliased_preview(palette: Option<serde_json::Value>) -> Option<serde_json::Value> {
+    palette.map(|mut palette| {
+        alias_ui_keys(&mut palette);
+        palette
+    })
+}
+
 pub fn swatch_from_palette(val: &serde_json::Value) -> Vec<String> {
     SWATCH_KEYS
         .iter()
-        .filter_map(|key| val.get(*key).and_then(serde_json::Value::as_str).map(String::from))
+        .filter_map(|key| {
+            val.get(*key)
+                .or_else(|| snake_alias(key).and_then(|alias| val.get(alias)))
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
+        })
         .collect()
 }
 
@@ -522,7 +552,10 @@ fn parse_seed(hex: &str) -> Option<skwd_palette::Rgb> {
 }
 
 pub fn static_palette_value(config: &Config, dark: bool) -> Option<serde_json::Value> {
-    let name = config.theme().static_theme();
+    static_palette_named(config, &config.theme().static_theme(), dark)
+}
+
+pub fn static_palette_named(config: &Config, name: &str, dark: bool) -> Option<serde_json::Value> {
     if name == "custom" {
         let seeds: Vec<skwd_palette::Rgb> =
             config.theme().static_custom().iter().filter_map(|hex| parse_seed(hex)).collect();
@@ -531,11 +564,10 @@ pub fn static_palette_value(config: &Config, dark: bool) -> Option<serde_json::V
         }
         return Some(skwd_palette::derive(&seeds, dark).to_value());
     }
-    if let Some(saved) =
-        config.theme().saved_themes().iter().find(|theme| {
-            theme.get("name").and_then(serde_json::Value::as_str) == Some(name.as_str())
-        })
-    {
+    if let Some(saved) = config.theme().saved_themes().iter().find(|theme| {
+        theme.get(skwd_config::keys::theme::SAVED_THEME_NAME).and_then(serde_json::Value::as_str)
+            == Some(name)
+    }) {
         let mut val = saved.clone();
         if val.get("_schemeVersion").and_then(serde_json::Value::as_u64) == Some(1)
             && let Some(doc) = crate::material::from_palette(&val, dark, &config.theme().scheme())
@@ -559,7 +591,7 @@ pub fn static_palette_value(config: &Config, dark: bool) -> Option<serde_json::V
         }
         return Some(val);
     }
-    skwd_palette::preset(&name).map(|pal| pal.to_value())
+    skwd_palette::preset(name).map(|pal| pal.to_value())
 }
 
 fn static_preview(config: &Config, dark: bool) -> Vec<String> {
@@ -619,8 +651,10 @@ pub fn preview_palette(config: &Config, image: &str) -> Option<serde_json::Value
     match resolve_backend(config).as_str() {
         "static" => return static_palette_value(config, dark),
         "off" => return None,
-        "noctalia" => return crate::noctalia::preview_palette(config, image, dark),
-        "dms" => return crate::dms::preview_palette(config, image, dark),
+        "noctalia" => {
+            return aliased_preview(crate::noctalia::preview_palette(config, image, dark));
+        }
+        "dms" => return aliased_preview(crate::dms::preview_palette(config, image, dark)),
         _ => {}
     }
     if let Some((palette, _)) = direct_palette(config, image, dark) {

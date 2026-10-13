@@ -16,3 +16,8 @@ fn legacy_status_fields() {
     assert_eq!(status["ok"], true);
     assert_eq!(status["version"], "9.8.7");
 }
+
+#[test]
+fn steam_client_field() {
+    assert_eq!(STEAM_CLIENT_AVAILABLE_FIELD, "steam_client_available");
+}

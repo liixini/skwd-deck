@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use crate::state::WallState;
 use crate::{db, paths};
@@ -39,4 +40,46 @@ fn blocks_ready(thumb: &Path) -> bool {
 
 pub(super) fn artifacts_ready(thumb: &Path) -> bool {
     thumb.exists() && blocks_ready(thumb)
+}
+
+pub(super) fn candidates(
+    state: &WallState,
+    accepts: fn(&Path) -> bool,
+) -> Vec<(PathBuf, String, i64)> {
+    let config = state.config().clone();
+    let policy = config.library_policy();
+    let mut seen = std::collections::HashSet::new();
+    config
+        .library_folders()
+        .into_iter()
+        .flat_map(|directory| {
+            WalkDir::new(directory)
+                .follow_links(false)
+                .into_iter()
+                .filter_entry(|entry| {
+                    !paths::is_internal_library_path(entry.path()) && !policy.excludes(entry.path())
+                })
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_type().is_file() && accepts(entry.path()))
+                .map(walkdir::DirEntry::into_path)
+                .collect::<Vec<_>>()
+        })
+        .filter(|path| seen.insert(path.clone()))
+        .filter_map(|path| {
+            let key = state.library_key(&path)?;
+            let (_, name) = key.split_once(':')?;
+            let mtime = mtime_secs(&path);
+            Some((path, name.to_string(), mtime))
+        })
+        .collect()
+}
+
+pub(super) fn we_sources_unchanged(item: &Path, video: Option<&Path>, thumb: &Path) -> bool {
+    let modified = |path: &Path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
+    let Some(generated) = modified(thumb) else { return false };
+    let preview = crate::we::find_preview(item);
+    [Some(item), Some(item.join("project.json").as_path()), preview.as_deref(), video]
+        .into_iter()
+        .flatten()
+        .all(|source| modified(source).is_some_and(|modified| modified <= generated))
 }

@@ -56,14 +56,17 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             Response::ok(req.id, json!(skwd_wall_core::theme::apps::list(&config)))
         }
         rpc::THEME_APP_SET | rpc::THEME_APP_CUSTOMIZE => theme_app(state, req),
+        rpc::THEME_APPS_REFRESH => theme_apps_refresh(state, req, stats),
         rpc::THEME_CURRENT => match skwd_wall_core::theme::profiles::current(state) {
             Ok(current) => Response::ok(req.id, current),
             Err(error) => Response::err(req.id, 1, error.to_string()),
         },
         rpc::STATUS => Response::ok(req.id, runtime_status(ctx)),
+        rpc::LOCKSCREEN_SET => lockscreen_set(state, req),
         rpc::PICKER_SESSION_BEGIN => Response::ok(req.id, json!({"ok": true, "visible": true})),
         rpc::PICKER_SESSION_END => Response::ok(req.id, json!({"ok": true, "visible": false})),
         rpc::WALL_PREHEAT => preheat(req),
+        rpc::WALL_MIRROR => wall_mirror(state, req),
         rpc::WALL_SET_PAUSED => {
             let response = wall_set_paused(state, ctx.renderers.as_ref(), req);
             ctx.events.publish(ev::OUTPUTS_CHANGED, json!({}));
@@ -131,28 +134,26 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             Ok(path) => Response::ok(req.id, json!({"path": path.display().to_string()})),
             Err(err) => fail(&ctx.stats, req.id, err),
         },
-        rpc::WALL_WEATHER => {
-            let (locale, lat, lon) = {
-                let cfg = ctx.config.read();
-                (cfg.locale(), cfg.latitude(), cfg.longitude())
-            };
-            Response::ok(
-                req.id,
-                json!({"weather": crate::infrastructure::weather::current(&locale, lat, lon)}),
-            )
+        rpc::WALL_WEATHER | rpc::WALL_WEATHER_REFRESH | rpc::WALL_WEATHER_RESUME => {
+            wall_weather(ctx, req)
         }
+        rpc::WALL_WEATHER_FOLLOW
+        | rpc::WALL_WEATHER_NEXT
+        | rpc::WALL_WEATHER_EXCLUDE
+        | rpc::WALL_WEATHER_PIN => wall_outdoors(ctx, req),
+        rpc::WALL_WEATHER_CANDIDATES => wall_weather_candidates(ctx, req),
         rpc::SUBSCRIBE => Response::ok(req.id, json!({"subscribed": true})),
         rpc::THUMBNAIL_UPDATED => relay(events.as_ref(), req, ev::THUMBNAIL_UPDATED),
-        rpc::SCAN_ITEM => {
-            stats.thumb();
-            events.publish(ev::CACHED, req.params.clone());
-            Response::ok(req.id, json!({"ok": true}))
-        }
+        rpc::SCAN_ITEM => scan_item(ctx, req),
         rpc::SCAN_DONE => scan_done(ctx, req),
-        rpc::SCAN_REMOVED => relay(events.as_ref(), req, ev::REMOVED),
+        rpc::SCAN_REMOVED => {
+            playlist::reload();
+            relay(events.as_ref(), req, ev::REMOVED)
+        }
         rpc::REMOTE_THUMB => relay(events.as_ref(), req, ev::REMOTE_THUMB),
         rpc::RECOMPUTE_PROGRESS => relay(events.as_ref(), req, ev::RECOMPUTE_PROGRESS),
         rpc::RECOMPUTE_DONE => {
+            playlist::reload();
             stats.set_task("idle");
             events.publish(ev::RECOMPUTE_COMPLETE, req.params.clone());
             Response::ok(req.id, json!({"ok": true}))
@@ -175,9 +176,14 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         rpc::EFFECTS_BACKFILL_TAGS => {
             let ids = effect_ids();
             let tagged = state.with_db(|conn| db::backfill_effect_tags(conn, &ids)).unwrap_or(0);
+            playlist::reload();
             log::info!("effects.backfill_tags: tagged {tagged} existing effect wallpaper(s)");
             Response::ok(req.id, json!({"tagged": tagged}))
         }
+        rpc::WALL_ACTIVITIES => match skwd_wall_core::plasma::activities::list() {
+            Ok(activities) => Response::ok(req.id, json!(activities)),
+            Err(error) => Response::err(req.id, -1, error.to_string()),
+        },
         rpc::WALL_OUTPUTS => outputs_list(state, ctx.renderers.as_ref(), req),
         rpc::WALL_RETHEME => wall_retheme(state, req, stats),
         rpc::THEME_BACKENDS => {
@@ -272,7 +278,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         rpc::WALL_SHELL_PREVIEW => shell_preview(state, req, stats),
         rpc::WALL_SHELL_PREVIEW_END => shell_preview_end(state, req),
         rpc::WALL_RELOAD_WE => wall_reload_we(ctx, req),
-        rpc::WALL_SET_FAVOURITE => set_favourite(state, req, stats),
+        rpc::WALL_SET_FAVOURITE | rpc::WALL_SET_HIDDEN => set_flag(state, req, stats),
         rpc::WALL_UPDATE_TAGS | rpc::WALL_UPDATE_ANALYSIS => update_tags(state, req, stats),
         other => {
             stats.error();

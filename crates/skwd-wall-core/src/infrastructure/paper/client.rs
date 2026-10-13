@@ -58,6 +58,12 @@ impl PaperClient {
         self.exchange(RequestParams::Stop(request))
     }
 
+    pub fn mirror(&self, target: paper_control::MirrorTarget) -> Result<()> {
+        target.validate()?;
+        self.exchange::<paper_control::MirrorTarget>(RequestParams::Mirror(target))?;
+        Ok(())
+    }
+
     pub fn set_paused(&self, paused: bool) -> Result<()> {
         self.exchange::<paper_control::PauseResult>(RequestParams::Pause(
             paper_control::PauseRequest { paused },

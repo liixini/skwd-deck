@@ -1,6 +1,46 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+pub const STEAM_WORKSHOP_CONTENT: &str = "steamapps/workshop/content/431960";
+pub const STEAM_WORKSHOP_MANIFEST: &str = "steamapps/workshop/appworkshop_431960.acf";
+
+pub fn steam_root_for_content(content: &Path) -> Option<PathBuf> {
+    content
+        .ends_with(STEAM_WORKSHOP_CONTENT)
+        .then(|| {
+            content
+                .ancestors()
+                .nth(Path::new(STEAM_WORKSHOP_CONTENT).components().count())
+                .map(Path::to_path_buf)
+        })
+        .flatten()
+}
+
+pub fn same(left: &Path, right: &Path) -> bool {
+    fn resolved(path: &Path) -> PathBuf {
+        if let Ok(real) = path.canonicalize() {
+            return real;
+        }
+        if let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+            && let Ok(real) = parent.canonicalize()
+        {
+            return real.join(name);
+        }
+        let mut clean = PathBuf::new();
+        for part in path.components() {
+            match part {
+                std::path::Component::ParentDir => {
+                    clean.pop();
+                }
+                std::path::Component::CurDir => {}
+                other => clean.push(other.as_os_str()),
+            }
+        }
+        clean
+    }
+    resolved(left) == resolved(right)
+}
+
 // Scanners and watchers must never surface anything below this as a wallpaper.
 pub const INTERNAL_LIBRARY_DIR: &str = ".skwd-wall-v2";
 
@@ -211,6 +251,12 @@ pub fn remote_preview(source: &str, id: &str, ext: &str) -> PathBuf {
 }
 
 pub fn thumb_name(rel: &str) -> String {
+    if Path::new(rel).is_absolute() {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::hash::DefaultHasher::new();
+        rel.hash(&mut hash);
+        return format!("source-{:x}", hash.finish());
+    }
     let stem = rel.rsplit_once('.').map_or(rel, |(base, _)| base);
     stem.replace('/', "--")
 }
@@ -243,21 +289,20 @@ pub fn is_video_path(path: &Path) -> bool {
     })
 }
 
-pub fn key_for_path(path: &Path, wallpaper_dir: &str, video_dir: &str) -> Option<String> {
-    let ordered = if is_video_path(path) {
-        [(video_dir, wall_proto::kind::VIDEO), (wallpaper_dir, wall_proto::kind::STATIC)]
-    } else {
-        [(wallpaper_dir, wall_proto::kind::STATIC), (video_dir, wall_proto::kind::VIDEO)]
-    };
-    for (dir, kind) in ordered {
-        if let Ok(rel) = path.strip_prefix(dir) {
-            let rel = rel.to_string_lossy();
-            if !rel.is_empty() {
-                return Some(format!("{kind}:{rel}"));
-            }
-        }
+pub fn key_for_path(path: &Path, config: &crate::config::Config) -> Option<String> {
+    let path = skwd_config::resolve_folder(path)?;
+    if !config.library_policy().contains(&path) || is_internal_library_path(&path) {
+        return None;
     }
-    None
+    let video = is_video_path(&path);
+    let kind = if video { wall_proto::kind::VIDEO } else { wall_proto::kind::STATIC };
+    let primary = if video { config.video_dir() } else { config.wallpaper_dir() };
+    let primary = skwd_config::resolve_folder(Path::new(&primary))?;
+    let name = path.strip_prefix(&primary).unwrap_or(&path);
+    if name.as_os_str().is_empty() {
+        return None;
+    }
+    Some(format!("{kind}:{}", name.to_string_lossy()))
 }
 
 #[path = "tests.rs"]

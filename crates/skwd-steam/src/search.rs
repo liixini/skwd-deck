@@ -1,4 +1,4 @@
-use steamworks::{AppIDs, AppId, Client, UGCQueryType, UGCStatisticType, UGCType};
+use steamworks::{AppIDs, AppId, Client, PublishedFileId, UGCQueryType, UGCStatisticType, UGCType};
 
 use crate::callback::pump;
 use crate::search_params::SearchParams;
@@ -17,34 +17,43 @@ fn query_type(code: u64) -> UGCQueryType {
 
 pub async fn run(client: &Client, params: &SearchParams) -> Result<Vec<serde_json::Value>, String> {
     let wallpaper_engine = AppId(APP_ID);
-    let mut handle = client
-        .ugc()
-        .query_all(
+    let exact = params.query.parse::<u64>().ok();
+    let handle = if let Some(id) = exact {
+        client.ugc().query_item(PublishedFileId(id))
+    } else {
+        client.ugc().query_all(
             query_type(params.query_type),
             UGCType::Items,
             AppIDs::Both { creator: wallpaper_engine, consumer: wallpaper_engine },
             params.page,
         )
-        .map_err(|error| format!("query_all failed: {error:?}"))?
-        .set_return_long_description(false)
-        .set_return_metadata(false)
-        .set_match_any_tag(false);
-    if !params.query.is_empty() {
-        handle = handle.set_search_text(&params.query);
     }
-    for tag in &params.required_tags {
-        if !tag.is_empty() {
-            handle = handle.add_required_tag(tag);
+    .map_err(|error| format!("query failed: {error:?}"))?;
+    let handle = if exact.is_some() {
+        handle
+    } else {
+        let mut handle = handle
+            .set_return_long_description(false)
+            .set_return_metadata(false)
+            .set_match_any_tag(false);
+        if !params.query.is_empty() {
+            handle = handle.set_search_text(&params.query);
         }
-    }
-    for tag in &params.excluded_tags {
-        if !tag.is_empty() {
-            handle = handle.add_excluded_tag(tag);
+        for tag in &params.required_tags {
+            if !tag.is_empty() {
+                handle = handle.add_required_tag(tag);
+            }
         }
-    }
-    if params.query_type == 3 {
-        handle = handle.set_ranked_by_trend_days(params.trend_days);
-    }
+        for tag in &params.excluded_tags {
+            if !tag.is_empty() {
+                handle = handle.add_excluded_tag(tag);
+            }
+        }
+        if params.query_type == 3 {
+            handle = handle.set_ranked_by_trend_days(params.trend_days);
+        }
+        handle
+    };
 
     let (sender, receiver) =
         std::sync::mpsc::sync_channel::<Result<Vec<serde_json::Value>, String>>(1);
@@ -57,6 +66,9 @@ pub async fn run(client: &Client, params: &SearchParams) -> Result<Vec<serde_jso
                     let Some(item) = results.get(index) else {
                         continue;
                     };
+                    if exact.is_some() && item.consumer_app_id != Some(wallpaper_engine) {
+                        continue;
+                    }
                     output.push(serde_json::json!({
                         "id": item.published_file_id.0.to_string(),
                         "title": item.title,

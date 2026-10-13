@@ -254,6 +254,8 @@ pub(super) const META_COLUMNS: &[(&str, &str)] = &[
     ("last_applied", "INTEGER DEFAULT 0"),
     ("generated_tags", "TEXT"),
     ("user_tags", "TEXT"),
+    ("library_excluded", "INTEGER NOT NULL DEFAULT 0"),
+    ("hidden", "INTEGER NOT NULL DEFAULT 0"),
     ("manual_locked", "INTEGER NOT NULL DEFAULT 0"),
 ];
 

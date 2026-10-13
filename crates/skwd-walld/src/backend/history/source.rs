@@ -5,14 +5,21 @@ pub(crate) enum ApplySource {
     Random,
     Rotation,
     Playlist,
+    Weather { playlist_id: i64, revision: u64 },
+    WeatherSemantic { revision: u64 },
     Schedule,
     Workspace,
     Restore,
+    OutdoorsRestore { revision: u64 },
     Hotplug,
     Replay,
 }
 
 impl ApplySource {
+    pub(crate) fn manual_choice(self) -> bool {
+        matches!(self, Self::User | Self::UserOverride | Self::Replay | Self::Random)
+    }
+
     pub(crate) fn broadcast_random(self) -> bool {
         matches!(self, Self::Rotation | Self::Random)
     }
