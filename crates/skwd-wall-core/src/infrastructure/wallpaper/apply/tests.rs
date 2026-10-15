@@ -173,6 +173,7 @@ fn distinct_we_launch_audio() {
 
 #[test]
 fn native_scene_display_placement() {
+    let _guard = crate::outputs::enum_shared();
     let cases = [
         (
             serde_json::json!({"fillMode": "fill", "fillModes": {"DP-2": "fit"}}),
@@ -2397,7 +2398,15 @@ fn background_policy_refresh_replaces_same_path_still() {
     assert!(current.iter().all(|pid| !previous.contains(pid)));
     wait_spawns(st.path(), previous.len() + current.len());
     for pid in current {
-        let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let environment = loop {
+            let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
+            if !environment.is_empty() {
+                break environment;
+            }
+            assert!(Instant::now() < deadline, "renderer environment stayed empty");
+            std::thread::sleep(Duration::from_millis(10));
+        };
         let environment = String::from_utf8_lossy(&environment);
         assert!(
             environment.contains("SKWD_PAPER_BACKGROUND={\"color\":[18,52,86],\"blur\":false}")
