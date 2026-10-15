@@ -10,6 +10,9 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use wall_proto::{LockScreenSetRequest, LockScreenTarget};
 
 mod export;
+mod worker;
+
+pub(crate) use worker::{RENDER_WORKER_ARG, run_render_worker};
 
 #[cfg(test)]
 #[path = "lock_screen/tests.rs"]
@@ -63,11 +66,14 @@ fn sender() -> &'static UnboundedSender<Job> {
                 } else {
                     job
                 };
-                let _ = tokio::task::spawn_blocking(move || match job {
-                    Job::Sync(state) => sync_current(&state),
-                    Job::Set(state, request, reply) => {
-                        let _ = reply.send(set(&state, &request));
+                let _ = tokio::task::spawn_blocking(move || {
+                    match job {
+                        Job::Sync(state) => sync_current(&state),
+                        Job::Set(state, request, reply) => {
+                            let _ = reply.send(set(&state, &request));
+                        }
                     }
+                    super::platform::trim_allocator();
                 })
                 .await;
             }

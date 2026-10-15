@@ -45,7 +45,7 @@ const MATERIAL_ROLES: [&str; 49] = [
     "shadow",
     "surface",
     "surface_bright",
-    "surface_container",
+    crate::material::SURFACE_CONTAINER_ROLE,
     "surface_container_high",
     "surface_container_highest",
     "surface_container_low",
@@ -214,7 +214,7 @@ fn noctalia_mode(doc: &Value, mode: &str) -> Option<Value> {
         "mOnError": get("on_error")?,
         "mSurface": get("surface")?,
         "mOnSurface": get("on_surface")?,
-        "mSurfaceVariant": get("surface_variant")?,
+        "mSurfaceVariant": get(crate::material::SURFACE_CONTAINER_ROLE)?,
         "mOnSurfaceVariant": get("on_surface_variant")?,
         "mOutline": get("outline")?,
         "mShadow": get("shadow")?,
@@ -392,11 +392,9 @@ pub fn normalize(provider: &str, value: &Value, dark: bool) -> Option<Value> {
                     "on_tertiary" | "on_tertiary_container" => "mOnTertiary",
                     "error" | "error_container" => "mError",
                     "on_error" | "on_error_container" => "mOnError",
-                    "surface" | "background" | "surface_container" | "inverse_on_surface" => {
-                        "mSurface"
-                    }
+                    "surface" | "background" | "inverse_on_surface" => "mSurface",
                     "on_surface" | "on_background" | "inverse_surface" => "mOnSurface",
-                    "surface_variant" => "mSurfaceVariant",
+                    "surface_variant" | "surface_container" => "mSurfaceVariant",
                     "on_surface_variant" => "mOnSurfaceVariant",
                     "outline" => "mOutline",
                     "shadow" => "mShadow",

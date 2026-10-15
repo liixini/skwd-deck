@@ -217,15 +217,30 @@ fn candidate_items(
     let keys = crate::infrastructure::semantic_index::outdoors_search(state, context, resolve)
         .and_then(Result::ok)
         .unwrap_or_default();
-    let visible = super::profile::Visibility::load(state);
-    let rows =
-        state.with_db(|connection| db::list_wallpapers(connection, false)).unwrap_or_default();
-    let by_key: BTreeMap<String, WallpaperItem> = rows
-        .into_iter()
-        .filter(|row| visible.shows_item(row))
-        .filter_map(|row| serde_json::from_value::<WallpaperItem>(row).ok())
-        .filter_map(|item| item.key.clone().map(|key| (key, item)))
-        .collect();
+    let mut by_key = BTreeMap::new();
+    if !keys.is_empty() {
+        let requested: BTreeSet<_> = keys.iter().map(String::as_str).collect();
+        let visible = super::profile::Visibility::load(state);
+        if state
+            .with_db(|connection| {
+                db::visit_wallpapers(connection, false, |row| {
+                    if row
+                        .get(wall_proto::rpc_params::KEY)
+                        .and_then(Value::as_str)
+                        .is_some_and(|key| requested.contains(key))
+                        && visible.shows_item(&row)
+                        && let Ok(item) = serde_json::from_value::<WallpaperItem>(row)
+                        && let Some(key) = item.key.clone()
+                    {
+                        by_key.insert(key, item);
+                    }
+                })
+            })
+            .is_err()
+        {
+            by_key.clear();
+        }
+    }
     let excluded =
         lock(&RUNTIME).as_ref().map(|runtime| runtime.session.excluded.clone()).unwrap_or_default();
     let mut items: Vec<_> = keys
@@ -336,12 +351,20 @@ fn output_status(
                 .find(|item| item.key.as_deref() == Some(key))
         })
         .or_else(|| {
+            let mut found = None;
             state
-                .with_db(|connection| db::list_wallpapers(connection, false))
-                .ok()?
-                .into_iter()
-                .filter_map(|row| serde_json::from_value::<WallpaperItem>(row).ok())
-                .find(|item| item.key.as_deref() == Some(key))
+                .with_db(|connection| {
+                    db::visit_wallpapers(connection, false, |row| {
+                        if found.is_none()
+                            && row.get(wall_proto::rpc_params::KEY).and_then(Value::as_str)
+                                == Some(key)
+                        {
+                            found = serde_json::from_value::<WallpaperItem>(row).ok();
+                        }
+                    })
+                })
+                .ok()?;
+            found
         });
     let name = item.as_ref().and_then(|item| item.name.clone()).unwrap_or_else(|| {
         let path = key.split_once(':').map_or(key, |(_, path)| path);

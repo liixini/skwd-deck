@@ -34,8 +34,19 @@ fn provider_payload_roundtrip() {
 
 #[test]
 fn noctalia_payload_modes() {
-    let value = noctalia_payload(&doc()).unwrap();
+    let document = doc();
+    let value = noctalia_payload(&document).unwrap();
     for mode in ["dark", "light"] {
+        assert_eq!(
+            value[mode]["mSurfaceVariant"],
+            document["colors"]["surface_container"][mode]["color"]
+        );
+        assert_ne!(
+            value[mode]["mSurfaceVariant"],
+            document["colors"]["surface_variant"][mode]["color"]
+        );
+        let imported = normalize("noctalia", &value, mode == "dark").unwrap();
+        assert_eq!(imported["surfaceContainer"], value[mode]["mSurfaceVariant"]);
         assert!(value[mode]["mPrimary"].as_str().unwrap().starts_with('#'));
         assert!(value[mode]["terminal"]["normal"]["red"].is_string());
         assert!(value[mode]["terminal"]["bright"]["cyan"].is_string());

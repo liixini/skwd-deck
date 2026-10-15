@@ -9,6 +9,8 @@ use crate::state::WallState;
 pub const PREVIEW_SCHEME: &str = "skwd-hover";
 const APPLIED_SCHEME: &str = "skwd-wall";
 const FALLBACK_SCHEME: &str = "m3-content";
+const CUSTOM_SOURCE: &str = "custom";
+const GET_SCHEME_ARGS: [&str; 2] = ["msg", "color-scheme-get"];
 
 pub fn bin_from(configured: &str, local_candidate: &std::path::Path) -> String {
     crate::shell_adapter::bin_from(configured, local_candidate, "noctalia")
@@ -29,14 +31,6 @@ fn msg_capture(config: &Config, args: &[&str]) -> Option<String> {
         .output()
         .ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-fn msg_fire(config: &Config, args: &[String], what: &str) {
-    let mut cmd = Command::new(bin(config));
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    if !crate::proc::spawn_reaped(&mut cmd, what) {
-        log::warn!("noctalia {what}: spawn failed");
-    }
 }
 
 const MSG_TIMEOUT_MS: u64 = 2000;
@@ -135,7 +129,7 @@ pub fn preview_palette(config: &Config, image: &str, dark: bool) -> Option<serde
 fn active_gen_scheme(config: &Config, stored: Option<&(String, String)>) -> String {
     match stored {
         Some((source, name)) => parse_scheme(&format!("{source} {name}")),
-        None => msg_capture(config, &["msg", "color-scheme-get"])
+        None => msg_capture(config, &GET_SCHEME_ARGS)
             .map_or_else(|| FALLBACK_SCHEME.to_string(), |line| parse_scheme(&line)),
     }
 }
@@ -183,7 +177,7 @@ pub fn write_bridge_palette(config: &Config, image: &str, dark: bool) -> bool {
 pub fn activate(config: &Config, dark: bool) -> bool {
     if !msg_wait(
         config,
-        &restore_args(("custom".to_string(), APPLIED_SCHEME.to_string())),
+        &restore_args((CUSTOM_SOURCE.to_string(), APPLIED_SCHEME.to_string())),
         "applied scheme set",
     ) {
         return false;
@@ -258,7 +252,7 @@ fn mode_to_custom(mode: &serde_json::Value) -> serde_json::Value {
         "mOnError": get("on_error"),
         "mSurface": get("surface"),
         "mOnSurface": get("on_surface"),
-        "mSurfaceVariant": get("surface_variant"),
+        "mSurfaceVariant": get(crate::material::SURFACE_CONTAINER_ROLE),
         "mOnSurfaceVariant": get("on_surface_variant"),
         "mOutline": get("outline"),
         "mShadow": get("shadow"),
@@ -289,6 +283,17 @@ pub fn cli_tokens_to_custom_palette(cli: &serde_json::Value) -> Option<serde_jso
     }))
 }
 
+fn preview_cache_key(config: &Config, image: &str, scheme: &str) -> String {
+    let metadata = std::fs::metadata(image).ok();
+    let stamp = metadata.as_ref().and_then(|meta| meta.modified().ok());
+    let size = metadata.as_ref().map(std::fs::Metadata::len);
+    format!(
+        "noctalia\0{}\0{scheme}\0{}\0{image}\0{stamp:?}\0{size:?}",
+        bin(config),
+        config.theme().noctalia_pure_black()
+    )
+}
+
 pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Result<()> {
     let _serial = state.theme().lock_shell_preview();
     if state.theme().shell_preview_generation() != generation {
@@ -297,7 +302,7 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     let config = crate::theme::profiles::configuration(state, image);
     let stored = state.theme().noctalia_preview_orig();
     let scheme = generation_scheme(&config, stored.as_ref());
-    let key = format!("{scheme}\u{0}{image}");
+    let key = preview_cache_key(&config, image, &scheme);
     let palette = if let Some(bytes) = state.theme().shell_palette_cached(&key) {
         bytes
     } else {
@@ -318,20 +323,33 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     std::fs::create_dir_all(&dir)?;
     std::fs::write(dir.join(format!("{PREVIEW_SCHEME}.json")), &palette)?;
     if stored.is_none() {
-        let line = msg_capture(&config, &["msg", "color-scheme-get"]).unwrap_or_default();
+        let line = msg_capture(&config, &GET_SCHEME_ARGS).unwrap_or_default();
         let orig = sanitize_orig_scheme(&line);
         let _ = std::fs::write(
             preview_orig_path(&config),
             serde_json::json!({"source": orig.0, "name": orig.1}).to_string(),
         );
         state.theme().set_noctalia_preview_orig(orig);
-        msg_fire(
-            &config,
-            &restore_args(("custom".to_string(), PREVIEW_SCHEME.to_string())),
-            "preview scheme set",
+    }
+    let active = stored.is_some()
+        && msg_capture(&config, &GET_SCHEME_ARGS).is_some_and(|line| {
+            let mut fields = line.split_whitespace();
+            fields.next() == Some(CUSTOM_SOURCE) && fields.next() == Some(PREVIEW_SCHEME)
+        });
+    if active {
+        anyhow::ensure!(
+            msg_wait(&config, &["msg".to_string(), "config-reload".to_string()], "preview reload"),
+            "noctalia preview reload failed"
         );
     } else {
-        msg_fire(&config, &["msg".to_string(), "config-reload".to_string()], "preview reload");
+        anyhow::ensure!(
+            msg_wait(
+                &config,
+                &restore_args((CUSTOM_SOURCE.to_string(), PREVIEW_SCHEME.to_string())),
+                "preview scheme set",
+            ),
+            "noctalia preview scheme activation failed"
+        );
     }
     Ok(())
 }

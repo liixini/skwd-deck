@@ -297,7 +297,8 @@ pub(super) fn theme_preview(state: &Arc<WallState>, req: &Request) -> Response {
         return Response::err(req.id, 1, "no image to preview");
     }
     let cfg = preview_config(state, req);
-    let palette = skwd_wall_core::bridge_preview::cached_palette_for_config(state, &cfg, image);
+    let image = crate::infrastructure::media_paths::theme_image(state, image);
+    let palette = skwd_wall_core::bridge_preview::cached_palette_for_config(state, &cfg, &image);
     let colors =
         palette.as_ref().map(skwd_wall_core::theme::swatch_from_palette).unwrap_or_default();
     Response::ok(
@@ -328,6 +329,7 @@ pub(super) fn theme_previews(state: &Arc<WallState>, req: &Request) -> Response 
     let Some(image) = image else {
         return Response::err(req.id, 1, "no current wallpaper for theme previews");
     };
+    let image = crate::infrastructure::media_paths::theme_image(state, &image);
     let cfg = state.config();
     let detected = skwd_wall_core::theme::available_backends(&cfg);
     let backends = skwd_wall_core::theme::previewable_backends(&detected);
@@ -751,7 +753,7 @@ pub(super) fn set_audio(
 
 pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<Stats>) -> Response {
     state.reload_config();
-    let path = req.str_param("path", "").to_string();
+    let path = crate::infrastructure::media_paths::theme_image(state, req.str_param("path", ""));
     let cfg = skwd_wall_core::theme::profiles::configuration(state, &path);
     if path.is_empty() || !std::path::Path::new(&path).is_file() {
         return crate::infrastructure::rpc::fail_msg(

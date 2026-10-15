@@ -659,3 +659,94 @@ fn theme_output_limits_recolouring_to_the_chosen_display() {
     drop(walld);
     checks.finish();
 }
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn noctalia_preview_activation() {
+    let mut sandbox = Sandbox::new("noctalia-preview-order");
+    generator_palettes(&mut sandbox, false);
+    sandbox.set_env("NOCTALIA_CONFIG_HOME", &sandbox.root.join("config").to_string_lossy());
+    let mut black = json_file(&sandbox.root.join("a-palette.json"));
+    black["dark"]["surface"] = json!("#000000");
+    std::fs::write(sandbox.root.join("black-palette.json"), black.to_string()).unwrap();
+    let noctalia = fake(
+        &sandbox.root,
+        "noctalia",
+        r#"
+if [ "$1" = --version ]; then exit 0; fi
+if [ "$1" = theme ]; then
+    name=a
+    for arg in "$@"; do if [ "$arg" = --pure-black ]; then name=black; fi; done
+    cat "$SKWD_E2E_PALETTES/$name-palette.json"
+fi
+if [ "$1" = msg ]; then
+    case "$2" in
+        color-scheme-get) cat "$SKWD_E2E_PALETTES/selection";;
+        color-scheme-set)
+            if [ "$4" = skwd-hover ]; then
+                if [ -f "$SKWD_E2E_PALETTES/fail-activation" ]; then exit 1; fi
+                touch "$SKWD_E2E_PALETTES/activating"
+                sleep 0.3
+            fi
+            printf '%s %s\n' "$3" "$4" > "$SKWD_E2E_PALETTES/selection";;
+    esac
+fi
+exit 0
+"#,
+    );
+    let image = sandbox.library().join("a.png");
+    std::fs::write(&image, b"image").unwrap();
+    let selection = sandbox.root.join("selection");
+    std::fs::write(&selection, "custom skwd-wall\n").unwrap();
+    let mut config = base_config(&sandbox);
+    config["paths"]["noctaliaBin"] = json!(noctalia);
+    config["theme"] =
+        json!({"policy": "wallpaper", "authority": "noctalia", "noctaliaScheme": "m3-tonal-spot"});
+    config["noctalia"] = json!({"hoverPreview": true});
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let marker = sandbox.cache().join("noctalia-preview-orig.json");
+    let hover = sandbox.root.join("config/noctalia/palettes/skwd-hover.json");
+    let activating = sandbox.root.join("activating");
+    let queued = client.call("wall.shell_preview", json!({"path": image}), 1).unwrap();
+    assert!(queued.get("error").is_none(), "{queued}");
+    assert!(wait_until(|| activating.exists(), WAIT));
+    client.call("wall.shell_preview_end", json!({}), 2).unwrap();
+    assert!(!marker.exists() && !hover.exists());
+    assert_eq!(read(&selection), b"custom skwd-wall\n");
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(read(&selection), b"custom skwd-wall\n");
+    for pure_black in [false, true, false] {
+        config["theme"]["noctaliaPureBlack"] = json!(pure_black);
+        sandbox.write_config(&config);
+        client.call("wall.shell_preview", json!({"path": image}), 3).unwrap();
+        assert!(wait_until(|| read(&selection) == b"custom skwd-hover\n", WAIT));
+        let expected = if pure_black {
+            black["dark"]["surface"].clone()
+        } else {
+            json_file(&sandbox.root.join("a-palette.json"))["dark"]["surface"].clone()
+        };
+        assert_eq!(json_file(&hover)["dark"]["mSurface"], expected);
+        client.call("wall.shell_preview_end", json!({}), 4).unwrap();
+        assert!(wait_until(|| !marker.exists() && !hover.exists(), WAIT));
+        assert_eq!(read(&selection), b"custom skwd-wall\n");
+    }
+    std::fs::write(sandbox.root.join("fail-activation"), b"").unwrap();
+    client.call("wall.shell_preview", json!({"path": image}), 5).unwrap();
+    assert!(wait_until(
+        || walld
+            .log_contents()
+            .contains("noctalia preview: noctalia preview scheme activation failed"),
+        WAIT
+    ));
+    assert!(marker.exists());
+    assert_eq!(read(&selection), b"custom skwd-wall\n");
+    std::fs::remove_file(sandbox.root.join("fail-activation")).unwrap();
+    client.call("wall.shell_preview", json!({"path": image}), 6).unwrap();
+    assert!(wait_until(|| read(&selection) == b"custom skwd-hover\n", WAIT));
+    assert!(marker.exists());
+    client.call("wall.shell_preview_end", json!({}), 7).unwrap();
+    assert!(!marker.exists() && !hover.exists());
+    assert_eq!(read(&selection), b"custom skwd-wall\n");
+}

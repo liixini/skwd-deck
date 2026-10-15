@@ -270,15 +270,28 @@ fn semantic_members(
 }
 
 pub(super) fn visible_members(state: &Arc<WallState>, keys: &[String]) -> Vec<String> {
-    let items = state.with_db(|conn| db::list_wallpapers(conn, false)).unwrap_or_default();
+    if keys.is_empty() {
+        return Vec::new();
+    }
+    let requested: BTreeSet<_> = keys.iter().map(String::as_str).collect();
     let visible = super::profile::Visibility::load(state);
-    let allowed: BTreeSet<_> = items
-        .iter()
-        .filter(|item| visible.shows_item(item))
-        .filter_map(|item| {
-            item.get(wall_proto::rpc_params::KEY).and_then(serde_json::Value::as_str)
+    let mut allowed = BTreeSet::new();
+    if state
+        .with_db(|conn| {
+            db::visit_wallpapers(conn, false, |item| {
+                if let Some(key) =
+                    item.get(wall_proto::rpc_params::KEY).and_then(serde_json::Value::as_str)
+                    && requested.contains(key)
+                    && visible.shows_item(&item)
+                {
+                    allowed.insert(key.to_owned());
+                }
+            })
         })
-        .collect();
+        .is_err()
+    {
+        return Vec::new();
+    }
     let mut seen = BTreeSet::new();
     keys.iter()
         .filter(|key| allowed.contains(key.as_str()) && seen.insert(key.as_str()))

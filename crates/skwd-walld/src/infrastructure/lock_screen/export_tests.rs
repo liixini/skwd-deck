@@ -53,6 +53,40 @@ fn invalid_image_preserves_export() {
 }
 
 #[test]
+fn worker_name_stays_local() {
+    let root = tempfile::tempdir().unwrap();
+    let name = "wallpaper-0000000000000001.png";
+    let image = root.path().join(name);
+    std::fs::write(&image, b"png").unwrap();
+    assert_eq!(rendered_path(root.path(), name).unwrap(), image);
+    for invalid in [
+        "../wallpaper-0000000000000001.png",
+        "wallpaper-nope.png",
+        "user.png",
+        "wallpaper-0000000000000002.png",
+    ] {
+        assert!(rendered_path(root.path(), invalid).is_err());
+    }
+}
+
+#[test]
+fn worker_only_encodes() {
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("input.png");
+    image::RgbImage::new(2, 2).save(&input).unwrap();
+    let encoded = encode(&input, root.path()).unwrap();
+    assert!(encoded.is_file());
+    assert!(!root.path().join(lock_screens::IMAGE_FILE).exists());
+    assert!(!root.path().join(LAST_IMAGE).exists());
+    let config = json!({"lockScreens":{"mode":"static","image":input}});
+    assert_eq!(render(&config, None, root.path()).unwrap(), encoded);
+    assert_eq!(
+        std::fs::read(root.path().join(lock_screens::IMAGE_FILE)).unwrap(),
+        std::fs::read(encoded).unwrap()
+    );
+}
+
+#[test]
 fn sddm_requires_shared_directory() {
     let temp = tempfile::tempdir().unwrap();
     let private = temp.path().join("private");

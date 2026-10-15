@@ -21,7 +21,18 @@ pub fn list_wallpapers(
     conn: &Connection,
     favourite_only: bool,
 ) -> rusqlite::Result<Vec<serde_json::Value>> {
+    let mut out = Vec::new();
+    visit_wallpapers(conn, favourite_only, |item| out.push(item))?;
+    Ok(out)
+}
+
+pub fn visit_wallpapers(
+    conn: &Connection,
+    favourite_only: bool,
+    mut visit: impl FnMut(serde_json::Value),
+) -> rusqlite::Result<()> {
     let sql = if favourite_only { LIST_FAVOURITES } else { LIST_WALLPAPERS };
+    let effects = all_effect_tags(conn);
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         let key = row.get::<_, Option<String>>(0)?;
@@ -59,20 +70,18 @@ pub fn list_wallpapers(
             "hidden": row.get::<_, bool>(24)?,
         }))
     })?;
-    let mut out: Vec<serde_json::Value> = rows.filter_map(std::result::Result::ok).collect();
-    let effects = all_effect_tags(conn);
-    if !effects.is_empty() {
-        for item in &mut out {
-            let key = item.get("key").and_then(serde_json::Value::as_str).map(str::to_string);
-            let Some(key) = key else { continue };
-            if let Some(fx) = effects.get(&stem_key(&key)) {
-                let cur =
-                    item.get("tags").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
-                item["tags"] = serde_json::Value::String(merge_tag(&cur, fx));
-            }
+    for mut item in rows.flatten() {
+        if let Some(fx) = item
+            .get("key")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|key| effects.get(&stem_key(key)))
+        {
+            let cur = item.get("tags").and_then(serde_json::Value::as_str).unwrap_or("");
+            item["tags"] = serde_json::Value::String(merge_tag(cur, fx));
         }
+        visit(item);
     }
-    Ok(out)
+    Ok(())
 }
 
 pub fn list_wallpapers_json(

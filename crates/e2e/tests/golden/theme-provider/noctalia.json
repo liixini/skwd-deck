@@ -14,7 +14,7 @@
     "mSecondary": "#b8ccb5",
     "mShadow": "#000000",
     "mSurface": "#101510",
-    "mSurfaceVariant": "#424940",
+    "mSurfaceVariant": "#1c211c",
     "mTertiary": "#a1ced6",
     "terminal": {
       "background": "#101510",
@@ -60,7 +60,7 @@
     "mSecondary": "#516350",
     "mShadow": "#000000",
     "mSurface": "#f7fbf2",
-    "mSurfaceVariant": "#dee5d9",
+    "mSurfaceVariant": "#ebefe6",
     "mTertiary": "#39656c",
     "terminal": {
       "background": "#f7fbf2",

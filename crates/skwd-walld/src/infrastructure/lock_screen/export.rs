@@ -1,5 +1,5 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,7 @@ const HASH_LENGTH: usize = 16;
 const SDDM_RECEIPT_PREFIX: &str = "sddm-";
 const RECEIPT_VERSION: u32 = 1;
 const RECEIPT_MODE: u32 = 0o600;
+const COMPARE_BYTES: usize = 8 * 1024;
 
 #[derive(Deserialize, Serialize)]
 struct SddmReceipt {
@@ -109,10 +110,10 @@ pub(super) fn remove_sddm(config: &Value, root: &Path) -> Result<()> {
         receipt.version == RECEIPT_VERSION && receipt.path == path,
         "Invalid SDDM export receipt"
     );
-    if let Some(current) = optional_bytes(&path)? {
+    if path.try_exists()? {
         let owned = [&receipt.image, &receipt.pending].into_iter().flatten().any(|source| {
             lock_screens::check_path(source).is_ok()
-                && std::fs::read(source).is_ok_and(|bytes| bytes == current)
+                && files_equal(source, &path).is_ok_and(|equal| equal)
         });
         ensure!(owned, "SDDM image changed outside Skwd");
         std::fs::remove_file(path)?;
@@ -161,7 +162,7 @@ pub(super) fn restore(root: &Path, previous: Option<&Path>) -> Result<()> {
     lock_screens::check_path(&latest)?;
     if let Some(previous) = previous {
         let name = previous.file_name().context("Missing previous lockscreen image name")?;
-        skwd_config::atomic_write_mode(&stable, &std::fs::read(previous)?, Some(IMAGE_MODE))?;
+        skwd_config::atomic_copy(&stable, previous, Some(IMAGE_MODE))?;
         skwd_config::atomic_write(&latest, name.as_encoded_bytes())?;
     } else {
         for file in [&stable, &latest] {
@@ -179,7 +180,22 @@ pub(super) fn render(
     root: &Path,
 ) -> Result<PathBuf> {
     let source = source(config, current)?;
-    let image = image::ImageReader::open(&source)?
+    #[cfg(test)]
+    let path = encode(&source, root)?;
+    #[cfg(not(test))]
+    let path = super::worker::render(&source, root)?;
+    let stable = root.join(lock_screens::IMAGE_FILE);
+    lock_screens::check_path(&stable)?;
+    skwd_config::atomic_copy(&stable, &path, Some(IMAGE_MODE))?;
+    let latest = root.join(LAST_IMAGE);
+    lock_screens::check_path(&latest)?;
+    let name = path.file_name().context("Missing lockscreen image name")?;
+    skwd_config::atomic_write(&latest, name.as_encoded_bytes())?;
+    Ok(path)
+}
+
+pub(super) fn encode(source: &Path, root: &Path) -> Result<PathBuf> {
+    let image = image::ImageReader::open(source)?
         .with_guessed_format()?
         .decode()
         .with_context(|| format!("Decode lockscreen still {}", source.display()))?;
@@ -197,13 +213,50 @@ pub(super) fn render(
     } else {
         skwd_config::atomic_write_mode(&path, &bytes, Some(IMAGE_MODE))?;
     }
-    let stable = root.join(lock_screens::IMAGE_FILE);
-    lock_screens::check_path(&stable)?;
-    skwd_config::atomic_write_mode(&stable, &bytes, Some(IMAGE_MODE))?;
-    let latest = root.join(LAST_IMAGE);
-    lock_screens::check_path(&latest)?;
-    skwd_config::atomic_write(&latest, name.as_bytes())?;
     Ok(path)
+}
+
+pub(super) fn rendered_path(root: &Path, name: &str) -> Result<PathBuf> {
+    let file = Path::new(name);
+    ensure!(
+        file.components().count() == 1
+            && file.extension().is_some_and(|extension| extension == PNG_EXTENSION)
+            && file
+                .file_stem()
+                .and_then(std::ffi::OsStr::to_str)
+                .and_then(|stem| stem.strip_prefix(NAME_PREFIX))
+                .is_some_and(|hash| hash.len() == HASH_LENGTH
+                    && hash.bytes().all(|byte| byte.is_ascii_hexdigit())),
+        "Invalid lockscreen worker image name"
+    );
+    let path = root.join(file);
+    lock_screens::check_path(&path)?;
+    ensure!(path.is_file(), "Lockscreen worker image is missing");
+    Ok(path)
+}
+
+fn files_equal(left: &Path, right: &Path) -> Result<bool> {
+    let mut left = std::fs::File::open(left)?;
+    let mut right = std::fs::File::open(right)?;
+    if left.metadata()?.len() != right.metadata()?.len() {
+        return Ok(false);
+    }
+    let mut left_bytes = [0; COMPARE_BYTES];
+    let mut right_bytes = [0; COMPARE_BYTES];
+    loop {
+        let count = left.read(&mut left_bytes)?;
+        if count == 0 {
+            return Ok(right.read(&mut right_bytes)? == 0);
+        }
+        match right.read_exact(&mut right_bytes[..count]) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(false),
+            Err(error) => return Err(error.into()),
+        }
+        if left_bytes[..count] != right_bytes[..count] {
+            return Ok(false);
+        }
+    }
 }
 
 pub(super) fn export_sddm(config: &Value, image: &Path, root: &Path) -> Result<()> {
@@ -256,16 +309,15 @@ fn write_sddm(path: &Path, image: &Path, root: &Path) -> Result<()> {
     };
     if path.exists() {
         ensure!(!std::fs::metadata(path)?.permissions().readonly(), "SDDM image is read-only");
-        let current = std::fs::read(path)?;
         let owned = [&receipt.image, &receipt.pending].into_iter().flatten().any(|source| {
             lock_screens::check_path(source).is_ok()
-                && std::fs::read(source).is_ok_and(|bytes| bytes == current)
+                && files_equal(source, path).is_ok_and(|equal| equal)
         });
         ensure!(owned, "SDDM image changed outside Skwd");
     }
     receipt.pending = Some(image.to_path_buf());
     skwd_config::atomic_write_mode(&record, &serde_json::to_vec(&receipt)?, Some(RECEIPT_MODE))?;
-    skwd_config::atomic_write_mode(path, &std::fs::read(image)?, Some(IMAGE_MODE))?;
+    skwd_config::atomic_copy(path, image, Some(IMAGE_MODE))?;
     receipt.image = receipt.pending.take();
     skwd_config::atomic_write_mode(&record, &serde_json::to_vec(&receipt)?, Some(RECEIPT_MODE))?;
     Ok(())

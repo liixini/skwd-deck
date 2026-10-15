@@ -11,7 +11,7 @@ use wall_proto::ev;
 
 use crate::backend::events::EventPublisher;
 use crate::backend::history::{ApplySource, HistoryRepository};
-use crate::infrastructure::media_paths::{VideoRoute, static_thumb, video_route, video_thumb};
+use crate::infrastructure::media_paths::{VideoRoute, video_route, video_thumb};
 use crate::infrastructure::stats::Stats;
 
 mod phases;
@@ -590,8 +590,7 @@ fn apply_static_arm(
             });
         }
     }
-    let theme_source = static_thumb(state, path).unwrap_or_else(|| path.clone());
-    Ok(ExecutionReceipt::new(decision.clone(), Some(theme_source), path.clone()))
+    Ok(ExecutionReceipt::new(decision.clone(), Some(path.clone()), path.clone()))
 }
 
 fn apply_video_arm(

@@ -11,6 +11,7 @@ const PALETTE_KEY: &str = "palette";
 const SCHEME_KEY: &str = "scheme";
 const SCHEME_META_KEY: &str = "_scheme";
 pub const ERROR_SEPARATOR: &str = "; ";
+const IDENTITY_SQL: &str = "SELECT key, name, thumb FROM meta WHERE key = ?2 OR thumb = ?1 OR thumb_sm = ?1 OR video_file = ?1 ORDER BY key = ?2 DESC LIMIT 1";
 
 pub const ROLE_KEYS: [&str; 9] = [
     "primary",
@@ -135,12 +136,19 @@ pub fn refresh_apps(
 }
 
 pub fn identity(state: &WallState, source: &str) -> Value {
-    state.with_db(|db| db.query_row(
-        "SELECT key, name, thumb FROM meta WHERE key = ?1 OR thumb = ?1 OR thumb_sm = ?1 OR video_file = ?1 ORDER BY key = ?1 DESC LIMIT 1",
-        [source], |row| Ok(json!({"key": row.get::<_, String>(0)?,
+    let key = state.library_key(std::path::Path::new(source)).unwrap_or_else(|| source.to_string());
+    state
+        .with_db(|db| {
+            db.query_row(IDENTITY_SQL, [source, &key], |row| {
+                Ok(json!({"key": row.get::<_, String>(0)?,
             "name": row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-            "thumb": row.get::<_, Option<String>>(2)?.unwrap_or_default()})),
-    ).optional()).ok().flatten().unwrap_or_else(|| json!({"key": source, "name": source, "thumb": source}))
+            "thumb": row.get::<_, Option<String>>(2)?.unwrap_or_default()}))
+            })
+            .optional()
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| json!({"key": source, "name": source, "thumb": source}))
 }
 
 pub fn configuration(state: &WallState, source: &str) -> Config {

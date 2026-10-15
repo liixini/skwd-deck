@@ -104,7 +104,14 @@ fn fixed_image_restores_settings() {
     let walld = Walld::start(&sandbox);
     assert!(wait_until(|| dms_image(&sandbox) != "before.png", WAIT), "{}", walld.log_contents());
     let exported = PathBuf::from(dms_image(&sandbox));
-    assert!(std::fs::read(exported).unwrap().starts_with(b"\x89PNG\r\n\x1a\n"));
+    let bytes = std::fs::read(&exported).unwrap();
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let root = exported.parent().unwrap();
+    assert_eq!(std::fs::read(root.join("wallpaper.png")).unwrap(), bytes);
+    assert_eq!(
+        std::fs::read(root.join("current")).unwrap(),
+        exported.file_name().unwrap().as_encoded_bytes()
+    );
     let sway = sandbox.root.join("config/swaylock/config");
     assert!(std::fs::read_to_string(&sway).unwrap().contains("show-failed-attempts"));
     let noctalia = sandbox.state().join("noctalia/settings.toml");

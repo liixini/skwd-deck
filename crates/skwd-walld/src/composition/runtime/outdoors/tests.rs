@@ -748,6 +748,43 @@ fn held_photo_keeps_metadata() {
 }
 
 #[test]
+fn held_library_keeps_metadata() {
+    let (_guard, _root) = crate::testenv::lock();
+    let (state, _) = setup();
+    let key = "static:held-library.png";
+    state
+        .with_db(|conn| {
+            db::upsert_cache_entry(
+                conn,
+                key,
+                "static",
+                "held-library.png",
+                "/held-thumb.webp",
+                "/held-preview.webp",
+                "",
+                "",
+                1,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+            )
+        })
+        .unwrap();
+    state.with_db(|conn| db::set_hidden(conn, key, true)).unwrap();
+    let held = output_status(&state, "*", key, &[], true);
+    assert_eq!(held.name, "held-library.png");
+    assert_eq!(held.preview.as_deref(), Some("/held-thumb.webp"));
+    assert!(held.held);
+    let missing = output_status(&state, "*", "static:held-missing.png", &[], false);
+    assert_eq!(missing.name, "held-missing");
+    assert!(missing.preview.is_none());
+    state.with_db(|conn| db::delete_entries(conn, &[key.to_owned()])).unwrap();
+}
+
+#[test]
 fn next_preserves_other_displays() {
     let keys: Vec<_> = ["a", "b", "c", "d"].into_iter().map(str::to_owned).collect();
     let current = BTreeMap::from([

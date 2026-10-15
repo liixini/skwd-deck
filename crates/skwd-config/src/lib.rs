@@ -13,7 +13,7 @@ mod settings;
 pub mod theme_profile;
 mod value;
 
-pub use atomic::{atomic_write, atomic_write_mode, follow_links};
+pub use atomic::{atomic_copy, atomic_write, atomic_write_mode, follow_links};
 pub use environment::{cache_dir, config_dir, config_path, env, home, resolve};
 pub use key_catalog::keys;
 pub use library::{

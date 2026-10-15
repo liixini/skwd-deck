@@ -199,7 +199,8 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
         };
         replies.send(payload);
         if heavy {
-            let _ = tokio::task::spawn_blocking(trim_allocator).await;
+            let _ =
+                tokio::task::spawn_blocking(crate::infrastructure::platform::trim_allocator).await;
         }
     }
     source_tasks.abort_all();
@@ -256,13 +257,6 @@ async fn writer_task(write_half: OwnedWriteHalf, mut receiver: Receiver<String>)
             break;
         }
     }
-}
-
-fn trim_allocator() {
-    #[cfg(target_env = "gnu")]
-    unsafe {
-        libc::malloc_trim(0)
-    };
 }
 
 fn parse_request(line: &[u8], stats: &Stats) -> Result<Request, Option<String>> {

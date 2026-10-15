@@ -68,6 +68,33 @@ fn failed_write_leaves_nothing() {
     assert!(!missing.exists());
 }
 
+#[test]
+fn copy_replaces_exactly() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.bin");
+    let target = directory.path().join("target.bin");
+    let bytes: Vec<u8> = (0..131_072).map(|index| index as u8).collect();
+    std::fs::write(&source, &bytes).unwrap();
+    std::fs::write(&target, b"old").unwrap();
+
+    atomic_copy(&target, &source, None).unwrap();
+
+    assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    assert_eq!(std::fs::read(&source).unwrap(), bytes);
+}
+
+#[test]
+fn copy_failure_keeps_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("target.bin");
+    std::fs::write(&target, b"old").unwrap();
+
+    assert!(atomic_copy(&target, directory.path(), None).is_err());
+
+    assert_eq!(std::fs::read(&target).unwrap(), b"old");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+}
+
 #[cfg(unix)]
 fn has_tmp(directory: &std::path::Path) -> bool {
     std::fs::read_dir(directory)
@@ -190,6 +217,27 @@ fn write_through_symlink_sets_target_mode() {
     atomic_write_mode(&link, b"{\"k\":1}", Some(0o600)).unwrap();
     assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
     assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+}
+
+#[cfg(unix)]
+#[test]
+fn copy_preserves_link_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source.bin");
+    let target = root.path().join("target.bin");
+    std::fs::write(&source, b"new").unwrap();
+    std::fs::write(&target, b"old").unwrap();
+    let link = root.path().join("link.bin");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    atomic_copy(&link, &source, Some(0o600)).unwrap();
+
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_link(&link).unwrap(), target);
+    assert_eq!(std::fs::read(&target).unwrap(), b"new");
+    assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(!has_tmp(root.path()));
 }
 
 #[cfg(unix)]

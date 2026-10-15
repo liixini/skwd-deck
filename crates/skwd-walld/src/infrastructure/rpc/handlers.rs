@@ -322,12 +322,9 @@ pub(super) fn wall_retheme(
 
 pub(super) fn shell_preview_end(state: &Arc<WallState>, request: &Request) -> Response {
     state.theme().bump_shell_preview();
-    let state = Arc::clone(state);
-    std::thread::spawn(move || {
-        for sink in &skwd_wall_core::theme_sink::SINKS {
-            (sink.preview_end)(&state);
-        }
-    });
+    for sink in &skwd_wall_core::theme_sink::SINKS {
+        (sink.preview_end)(state);
+    }
     Response::ok(request.id, json!({"ok": true}))
 }
 

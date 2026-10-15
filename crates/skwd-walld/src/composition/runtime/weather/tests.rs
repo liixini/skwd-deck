@@ -205,6 +205,44 @@ fn approved_tracks_visibility() {
 }
 
 #[test]
+fn members_preserve_order() {
+    let (_guard, root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({
+        "library":{"profile":"weather-order","profiles":[{
+            "id":"weather-order","hide":[root.join("walls/weather-order/private")]
+        }]}
+    }));
+    let state = Arc::new(WallState::open().unwrap());
+    let names = [
+        "weather-order/z.png",
+        "weather-order/a.png",
+        "weather-order/hidden.png",
+        "weather-order/excluded.png",
+        "weather-order/private/secret.png",
+    ];
+    for name in names {
+        cache_item(&state, name);
+    }
+    state.with_db(|conn| db::set_hidden(conn, "static:weather-order/hidden.png", true)).unwrap();
+    state
+        .with_db(|conn| {
+            conn.execute(
+                "UPDATE meta SET library_excluded=1 WHERE key=?1",
+                ("static:weather-order/excluded.png",),
+            )
+        })
+        .unwrap();
+    let keys: Vec<_> =
+        [names[0], names[1], names[0], names[2], names[3], names[4], "weather-order/missing.png"]
+            .into_iter()
+            .map(|name| format!("static:{name}"))
+            .collect();
+    assert_eq!(visible_members(&state, &keys), keys[..2]);
+    assert!(visible_members(&state, &[]).is_empty());
+    state.with_db(|conn| db::delete_entries(conn, &keys)).unwrap();
+}
+
+#[test]
 fn queued_approval_rechecks() {
     let (_guard, _root) = crate::testenv::lock();
     crate::testenv::write_config(serde_json::json!({

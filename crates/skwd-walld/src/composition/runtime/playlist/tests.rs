@@ -342,6 +342,112 @@ fn counts_follow_profile() {
 }
 
 #[test]
+fn counts_mixed_sources() {
+    let (_guard, root) = crate::testenv::lock();
+    let anime = root.join("walls/counts-mixed/anime").to_string_lossy().into_owned();
+    let games = root.join("walls/counts-mixed/games").to_string_lossy().into_owned();
+    crate::testenv::write_config(serde_json::json!({
+        "library": {"profile": "public", "profiles": [{"id": "public", "hide": [anime]}]}
+    }));
+    let state = Arc::new(WallState::open().unwrap());
+    for (name, fav, hidden, excluded) in [
+        ("games/a.png", 1, 0, 0),
+        ("games/b.png", 0, 0, 0),
+        ("anime/c.png", 1, 0, 0),
+        ("games/d.png", 1, 1, 0),
+        ("games/e.png", 1, 0, 1),
+        ("other/f.png", 1, 0, 0),
+    ] {
+        state
+            .with_db(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta(key,name,type,favourite,hidden,library_excluded) VALUES (?1,?2,'static',?3,?4,?5)",
+                    (format!("static:counts-mixed/{name}"), format!("counts-mixed/{name}"), fav, hidden, excluded),
+                )
+            })
+            .unwrap();
+    }
+    state.with_db(|conn| db::set_effect_tag(conn, "counts-mixed/games/b", "glow")).unwrap();
+
+    let sources = [
+        ("all folder:counts-mixed".to_owned(), 3),
+        ("favourites folder:counts-mixed".to_owned(), 2),
+        ("tag:glow folder:counts-mixed".to_owned(), 1),
+        (wall_proto::playlist_source::folder_clause(&games), 2),
+    ];
+    let ids: Vec<_> = sources
+        .iter()
+        .map(|(source, _)| {
+            let id = state.with_db(|conn| db::playlist_create(conn, source)).unwrap();
+            state
+                .with_db(|conn| {
+                    db::playlist_update(
+                        conn,
+                        id,
+                        None,
+                        Some("smart"),
+                        Some(source.as_str()),
+                        None,
+                        None,
+                    )
+                })
+                .unwrap();
+            id
+        })
+        .collect();
+    let curated = state.with_db(|conn| db::playlist_create(conn, "curated")).unwrap();
+    state
+        .with_db(|conn| db::playlist_add_member(conn, curated, "static:counts-mixed/games/a.png"))
+        .unwrap();
+
+    let rows = list_with_resolved_counts(&state);
+    let defs = load_defs(&state);
+    for ((_, expected), id) in sources.iter().zip(&ids) {
+        let row = rows.iter().find(|row| row.id == *id).unwrap();
+        assert_eq!(row.count, *expected);
+        assert_eq!(usize::try_from(row.count).unwrap(), resolve_keys(&state, *id, &defs[id]).len());
+    }
+    assert_eq!(rows.iter().find(|row| row.id == curated).unwrap().count, 1);
+
+    for id in &ids {
+        state
+            .with_db(|conn| {
+                db::playlist_update(
+                    conn,
+                    *id,
+                    None,
+                    None,
+                    Some("favourites folder:counts-mixed"),
+                    None,
+                    None,
+                )
+            })
+            .unwrap();
+    }
+    let rows = list_with_resolved_counts(&state);
+    assert!(rows.iter().filter(|row| ids.contains(&row.id)).all(|row| row.count == 2));
+    state.with_db(|conn| db::playlist_delete(conn, curated)).unwrap();
+    for id in ids {
+        state.with_db(|conn| db::playlist_delete(conn, id)).unwrap();
+    }
+    state
+        .with_db(|conn| {
+            db::delete_entries(
+                conn,
+                &[
+                    "static:counts-mixed/games/a.png".to_owned(),
+                    "static:counts-mixed/games/b.png".to_owned(),
+                    "static:counts-mixed/anime/c.png".to_owned(),
+                    "static:counts-mixed/games/d.png".to_owned(),
+                    "static:counts-mixed/games/e.png".to_owned(),
+                    "static:counts-mixed/other/f.png".to_owned(),
+                ],
+            )
+        })
+        .unwrap();
+}
+
+#[test]
 fn folder_playlists_nest() {
     let (_g, root) = crate::testenv::lock();
     crate::testenv::write_config(serde_json::json!({}));

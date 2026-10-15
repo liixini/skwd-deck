@@ -87,3 +87,29 @@ fn await_converted_by_bing() {
     conversion.join().unwrap();
     assert!(resolved.ends_with("bing-daily1.webp"));
 }
+
+#[test]
+fn theme_image_sources() {
+    let (_guard, root) = crate::testenv::lock();
+    let library = root.join("wallpapers");
+    std::fs::create_dir_all(&library).unwrap();
+    let original = library.join("source.png");
+    std::fs::write(&original, b"original").unwrap();
+    crate::testenv::write_config(serde_json::json!({"paths": {"wallpaper": library}}));
+    let (state, _, _) = crate::testenv::harness();
+    state.with_db(|db| db.execute(
+        "INSERT INTO meta (key, type, thumb, thumb_sm) VALUES ('static:source.png', 'static', '/thumb.webp', '/small.webp'), ('video:clip.mp4', 'video', '/frame.webp', '')", []
+    )).unwrap();
+    assert_eq!(theme_image(&state, ""), "");
+    for source in ["/thumb.webp", "/small.webp", original.to_str().unwrap()] {
+        assert_eq!(theme_image(&state, source), original.to_string_lossy());
+        assert_eq!(
+            skwd_wall_core::theme::profiles::identity(&state, source)["key"],
+            "static:source.png"
+        );
+    }
+    assert_eq!(theme_image(&state, "/frame.webp"), "/frame.webp");
+    assert_eq!(theme_image(&state, "/unknown.png"), "/unknown.png");
+    std::fs::remove_file(&original).unwrap();
+    assert_eq!(theme_image(&state, "/thumb.webp"), "/thumb.webp");
+}

@@ -34,7 +34,7 @@ pub use wallpapers::{
     set_hidden, thumb_for_key, thumb_for_video, thumbnail_cache, tinier_convert_delete,
     tinier_convert_entry, tinier_convert_record, tinier_convert_src, update_colors,
     update_duration, update_thumbnail_paths, update_user_tags, upsert_cache_entry,
-    video_file_for_key,
+    video_file_for_key, visit_wallpapers,
 };
 pub use we_properties::{
     MAX_WE_PROPERTIES, MAX_WE_PROPERTY_NAME, clear_we_properties, set_we_property,

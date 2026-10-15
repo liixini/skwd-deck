@@ -13,6 +13,7 @@ use crate::infrastructure::wake::wake_or_timeout;
 
 const PLAYLIST_ITEM_KEY: &str = "key";
 const PLAYLIST_ITEM_TYPE: &str = "type";
+const PLAYLIST_ITEM_FAVOURITE: &str = "favourite";
 use wall_rules::playlist::{
     Filter, Order, initial_index, parse_order, source_wants_favourites, step,
 };
@@ -170,30 +171,33 @@ pub fn list_with_resolved_counts(state: &Arc<WallState>) -> Vec<wall_proto::Play
         return rows;
     }
 
-    let visibility = Visibility::load(state);
-    let all_items = state.with_db(|conn| db::list_wallpapers(conn, false)).unwrap_or_default();
-    let favourite_items = rows
+    let filters: Vec<_> = rows
         .iter()
-        .filter(|row| row.kind == "smart")
-        .filter_map(|row| row.source.as_deref())
-        .any(source_wants_favourites)
-        .then(|| state.with_db(|conn| db::list_wallpapers(conn, true)).unwrap_or_default());
-
-    for row in &mut rows {
-        if row.kind != "smart" {
-            continue;
-        }
-        let source = row.source.as_deref().unwrap_or(wall_proto::playlist_source::ALL);
-        let filter = Filter::parse(source);
-        let items = if source_wants_favourites(source) {
-            favourite_items.as_deref().unwrap_or_default()
-        } else {
-            &all_items
-        };
-        row.count = items
-            .iter()
-            .filter(|item| visibility.matches(item, &filter) && visibility.shows_item(item))
-            .count() as i64;
+        .enumerate()
+        .filter(|(_, row)| row.kind == "smart")
+        .map(|(idx, row)| {
+            let source = row.source.as_deref().unwrap_or(wall_proto::playlist_source::ALL);
+            (idx, source_wants_favourites(source), Filter::parse(source))
+        })
+        .collect();
+    let favourite_only = filters.iter().all(|(_, fav, _)| *fav);
+    let visibility = Visibility::load(state);
+    let mut counts = vec![0_i64; filters.len()];
+    let result = state.with_db(|conn| {
+        db::visit_wallpapers(conn, favourite_only, |item| {
+            if !visibility.shows_item(&item) {
+                return;
+            }
+            let favourite = item.get(PLAYLIST_ITEM_FAVOURITE).and_then(Value::as_i64) == Some(1);
+            for ((_, fav, filter), count) in filters.iter().zip(&mut counts) {
+                if (!fav || favourite) && visibility.matches(&item, filter) {
+                    *count += 1;
+                }
+            }
+        })
+    });
+    for ((idx, _, _), count) in filters.into_iter().zip(counts) {
+        rows[idx].count = if result.is_ok() { count } else { 0 };
     }
     rows
 }

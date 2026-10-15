@@ -78,7 +78,7 @@ fn cli_tokens_palette() {
         "tertiary": "#e0c38c", "on_tertiary": "#3f2e04",
         "error": "#ffb4ab", "on_error": "#690005",
         "surface": "#181211", "on_surface": "#eedfde",
-        "surface_variant": "#534342", "on_surface_variant": "#d8c2c0",
+        "surface_container": "#271d1c", "surface_variant": "#534342", "on_surface_variant": "#d8c2c0",
         "outline": "#a08c8b", "shadow": "#000000",
         "terminal_foreground": "#eedfde", "terminal_background": "#181211",
         "terminal_selection_fg": "#181211", "terminal_selection_bg": "#eedfde",
@@ -96,6 +96,8 @@ fn cli_tokens_palette() {
     let out = cli_tokens_to_custom_palette(&cli).expect("dark+light transform");
     let dark = &out["dark"];
     assert_eq!(dark["mPrimary"], "#ffb3b0");
+    assert_eq!(dark["mSurfaceVariant"], "#271d1c");
+    assert_eq!(out["light"]["mSurfaceVariant"], "#271d1c");
     assert_eq!(dark["mOnSurfaceVariant"], "#d8c2c0");
     assert_eq!(dark["mHover"], dark["mTertiary"]);
     assert_eq!(dark["terminal"]["normal"]["red"], "#ffb3b0");
@@ -252,4 +254,27 @@ fn scheme_rejects_incomplete_or_invalid_noctalia_tokens() {
         missing_mode.as_object_mut().unwrap().remove(mode);
         assert!(crate::material::document_from_modes(&missing_mode, true).is_none());
     }
+}
+
+#[test]
+fn preview_cache_inputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("image.png");
+    std::fs::write(&path, b"first").unwrap();
+    let image = path.to_str().unwrap();
+    let config = Config::from_root(serde_json::json!({"paths": {"noctaliaBin": "/bin/noctalia"}}));
+    let key = preview_cache_key(&config, image, "m3-content");
+    assert_eq!(key, preview_cache_key(&config, image, "m3-content"));
+    for (setting, value) in [
+        ("theme.noctaliaPureBlack", serde_json::json!(true)),
+        ("paths.noctaliaBin", serde_json::json!("/other/noctalia")),
+    ] {
+        assert_ne!(
+            key,
+            preview_cache_key(&config.with_override(setting, value), image, "m3-content")
+        );
+    }
+    assert_ne!(key, preview_cache_key(&config, image, "vibrant"));
+    std::fs::write(&path, b"replacement").unwrap();
+    assert_ne!(key, preview_cache_key(&config, image, "m3-content"));
 }

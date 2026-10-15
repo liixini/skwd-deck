@@ -1,5 +1,7 @@
 pub use skwd_palette::material::*;
 
+pub const SURFACE_CONTAINER_ROLE: &str = "surface_container";
+
 pub fn document_from_modes(cli: &serde_json::Value, dark: bool) -> Option<serde_json::Value> {
     let dark_tokens = cli.get("dark")?.as_object()?;
     let light_tokens = cli.get("light")?.as_object()?;

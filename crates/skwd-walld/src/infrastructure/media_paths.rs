@@ -6,6 +6,8 @@ use skwd_wall_core::WallState;
 use skwd_wall_core::db::{TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET};
 
 const CONVERT_POLL_INTERVAL: Duration = Duration::from_millis(80);
+const IDENTITY_KEY: &str = "key";
+const STATIC_KEY_PREFIX: &str = "static:";
 
 pub(crate) struct TinierVideo {
     pub(crate) path: String,
@@ -38,13 +40,23 @@ pub(crate) fn video_thumb(state: &Arc<WallState>, path: &str) -> Option<String> 
         .filter(|thumb| Path::new(thumb).exists())
 }
 
-pub(crate) fn static_thumb(state: &Arc<WallState>, path: &str) -> Option<String> {
-    let key = state.library_key(Path::new(path))?;
-    state
-        .with_db(|connection| skwd_wall_core::db::thumb_for_key(connection, &key))
-        .ok()
-        .flatten()
-        .filter(|thumb| Path::new(thumb).exists())
+pub(crate) fn theme_image(state: &Arc<WallState>, image: &str) -> String {
+    if image.is_empty() {
+        return String::new();
+    }
+    let identity = skwd_wall_core::theme::profiles::identity(state, image);
+    let Some(path) =
+        identity[IDENTITY_KEY].as_str().and_then(|key| key.strip_prefix(STATIC_KEY_PREFIX))
+    else {
+        return image.to_string();
+    };
+    let config = state.config();
+    let original = Path::new(&config.wallpaper_dir()).join(path);
+    if original.is_file() && config.library_policy().contains(&original) {
+        original.to_string_lossy().into_owned()
+    } else {
+        image.to_string()
+    }
 }
 
 pub(crate) fn library_path(state: &Arc<WallState>, path: &str) -> String {
@@ -64,9 +76,7 @@ pub(crate) fn output_theme_source(state: &Arc<WallState>, output: &str) -> Optio
     let field = |key| entry.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
     let path = library_path(state, field("path"));
     match field("type") {
-        wall_proto::kind::STATIC if !path.is_empty() => {
-            Some(static_thumb(state, &path).unwrap_or(path))
-        }
+        wall_proto::kind::STATIC if !path.is_empty() => Some(path),
         wall_proto::kind::VIDEO => video_thumb(state, &path),
         wall_proto::kind::WE if skwd_wall_core::we::valid_we_id(field("we_id")) => {
             skwd_wall_core::we::find_preview(&state.config().we_dir().join(field("we_id")))

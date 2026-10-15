@@ -109,6 +109,8 @@ fn catalog_fingerprints() {
     assert_eq!(request.entries.len(), 1);
     assert_eq!(request.entries[0].key, "static:a.png");
     assert_eq!(request.entries[0].path, Path::new("/t/a.webp"));
+    assert_eq!(request.entries[0].fingerprint, 9_454_717_276_440_558_294);
+    assert_eq!(request.fingerprint, 16_628_109_849_372_381_917);
 
     let changed = request_from_rows(
         &[
@@ -118,6 +120,112 @@ fn catalog_fingerprints() {
     );
     assert_ne!(request.fingerprint, changed.fingerprint);
     assert_ne!(request.entries[0].fingerprint, changed.entries[0].fingerprint);
+}
+
+#[test]
+fn catalog_stream_matches_rows() {
+    let (_guard, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({}));
+    let database = WallState::open().unwrap().database();
+    database
+        .with_connection(|conn| {
+            conn.execute("DELETE FROM meta WHERE key LIKE 'semantic-catalog:%'", [])?;
+            for (key, kind, name, thumb, width, height) in [
+                ("semantic-catalog:tall", "video", "tall.mp4", "/t/tall.webp", 1080, 1920),
+                ("semantic-catalog:wide", "static", "wide.png", "/t/wide.webp", 3200, 1200),
+                ("semantic-catalog:shader", "shader", "skip", "/t/skip.webp", 1, 1),
+                ("semantic-catalog:no-thumb", "static", "no-thumb.png", "", 1, 1),
+                ("semantic-catalog:no-name", "static", "", "/t/no-name.webp", 1, 1),
+            ] {
+                skwd_wall_core::db::upsert_cache_entry(
+                    conn, key, kind, name, thumb, thumb, "", "", 7, 0, 0, 0, 1, width, height,
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let rows =
+        database.with_connection(|conn| skwd_wall_core::db::list_wallpapers(conn, false)).unwrap();
+    for multiview in [false, true] {
+        let streamed = catalog_request(&database, multiview).unwrap();
+        assert_eq!(streamed, request_from_rows(&rows, multiview));
+        let fixtures: Vec<_> = streamed
+            .entries
+            .iter()
+            .filter(|entry| entry.key.starts_with("semantic-catalog:"))
+            .collect();
+        let keys: Vec<_> = fixtures.iter().map(|entry| entry.key.as_str()).collect();
+        if multiview {
+            assert_eq!(
+                keys,
+                [
+                    "semantic-catalog:tall",
+                    "semantic-catalog:tall",
+                    "semantic-catalog:wide",
+                    "semantic-catalog:wide",
+                    "semantic-catalog:wide",
+                    "semantic-catalog:wide"
+                ]
+            );
+        } else {
+            assert_eq!(keys, ["semantic-catalog:tall", "semantic-catalog:wide"]);
+        }
+    }
+    database
+        .with_connection(|conn| {
+            conn.execute("DELETE FROM meta WHERE key LIKE 'semantic-catalog:%'", [])
+        })
+        .unwrap();
+}
+
+#[test]
+fn catalog_thumb_changes() {
+    let (_guard, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({}));
+    let directory = tempfile::tempdir().unwrap();
+    let thumb = directory.path().join("thumb.webp");
+    std::fs::write(&thumb, b"one").unwrap();
+    let database = WallState::open().unwrap().database();
+    database
+        .with_connection(|conn| {
+            conn.execute("DELETE FROM meta WHERE key = 'semantic-catalog:thumb'", [])?;
+            skwd_wall_core::db::upsert_cache_entry(
+                conn,
+                "semantic-catalog:thumb",
+                "static",
+                "thumb.png",
+                thumb.to_str().unwrap(),
+                "",
+                "",
+                "",
+                7,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+            )
+        })
+        .unwrap();
+    let before = catalog_request(&database, false).unwrap();
+    std::fs::write(&thumb, b"two longer").unwrap();
+    let after = catalog_request(&database, false).unwrap();
+    assert_ne!(before.fingerprint, after.fingerprint);
+    let fingerprint = |request: &BuildRequest| {
+        request
+            .entries
+            .iter()
+            .find(|entry| entry.key == "semantic-catalog:thumb")
+            .unwrap()
+            .fingerprint
+    };
+    assert_ne!(fingerprint(&before), fingerprint(&after));
+    database
+        .with_connection(|conn| {
+            conn.execute("DELETE FROM meta WHERE key = 'semantic-catalog:thumb'", [])
+        })
+        .unwrap();
 }
 
 #[test]

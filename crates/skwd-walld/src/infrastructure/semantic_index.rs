@@ -648,72 +648,118 @@ fn update_index_task(
 }
 
 fn catalog_request(database: &Database, multiview: bool) -> anyhow::Result<BuildRequest> {
-    let rows = database
-        .with_connection(|connection| skwd_wall_core::db::list_wallpapers(connection, false))?;
-    Ok(request_from_rows(&rows, multiview))
+    let mut rows = Vec::new();
+    database.with_connection(|connection| {
+        skwd_wall_core::db::visit_wallpapers(connection, false, |row| {
+            if let Some(row) = CatalogRow::from_json(&row) {
+                rows.push(row);
+            }
+        })
+    })?;
+    let mut catalog = Catalog::default();
+    for row in rows {
+        catalog.push(row, multiview);
+    }
+    Ok(catalog.finish())
 }
 
+#[cfg(test)]
 fn request_from_rows(rows: &[serde_json::Value], multiview: bool) -> BuildRequest {
-    let mut catalog_hasher = std::collections::hash_map::DefaultHasher::new();
-    let mut entries = Vec::with_capacity(if multiview { rows.len() * 2 } else { rows.len() });
+    let mut catalog = Catalog::default();
     for row in rows {
-        if row.get("type").and_then(serde_json::Value::as_str) == Some(wall_proto::kind::SHADER) {
-            continue;
+        if let Some(row) = CatalogRow::from_json(row) {
+            catalog.push(row, multiview);
+        }
+    }
+    catalog.finish()
+}
+
+struct CatalogRow {
+    key: String,
+    thumb: String,
+    mtime: i64,
+    is_static: bool,
+    width: i64,
+    height: i64,
+}
+
+impl CatalogRow {
+    fn from_json(row: &serde_json::Value) -> Option<Self> {
+        let kind = row.get("type").and_then(serde_json::Value::as_str);
+        if kind == Some(wall_proto::kind::SHADER) {
+            return None;
         }
         let name = row.get("name").and_then(serde_json::Value::as_str).unwrap_or("");
         let name = name.trim_end_matches('/');
         if name.is_empty() {
-            continue;
+            return None;
         }
         let key = row
             .get("key")
             .and_then(serde_json::Value::as_str)
             .filter(|value| !value.is_empty())
             .unwrap_or(name);
-        let thumb =
-            row.get("thumb").and_then(serde_json::Value::as_str).filter(|value| !value.is_empty());
-        let Some(thumb) = thumb else { continue };
-        let mtime = row.get("mtime").and_then(serde_json::Value::as_i64).unwrap_or(0);
-        key.hash(&mut catalog_hasher);
-        thumb.hash(&mut catalog_hasher);
-        mtime.hash(&mut catalog_hasher);
-        entry_fingerprint(thumb, mtime, ImageView::Full).hash(&mut catalog_hasher);
-        entries.push(BuildEntry {
+        let thumb = row.get("thumb").and_then(serde_json::Value::as_str)?.to_string();
+        if thumb.is_empty() {
+            return None;
+        }
+        Some(Self {
             key: key.to_string(),
-            path: PathBuf::from(thumb),
-            fingerprint: entry_fingerprint(thumb, mtime, ImageView::Full),
+            thumb,
+            mtime: row.get("mtime").and_then(serde_json::Value::as_i64).unwrap_or(0),
+            is_static: kind == Some(wall_proto::kind::STATIC),
+            width: row.get("width").and_then(serde_json::Value::as_i64).unwrap_or(0),
+            height: row.get("height").and_then(serde_json::Value::as_i64).unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Default)]
+struct Catalog {
+    hasher: std::collections::hash_map::DefaultHasher,
+    entries: Vec<BuildEntry>,
+}
+
+impl Catalog {
+    fn push(&mut self, row: CatalogRow, multiview: bool) {
+        let CatalogRow { key, thumb, mtime, is_static, width, height } = row;
+        key.hash(&mut self.hasher);
+        thumb.hash(&mut self.hasher);
+        mtime.hash(&mut self.hasher);
+        entry_fingerprint(&thumb, mtime, ImageView::Full).hash(&mut self.hasher);
+        self.entries.push(BuildEntry {
+            key: key.clone(),
+            path: PathBuf::from(&thumb),
+            fingerprint: entry_fingerprint(&thumb, mtime, ImageView::Full),
             view: ImageView::Full,
         });
         if !multiview {
-            continue;
+            return;
         }
-        "multiview-v1".hash(&mut catalog_hasher);
-        let width = row.get("width").and_then(serde_json::Value::as_i64).unwrap_or(0);
-        let height = row.get("height").and_then(serde_json::Value::as_i64).unwrap_or(0);
-        width.hash(&mut catalog_hasher);
-        height.hash(&mut catalog_hasher);
-        entries.push(BuildEntry {
-            key: key.to_string(),
-            path: PathBuf::from(thumb),
-            fingerprint: entry_fingerprint(thumb, mtime, ImageView::Center),
+        "multiview-v1".hash(&mut self.hasher);
+        width.hash(&mut self.hasher);
+        height.hash(&mut self.hasher);
+        self.entries.push(BuildEntry {
+            key: key.clone(),
+            path: PathBuf::from(&thumb),
+            fingerprint: entry_fingerprint(&thumb, mtime, ImageView::Center),
             view: ImageView::Center,
         });
-        if row.get("type").and_then(serde_json::Value::as_str) == Some(wall_proto::kind::STATIC)
-            && width > 0
-            && height > 0
-            && width >= height.saturating_mul(2)
-        {
+        if is_static && width > 0 && height > 0 && width >= height.saturating_mul(2) {
             for view in [ImageView::LeftThird, ImageView::RightThird] {
-                entries.push(BuildEntry {
-                    key: key.to_string(),
-                    path: PathBuf::from(thumb),
-                    fingerprint: entry_fingerprint(thumb, mtime, view),
+                self.entries.push(BuildEntry {
+                    key: key.clone(),
+                    path: PathBuf::from(&thumb),
+                    fingerprint: entry_fingerprint(&thumb, mtime, view),
                     view,
                 });
             }
         }
     }
-    BuildRequest { fingerprint: catalog_hasher.finish(), entries }
+
+    fn finish(self) -> BuildRequest {
+        BuildRequest { fingerprint: self.hasher.finish(), entries: self.entries }
+    }
 }
 
 fn entry_fingerprint(thumb: &str, mtime: i64, view: ImageView) -> u64 {

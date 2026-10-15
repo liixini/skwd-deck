@@ -25,6 +25,13 @@ pub(crate) fn tune_allocator() {
     }
 }
 
+pub(crate) fn trim_allocator() {
+    #[cfg(target_env = "gnu")]
+    unsafe {
+        libc::malloc_trim(0)
+    };
+}
+
 pub(crate) fn debug_enabled() -> bool {
     std::env::args().any(|argument| argument == "--debug")
         || matches!(std::env::var("SKWD_WALL_DEBUG").as_deref(), Ok("1" | "true"))

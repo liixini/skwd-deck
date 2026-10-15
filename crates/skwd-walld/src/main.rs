@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use skwd_wall_core::WallState;
-use skwd_wall_core::backend::renderers::RendererSupervision;
-use skwd_wall_core::backend::wallpaper::WallpaperApplication;
+use skwd_wall_core::backend::{renderers::RendererSupervision, wallpaper::WallpaperApplication};
 use skwd_wall_core::infrastructure::wallpaper::CoreWallpaperApplication;
 
 use crate::backend::events::EventPublisher;
@@ -13,7 +12,7 @@ use crate::infrastructure::events::EventHub;
 use crate::infrastructure::history::FileHistoryRepository;
 use crate::infrastructure::processes::ProcessSupervisor;
 use crate::infrastructure::stats::Stats;
-use crate::infrastructure::{bug_report, logging, platform};
+use crate::infrastructure::{bug_report, lock_screen::RENDER_WORKER_ARG, logging, platform};
 
 #[cfg(feature = "obs-heap")]
 #[global_allocator]
@@ -27,6 +26,9 @@ mod infrastructure;
 
 fn main() -> anyhow::Result<()> {
     platform::tune_allocator();
+    if std::env::args_os().nth(1).is_some_and(|argument| argument == RENDER_WORKER_ARG) {
+        return infrastructure::lock_screen::run_render_worker();
+    }
     platform::validate_arguments()?;
 
     if std::env::args().any(|argument| argument == "--version" || argument == "-V") {

@@ -31,20 +31,36 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 pub fn atomic_write_mode(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
+    atomic_replace(path, mode, |file| file.write_all(bytes))
+}
+
+pub fn atomic_copy(target: &Path, source: &Path, mode: Option<u32>) -> std::io::Result<()> {
+    let mut source = std::fs::File::open(source)?;
+    atomic_replace(target, mode, |file| {
+        std::io::copy(&mut source, file)?;
+        Ok(())
+    })
+}
+
+fn atomic_replace(
+    path: &Path,
+    mode: Option<u32>,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let target = follow_links(path)?;
     let mut name = target.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".{}.tmp", suffix()));
     let temporary = target.with_file_name(name);
-    let write = || -> std::io::Result<()> {
+    let stage = || -> std::io::Result<()> {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         configure_mode(&mut options, mode);
         let mut file = options.open(&temporary)?;
-        file.write_all(bytes)?;
+        write(&mut file)?;
         apply_mode(&file, mode)?;
         file.sync_all()
     };
-    if let Err(error) = write() {
+    if let Err(error) = stage() {
         let _ = std::fs::remove_file(&temporary);
         return Err(error);
     }
