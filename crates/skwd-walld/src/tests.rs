@@ -469,19 +469,38 @@ fn pick_only_stops_paper_service_for_exact_output_and_propagates_failure() {
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket).unwrap();
     let server = std::thread::spawn(move || {
-        for (output, fail) in [("DP-1", false), ("*", false), ("DP-2", true)] {
+        let mut stops = [("DP-1", false), ("*", false), ("DP-2", true)].into_iter().peekable();
+        loop {
             let (mut stream, _) = listener.accept().unwrap();
             let mut line = String::new();
             BufReader::new(&stream).read_line(&mut line).unwrap();
-            let request: Value = serde_json::from_str(&line).unwrap();
-            assert_eq!(request["method"], "paper.stop");
-            assert_eq!(request["params"]["outputs"], json!([output]));
-            let response = if fail {
-                json!({"id":request["id"], "error":{"code":"stop_failed","message":"stop failed"}})
-            } else {
-                json!({"id":request["id"], "result":{"stopped":1}})
+            let request: paper_control::Request = serde_json::from_str(&line).unwrap();
+            let audio = matches!(request.params, paper_control::RequestParams::PlaybackAudio(_));
+            let response = match request.params {
+                paper_control::RequestParams::Stop(stop) => {
+                    let (output, fail) = stops.next().unwrap();
+                    assert_eq!(stop.outputs, [output]);
+                    if fail {
+                        json!({"id":request.id, "error":{"code":"stop_failed","message":"stop failed"}})
+                    } else {
+                        json!({"id":request.id, "result":{"stopped":1}})
+                    }
+                }
+                paper_control::RequestParams::Capabilities(_) => {
+                    json!({"id":request.id,"result":paper_control::CapabilitiesResult::current()})
+                }
+                paper_control::RequestParams::PlaybackPause(pause) => {
+                    json!({"id":request.id,"result":{"paused":pause.paused}})
+                }
+                paper_control::RequestParams::PlaybackAudio(_) => {
+                    json!({"id":request.id,"result":{"updated":0,"assignments":[]}})
+                }
+                other => panic!("unexpected Paper request {other:?}"),
             };
             writeln!(stream, "{response}").unwrap();
+            if audio && stops.peek().is_none() {
+                break;
+            }
         }
     });
     let (state, subs, stats) = harness();

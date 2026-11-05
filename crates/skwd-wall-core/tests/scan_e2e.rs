@@ -42,7 +42,7 @@ fn bump_mtime(path: &Path) {
 
 fn scan_keys(state: &WallState) -> Vec<String> {
     let items = std::sync::Mutex::new(Vec::new());
-    scan::scan(state, |row| {
+    scan::scan(state, &skwd_wall_core::blocks::Encoder::default(), |row| {
         items.lock().unwrap().push(row["key"].as_str().unwrap_or("").to_string());
     });
     let mut keys = items.into_inner().unwrap();
@@ -95,15 +95,49 @@ fn scan_regen_rules() {
     assert_eq!(scan_keys(&state), vec!["static:sub/b.bmp"],);
 
     let changed: Vec<PathBuf> = vec![a, root.path().join("elsewhere.png")];
-    let count = scan::scan_paths(&state, &changed, |_| {});
+    let count =
+        scan::scan_paths(&state, &changed, &skwd_wall_core::blocks::Encoder::default(), |_| {});
     assert_eq!(count, 0);
 
     bump_mtime(&b);
     let hits = std::sync::Mutex::new(Vec::new());
-    let count = scan::scan_paths(&state, std::slice::from_ref(&b), |row| {
-        hits.lock().unwrap().push(row["key"].as_str().unwrap_or("").to_string());
-    });
+    let count = scan::scan_paths(
+        &state,
+        std::slice::from_ref(&b),
+        &skwd_wall_core::blocks::Encoder::default(),
+        |row| {
+            hits.lock().unwrap().push(row["key"].as_str().unwrap_or("").to_string());
+        },
+    );
     assert_eq!(count, 1);
     assert_eq!(hits.into_inner().unwrap(), vec!["static:sub/b.bmp"]);
     assert_eq!(state.with_db(db::item_count).unwrap(), 2);
+
+    let small_b = skwd_wall_core::paths::image_thumb_sm("sub/b.bmp");
+    std::fs::remove_file(small_b).unwrap();
+    assert_eq!(scan_keys(&state), vec!["static:sub/b.bmp"]);
+
+    for (index, extension) in ["bc7", "bc1"].into_iter().enumerate() {
+        let name = format!("broken-{extension}.bmp");
+        let broken = wall.join(&name);
+        write_bmp(&broken, 8, 8, [40, 80, 120]);
+        let modified = broken.metadata().unwrap().modified().unwrap();
+        let thumb = skwd_wall_core::paths::image_thumb(&name);
+        let small = skwd_wall_core::paths::image_thumb_sm(&name);
+        let (near, far) = skwd_wall_core::blocks::dests_for(&thumb.to_string_lossy());
+        let blocked = if extension == "bc7" { &near } else { &far };
+        std::fs::create_dir_all(blocked).unwrap();
+        assert!(scan_keys(&state).is_empty());
+        assert_eq!(state.with_db(db::item_count).unwrap(), (index + 2) as i64);
+        assert!(thumb.is_file());
+        assert!(blocked.is_dir());
+        if extension == "bc1" {
+            assert!(near.is_file());
+        }
+        std::fs::remove_dir(blocked).unwrap();
+        assert_eq!(scan_keys(&state), vec![format!("static:{name}")]);
+        assert_eq!(state.with_db(db::item_count).unwrap(), (index + 3) as i64);
+        assert_eq!(broken.metadata().unwrap().modified().unwrap(), modified);
+        assert!([&thumb, &small, &near, &far].into_iter().all(|path| path.is_file()));
+    }
 }

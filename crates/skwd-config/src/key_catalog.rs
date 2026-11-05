@@ -1,4 +1,29 @@
 pub mod keys {
+    pub mod drawing {
+        pub const ROOT: &str = "drawing";
+        pub const WALLPAPERS: &str = "wallpapers";
+        pub const ENABLED: &str = "drawing.enabled";
+        pub const SCOPE: &str = "drawing.scope";
+        pub const SCOPE_SELECTED: &str = "selected";
+        pub const SCOPE_VIEW: &str = "view";
+        pub const DURATION_MS: &str = "drawing.durationMs";
+        pub const PAPER_COLOR: &str = "drawing.paperColor";
+        pub const INK_COLOR: &str = "drawing.inkColor";
+        pub const INK: &str = "drawing.ink";
+        pub const INK_PLAIN: &str = "plain";
+        pub const INK_RAINBOW: &str = "rainbow";
+        pub const PACK: &str = "drawing.pack";
+        pub const ON_BATTERY: &str = "drawing.onBattery";
+        pub const AUTO_PREPARE: &str = "drawing.autoPrepare";
+        pub const AUTO_PREPARE_FIELD: &str = "autoPrepare";
+        pub const DEVICE: &str = "drawing.device";
+        pub const MEMORY_LIMIT_MIB: &str = "drawing.memoryLimitMib";
+        pub const MEMORY_LIMIT_AUTO: &str = "auto";
+    }
+    pub mod widgets {
+        pub const ROOT: &str = "widgets";
+        pub const ITEMS: &str = "widgets.items";
+    }
     pub mod lock_screens {
         pub const ROOT: &str = "lockScreens";
         pub const MODE: &str = "lockScreens.mode";
@@ -72,6 +97,7 @@ pub mod keys {
         pub const PROCESSES: &str = "playback.processes";
         pub const FULLSCREEN: &str = "playback.fullscreen";
         pub const MAXIMIZED: &str = "playback.maximized";
+        pub const FOCUSED: &str = "playback.focused";
         pub const FULLSCREEN_SCOPE: &str = "playback.fullscreenScope";
         pub const RESUME_DELAY: &str = "playback.resumeDelay";
         pub const MUTE_ON_OTHER_AUDIO: &str = "playback.muteOnOtherAudio";
@@ -98,12 +124,17 @@ pub mod keys {
     pub mod dms {
         pub const HOVER_PREVIEW: &str = "dms.hoverPreview";
     }
+    pub mod caelestia {
+        pub const WALLPAPER_SYNC: &str = "caelestia.wallpaperSync";
+    }
     pub mod features {
         pub const MATUGEN: &str = "features.matugen";
         pub const STEAM: &str = "features.steam";
         pub const WALLHAVEN: &str = "features.wallhaven";
     }
     pub mod filter_bar {
+        pub const BUTTON_ORDER: &str = "filterBar.buttonOrder";
+        pub const HIDDEN_BUTTONS: &str = "filterBar.hiddenButtons";
         pub const DEFAULT_FOLDER: &str = "filterBar.defaultFolder";
         pub const LAST_COLOR: &str = "filterBar.last.color";
         pub const LAST_FAVOURITES_ONLY: &str = "filterBar.last.favouritesOnly";
@@ -115,8 +146,18 @@ pub mod keys {
         pub const LAST_SORT: &str = "filterBar.last.sort";
         pub const OFFSET_X: &str = "filterBar.offsetX";
         pub const OFFSET_Y: &str = "filterBar.offsetY";
+        pub const POSITION_ENABLED: &str = "filterBar.positionEnabled";
+        pub const POSITION_X: &str = "filterBar.positionX";
+        pub const POSITION_Y: &str = "filterBar.positionY";
+        pub const ARRANGE_POSITION_ENABLED: &str = "filterBar.arrangePositionEnabled";
+        pub const ARRANGE_POSITION_X: &str = "filterBar.arrangePositionX";
+        pub const ARRANGE_POSITION_Y: &str = "filterBar.arrangePositionY";
+        pub const SWATCH_POSITION_ENABLED: &str = "filterBar.swatchPositionEnabled";
+        pub const SWATCH_POSITION_X: &str = "filterBar.swatchPositionX";
+        pub const SWATCH_POSITION_Y: &str = "filterBar.swatchPositionY";
         pub const ORIENTATION: &str = "filterBar.orientation";
         pub const RESOLUTION_PRESETS: &str = "filterBar.resolutionPresets";
+        pub const SHOW_ARRANGE: &str = "filterBar.show.arrange";
         pub const SHOW_COLORS: &str = "filterBar.show.colors";
         pub const SHOW_FAVOURITES: &str = "filterBar.show.favourites";
         pub const SHOW_ORIENT: &str = "filterBar.show.orient";
@@ -125,6 +166,7 @@ pub mod keys {
         pub const SHOW_FOLDER: &str = "filterBar.show.folder";
         pub const SHOW_RANDOM: &str = "filterBar.show.random";
         pub const SHOW_RESOLUTION: &str = "filterBar.show.resolution";
+        pub const SHOW_SWATCH: &str = "filterBar.show.swatch";
         pub const SHOW_TAG_CLOUD: &str = "filterBar.show.tagcloud";
         pub const SHOW_TAGGING: &str = "filterBar.show.tagging";
         pub const SHOW_THEME: &str = "filterBar.show.theme";
@@ -162,6 +204,7 @@ pub mod keys {
         pub const ANIMATION: &str = "launch.animation";
     }
     pub mod motion {
+        pub const REDUCED: &str = "motion.reduced";
         pub const FAST_MS: &str = "motion.fastMs";
         pub const STANDARD_MS: &str = "motion.standardMs";
         pub const SLOW_MS: &str = "motion.slowMs";
@@ -244,7 +287,6 @@ pub mod keys {
         pub const IDLE_PAUSE_SECONDS: &str = "paper.idlePauseSeconds";
         pub const PERFORMANCE_MODE: &str = "paper.performanceMode";
         pub const VIDEO_MULTI_PROCESS: &str = "paper.videoMultiProcess";
-        pub const VIDEO_ENGINE: &str = "paper.videoEngine";
     }
     pub mod paths {
         pub const PAPER_BIN: &str = "paths.paperBin";
@@ -287,9 +329,16 @@ pub mod keys {
         pub const TRIGGER: &str = "schedule.trigger";
     }
     pub mod selector {
+        pub const AVOID_AREAS: &str = "components.wallpaperSelector.avoidAreas";
+        pub const FRAME_ENABLED: &str = "components.wallpaperSelector.frameEnabled";
+        pub const FRAME_X: &str = "components.wallpaperSelector.frameX";
+        pub const FRAME_Y: &str = "components.wallpaperSelector.frameY";
+        pub const FRAME_WIDTH: &str = "components.wallpaperSelector.frameWidth";
+        pub const FRAME_HEIGHT: &str = "components.wallpaperSelector.frameHeight";
         pub const START_POSITION: &str = "components.wallpaperSelector.startPosition";
         pub const LAST_APPLIED_KEY: &str = "components.wallpaperSelector.lastAppliedKey";
         pub const LAST_BROWSE_POSITION: &str = "components.wallpaperSelector.lastBrowsePosition";
+        pub const LOOP_AROUND: &str = "components.wallpaperSelector.loopAround";
         pub const EXPANDED_WIDTH: &str = "components.wallpaperSelector.expandedWidth";
         pub const GRID_COLUMNS: &str = "components.wallpaperSelector.gridColumns";
         pub const GRID_BORDER_WIDTH: &str = "components.wallpaperSelector.gridBorderWidth";
@@ -477,6 +526,10 @@ pub mod keys {
         pub const TAG_CLOUD_HEIGHT: &str = "components.wallpaperSelector.tagCloudHeight";
         pub const TAG_CLOUD_OFFSET_X: &str = "components.wallpaperSelector.tagCloudOffsetX";
         pub const TAG_CLOUD_OFFSET_Y: &str = "components.wallpaperSelector.tagCloudOffsetY";
+        pub const TAG_CLOUD_POSITION_ENABLED: &str =
+            "components.wallpaperSelector.tagCloudPositionEnabled";
+        pub const TAG_CLOUD_POSITION_X: &str = "components.wallpaperSelector.tagCloudPositionX";
+        pub const TAG_CLOUD_POSITION_Y: &str = "components.wallpaperSelector.tagCloudPositionY";
         pub const TAG_CLOUD_ROWS: &str = "components.wallpaperSelector.tagCloudRows";
         pub const VISIBLE_COUNT: &str = "components.wallpaperSelector.visibleCount";
         pub const WALLHAVEN_COLUMNS: &str = "components.wallpaperSelector.wallhavenColumns";
@@ -493,6 +546,39 @@ pub mod keys {
         pub const CORNER_RADIUS: &str = "components.wallpaperSelector.cornerRadius";
         pub const CORNER_TL: &str = "components.wallpaperSelector.cornerTL";
         pub const CORNER_TR: &str = "components.wallpaperSelector.cornerTR";
+        pub const CORNER_ALL: &str = "components.wallpaperSelector.cornerAll";
+        pub const CORNER_STYLE: &str = "components.wallpaperSelector.cornerStyle";
+        pub const CORNERS_SAME: &str = "components.wallpaperSelector.cornersSame";
+        pub const GRID_CORNER_STYLE: &str = "components.wallpaperSelector.gridCornerStyle";
+        pub const GRID_CORNERS_SAME: &str = "components.wallpaperSelector.gridCornersSame";
+        pub const GRID_CORNER_TL: &str = "components.wallpaperSelector.gridCornerTL";
+        pub const GRID_CORNER_TR: &str = "components.wallpaperSelector.gridCornerTR";
+        pub const GRID_CORNER_BR: &str = "components.wallpaperSelector.gridCornerBR";
+        pub const GRID_CORNER_BL: &str = "components.wallpaperSelector.gridCornerBL";
+        pub const GRID_CORNER_ALL: &str = "components.wallpaperSelector.gridCornerAll";
+        pub const HAND_CORNER_STYLE: &str = "components.wallpaperSelector.handCornerStyle";
+        pub const HAND_CORNERS_SAME: &str = "components.wallpaperSelector.handCornersSame";
+        pub const HAND_CORNER_TL: &str = "components.wallpaperSelector.handCornerTL";
+        pub const HAND_CORNER_TR: &str = "components.wallpaperSelector.handCornerTR";
+        pub const HAND_CORNER_BR: &str = "components.wallpaperSelector.handCornerBR";
+        pub const HAND_CORNER_BL: &str = "components.wallpaperSelector.handCornerBL";
+        pub const HAND_CORNER_ALL: &str = "components.wallpaperSelector.handCornerAll";
+        pub const DEPTH_CORNER_STYLE: &str = "components.wallpaperSelector.depthCornerStyle";
+        pub const DEPTH_CORNERS_SAME: &str = "components.wallpaperSelector.depthCornersSame";
+        pub const DEPTH_CORNER_TL: &str = "components.wallpaperSelector.depthCornerTL";
+        pub const DEPTH_CORNER_TR: &str = "components.wallpaperSelector.depthCornerTR";
+        pub const DEPTH_CORNER_BR: &str = "components.wallpaperSelector.depthCornerBR";
+        pub const DEPTH_CORNER_BL: &str = "components.wallpaperSelector.depthCornerBL";
+        pub const DEPTH_CORNER_ALL: &str = "components.wallpaperSelector.depthCornerAll";
+        pub const COLLECTION_CORNER_STYLE: &str =
+            "components.wallpaperSelector.collectionCornerStyle";
+        pub const COLLECTION_CORNERS_SAME: &str =
+            "components.wallpaperSelector.collectionCornersSame";
+        pub const COLLECTION_CORNER_TL: &str = "components.wallpaperSelector.collectionCornerTL";
+        pub const COLLECTION_CORNER_TR: &str = "components.wallpaperSelector.collectionCornerTR";
+        pub const COLLECTION_CORNER_BR: &str = "components.wallpaperSelector.collectionCornerBR";
+        pub const COLLECTION_CORNER_BL: &str = "components.wallpaperSelector.collectionCornerBL";
+        pub const COLLECTION_CORNER_ALL: &str = "components.wallpaperSelector.collectionCornerAll";
         pub const DISPLAY_MODE: &str = "components.wallpaperSelector.displayMode";
         pub const ENABLED: &str = "components.wallpaperSelector.enabled";
         pub const FLIP_BACK_REVEAL: &str = "components.wallpaperSelector.flipBackReveal";
@@ -556,9 +642,12 @@ pub mod keys {
         pub const POLICY: &str = "theme.policy";
         pub const POLICY_WALLPAPER: &str = "wallpaper";
         pub const AUTHORITY: &str = "theme.authority";
+        pub const AUTHORITY_SKWD: &str = "skwd";
         pub const ENGINE: &str = "theme.engine";
         pub const CUSTOM_COLORS: &str = "theme.customColors";
         pub const MODE: &str = "theme.mode";
+        pub const MODE_DARK: &str = "dark";
+        pub const MODE_LIGHT: &str = "light";
         pub const SCHEME: &str = "theme.scheme";
         pub const STYLE: &str = "theme.style";
         pub const TARGETS: &str = "theme.targets";
@@ -571,11 +660,22 @@ pub mod keys {
         pub const SAVED_THEMES: &str = "theme.savedThemes";
         pub const SAVED_THEME_NAME: &str = "name";
         pub const STATIC_THEME: &str = "theme.staticTheme";
+        pub const STUDIO_METHOD: &str = "theme.studioMethod";
+        pub const STUDIO_MODE: &str = "theme.studioMode";
+        pub const STUDIO_MODE_BY_TIME: &str = "by-time";
+        pub const STUDIO_AREA: &str = "theme.studioArea";
+        pub const STUDIO_AREA_IMAGE: &str = "theme.studioAreaImage";
+        pub const STUDIO_WARMTH: &str = "theme.studioWarmth";
+        pub const STUDIO_COLOUR: &str = "theme.studioColour";
+        pub const STUDIO_CONTRAST: &str = "theme.studioContrast";
+        pub const STUDIO_SHADES: &str = "theme.studioShades";
+        pub const STUDIO_SAVED: &str = "theme.studioSaved";
         pub const WALLUST_COLORSPACE: &str = "theme.wallustColorspace";
         pub const WALLUST_PALETTE: &str = "theme.wallustPalette";
     }
     pub mod transition {
         pub const DURATION_MS: &str = "transition.durationMs";
+        pub const PRESET_TIMING: &str = "transition.presetTiming";
         pub const FPS: &str = "transition.fps";
         pub const ENABLED: &str = "transition.enabled";
         pub const FAMILY: &str = "transition.family";
@@ -662,6 +762,8 @@ pub mod keys {
         pub const SCENE_PROPERTIES: &str = "keys.sceneProperties";
         pub const SELECT: &str = "keys.select";
         pub const STUDIO: &str = "keys.studio";
+        pub const COLOUR_STUDIO: &str = "keys.colourStudio";
+        pub const WIDGETS: &str = "keys.widgets";
         pub const NAV_DOWN: &str = "keys.navDown";
         pub const NAV_LEFT: &str = "keys.navLeft";
         pub const NAV_RIGHT: &str = "keys.navRight";

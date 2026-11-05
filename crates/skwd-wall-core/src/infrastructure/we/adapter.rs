@@ -8,9 +8,11 @@ use std::time::Duration;
 use crate::infrastructure::renderers::kill_held_renderer;
 
 pub const SCENE_PROJECT_TYPE: &str = "scene";
-const SCENE_FREEZE_TIMEOUT: Duration = Duration::from_secs(5);
+const RENDERER_FREEZE_TIMEOUT: Duration = Duration::from_secs(5);
+const RENDERER_HANDOFF_GRACE: Duration = Duration::from_secs(30);
+const RENDERER_HANDOFF_DIRECTORY: &str = "renderer-handoffs";
 const MIXED_SCENE_FILL: &str = "native scene outputs require one placement mode";
-static SCENE_FREEZE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static RENDERER_FREEZE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct NativeSceneCandidate<'a> {
     key: String,
@@ -262,24 +264,47 @@ pub fn safe_item_join(item_dir: &std::path::Path, file: &str) -> Option<std::pat
     joined.starts_with(&root).then_some(joined)
 }
 
-pub(crate) fn capture_transition_frame(state: &WallState, output: &str) -> Option<String> {
-    capture_transition_frame_with_timeout(state, output, SCENE_FREEZE_TIMEOUT)
+#[derive(Clone, Copy)]
+pub(crate) enum CaptureFrame {
+    Source,
+    Surface,
+}
+
+pub(crate) fn capture_transition_frame(
+    state: &WallState,
+    output: &str,
+    frame: CaptureFrame,
+) -> Option<String> {
+    let started = std::time::Instant::now();
+    let captured =
+        capture_transition_frame_with_timeout(state, output, RENDERER_FREEZE_TIMEOUT, frame);
+    state.apply().note_phase(crate::backend::wallpaper::ApplyPhase::Capture, started.elapsed());
+    captured
+}
+
+pub(crate) fn handoff_directory(state: &WallState) -> PathBuf {
+    PathBuf::from(state.config().cache_dir()).join(RENDERER_HANDOFF_DIRECTORY)
 }
 
 pub(crate) fn capture_transition_frame_with_timeout(
     state: &WallState,
     output: &str,
     timeout: Duration,
+    frame: CaptureFrame,
 ) -> Option<String> {
-    let directory = PathBuf::from(state.config().cache_dir()).join("scene-handoffs");
+    let directory = handoff_directory(state);
     if let Err(error) = std::fs::create_dir_all(&directory) {
-        log::warn!("scene handoff: cannot create {} ({error})", directory.display());
+        log::warn!("renderer handoff: cannot create {} ({error})", directory.display());
         return None;
     }
-    let sequence = SCENE_FREEZE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let sequence = RENDERER_FREEZE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let path = directory.join(format!("{}-{sequence}.ppm", std::process::id()));
     let error_path = PathBuf::from(format!("{}.error", path.display()));
-    let handle = state.renderers().freeze_scene(output, &path.display().to_string())?;
+    let handle = state.renderers().capture_renderer_frame(
+        output,
+        &path.display().to_string(),
+        matches!(frame, CaptureFrame::Surface),
+    )?;
     let deadline = std::time::Instant::now() + timeout;
     let mut failure = None;
     let captured = loop {
@@ -290,7 +315,7 @@ pub(crate) fn capture_transition_frame_with_timeout(
             failure = std::fs::read_to_string(&error_path).ok();
             break false;
         }
-        if !state.renderers().scene_freeze_alive(&handle) {
+        if !state.renderers().renderer_capture_alive(&handle) {
             failure = Some("renderer exited or was replaced".into());
             break false;
         }
@@ -300,22 +325,23 @@ pub(crate) fn capture_transition_frame_with_timeout(
         }
         std::thread::sleep(Duration::from_millis(5));
     };
-    state.renderers().finish_scene_freeze(&handle);
+    state.renderers().finish_renderer_capture(&handle);
     if !captured {
         let detail = failure.unwrap_or_else(|| "capture failed".into());
-        log::warn!("scene handoff: live frame capture failed for {output} ({detail})");
+        log::warn!("renderer handoff: live frame capture failed for {output} ({detail})");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&error_path);
         return None;
     }
     log::info!(
-        "scene handoff: captured live frame for {output} from renderer {} ({})",
+        "renderer handoff: captured live frame for {output} from renderer {} ({})",
         handle.key,
         handle.pid
     );
     let cleanup_path = path.clone();
+    let lifetime = state.config().renderer().load_timeout().saturating_add(RENDERER_HANDOFF_GRACE);
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(30));
+        std::thread::sleep(lifetime);
         let _ = std::fs::remove_file(cleanup_path);
     });
     Some(path.display().to_string())
@@ -323,7 +349,7 @@ pub(crate) fn capture_transition_frame_with_timeout(
 
 fn previous_media(state: &WallState, outputs: &[String]) -> Option<String> {
     if let Some(output) = outputs.first()
-        && let Some(frame) = capture_transition_frame(state, output)
+        && let Some(frame) = capture_transition_frame(state, output, CaptureFrame::Source)
     {
         return Some(frame);
     }
@@ -516,11 +542,7 @@ pub fn swap_scene_properties(state: &WallState, we_id: &str) -> anyhow::Result<b
     Ok(true)
 }
 
-pub fn apply_we(
-    state: &WallState,
-    we_id: &str,
-    transition: Option<OutputTransitionRequest<'_>>,
-) -> anyhow::Result<Option<String>> {
+pub fn require_project(state: &WallState, we_id: &str) -> anyhow::Result<PathBuf> {
     if !state.config().steam_enabled() {
         anyhow::bail!("steam/WE feature is disabled");
     }
@@ -531,10 +553,20 @@ pub fn apply_we(
     if !item_dir.is_dir() {
         anyhow::bail!("WE item not found: {}", item_dir.display());
     }
-    let (ty, file) = read_project_type(&item_dir);
+    let (ty, _) = read_project_type(&item_dir);
     if !is_supported_project(&ty) {
         anyhow::bail!("WE item {we_id} has unsupported type {ty:?}");
     }
+    Ok(item_dir)
+}
+
+pub fn apply_we(
+    state: &WallState,
+    we_id: &str,
+    transition: Option<OutputTransitionRequest<'_>>,
+) -> anyhow::Result<Option<String>> {
+    let item_dir = require_project(state, we_id)?;
+    let (ty, file) = read_project_type(&item_dir);
     let preview = find_preview(&item_dir).map(|path| path.display().to_string());
 
     crate::awww::stop();

@@ -2,23 +2,20 @@ use std::sync::Arc;
 
 use skwd_wall_core::WallState;
 use skwd_wall_core::infrastructure::config::ConfigStore;
-use skwd_wall_core::infrastructure::database::Database;
 
 use crate::backend::events::EventPublisher;
-use crate::backend::workers::{MediaWorkerSupervisor, TinierPreparation, TinierRequest};
+use crate::backend::workers::MediaWorkerSupervisor;
 use crate::infrastructure::stats::Stats;
 use crate::infrastructure::tasks::TaskRegistry;
 
 use super::super::image_optimization::ImageOptimizer;
 use super::scanner;
-use super::video_optimizer::VideoOptimizer;
 
 pub(crate) struct ProcessSupervisor {
     thumbnail_capture: Arc<super::thumbnails::ThumbnailBatch>,
     state: Arc<WallState>,
     debug: bool,
     image_optimizer: Arc<ImageOptimizer>,
-    video_optimizer: Arc<VideoOptimizer>,
     tasks: Arc<TaskRegistry>,
     stats: Arc<Stats>,
 }
@@ -27,18 +24,16 @@ impl ProcessSupervisor {
     pub(crate) fn new(
         state: Arc<WallState>,
         config: Arc<ConfigStore>,
-        database: Arc<Database>,
         publisher: Arc<dyn EventPublisher>,
         tasks: Arc<TaskRegistry>,
         stats: Arc<Stats>,
         debug: bool,
     ) -> Self {
-        let work_gate = Arc::new(std::sync::Mutex::new(()));
         let image_optimizer = Arc::new(ImageOptimizer::new(
             Arc::clone(&state),
-            Arc::clone(&config),
+            config,
             publisher,
-            Arc::clone(&work_gate),
+            Arc::new(std::sync::Mutex::new(())),
             debug,
         ));
         Self {
@@ -47,12 +42,6 @@ impl ProcessSupervisor {
                 Arc::clone(&tasks),
             )),
             image_optimizer,
-            video_optimizer: Arc::new(VideoOptimizer::new(
-                config,
-                database,
-                work_gate,
-                Arc::clone(&tasks),
-            )),
             state,
             debug,
             tasks,
@@ -88,13 +77,5 @@ impl MediaWorkerSupervisor for ProcessSupervisor {
 
     fn image_optimization_status(&self) -> serde_json::Value {
         self.image_optimizer.status().to_value()
-    }
-
-    fn prepare_tinier(&self, request: TinierRequest<'_>) -> TinierPreparation {
-        self.video_optimizer.prepare(request)
-    }
-
-    fn stop_tinier(&self, task_id: &str) -> bool {
-        self.video_optimizer.stop(task_id)
     }
 }

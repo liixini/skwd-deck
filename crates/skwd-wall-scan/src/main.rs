@@ -1,5 +1,6 @@
 mod app;
 mod cli;
+mod gpu;
 mod media_jobs;
 mod process;
 mod remote_thumbs;

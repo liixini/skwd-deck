@@ -47,6 +47,30 @@ fn original(app: &App) -> &'static str {
 }
 
 #[test]
+fn studio_settings_round_trip() {
+    let (_root, env, config) = fixture();
+    let studio = skwd_palette::studio::from_theme(&skwd_palette::preset("nord").unwrap());
+    for app in &APPS {
+        let path = app.paths(&env).0;
+        let original = original(app);
+        files::write(&path, original).unwrap();
+        for dark in [true, false] {
+            for palette in [studio.desktop_value(), studio.theme_value()] {
+                app.set(&env, &config, true, &palette, dark).unwrap();
+                let receipt = app.load(&env).unwrap().unwrap();
+                assert!(!receipt.edits.is_empty());
+                for edit in receipt.edits {
+                    let color: String = serde_json::from_str(&edit.after).unwrap();
+                    assert!(skwd_palette::parse_hex(&color).is_some(), "{color}");
+                }
+                app.set(&env, &config, false, &Value::Null, dark).unwrap();
+                assert_eq!(files::read(&path).unwrap().unwrap(), original);
+            }
+        }
+    }
+}
+
+#[test]
 fn yazi_generated_permissions_migrate_update_and_restore() {
     let (_root, env, _) = fixture();
     let app = APPS.iter().find(|app| app.id == "yazi").unwrap();

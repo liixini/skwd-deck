@@ -6,6 +6,31 @@ fn palette() -> Value {
 }
 
 #[test]
+fn pinned_studio_refreshes_dark() {
+    let state = WallState::test_new(json!({
+        "theme": {
+            "policy": "wallpaper", "engine": "skwd-iris", "mode": "light",
+            "wallpaperProfiles": [{
+                "key": "/clock.jpg", "settingsPinned": true,
+                "settings": {
+                    "theme.engine": wall_proto::STUDIO_ENGINE,
+                    "theme.studioMode": "by-time"
+                }
+            }]
+        }
+    }));
+    state.theme().set_source("/clock.jpg");
+    let snapshot = json!({"source": "/clock.jpg", "dark": true});
+    assert!(refresh_dark(&state, &state.config(), Some(&snapshot)));
+    let config = configuration(&state, "/clock.jpg");
+    let expected = crate::theme::studio::mode_dark(&config, "/clock.jpg");
+    let stale = json!({"source": "/old.jpg", "dark": !expected});
+    assert_eq!(refresh_dark(&state, &state.config(), Some(&stale)), expected);
+    let plain = WallState::test_new(json!({"theme": {"mode": "light"}}));
+    assert!(!refresh_dark(&plain, &plain.config(), Some(&snapshot)));
+}
+
+#[test]
 fn profiles_follow_only_the_matching_source_and_variant() {
     let mut root = json!({"theme": {"policy": "wallpaper", "wallpaperProfiles": [
         {"key": "wallpaper-x", "enabled": true, "dark": palette()}

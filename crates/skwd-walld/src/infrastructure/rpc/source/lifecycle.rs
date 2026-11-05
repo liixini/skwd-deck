@@ -10,6 +10,7 @@ pub(super) const LIST_CANCELLED: i32 = -32001;
 pub(super) const LIST_TIMEOUT: i32 = -32002;
 const LIST_WORKER_FAILED: i32 = -32003;
 pub(in crate::infrastructure::rpc) const LIST_DEADLINE: Duration = Duration::from_secs(45);
+pub(in crate::infrastructure::rpc) const DETAILS_DEADLINE: Duration = Duration::from_secs(15);
 static LIST_WORKERS: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(crate::infrastructure::platform::MAX_IPC_CONNECTIONS);
 
@@ -76,7 +77,7 @@ pub(in crate::infrastructure::rpc) fn list_call(
     req: &Request,
 ) -> Result<Option<ListCall>, Response> {
     let provider = match req.method.as_str() {
-        wall_proto::rpc::SOURCE_LIST => {
+        wall_proto::rpc::SOURCE_LIST | wall_proto::rpc::SOURCE_DETAILS => {
             let key = req.str_param("source", "");
             let Some(provider) = wall_proto::sources::Provider::from_key(key) else {
                 return Err(Response::err(req.id, -32602, format!("unknown source '{key}'")));
@@ -87,7 +88,11 @@ pub(in crate::infrastructure::rpc) fn list_call(
         wall_proto::rpc::STEAM_SEARCH => wall_proto::sources::Provider::Steam,
         _ => return Ok(None),
     };
-    let generation = match req.params.get("generation") {
+    let generation = match req
+        .params
+        .get("generation")
+        .filter(|_| req.method != wall_proto::rpc::SOURCE_DETAILS)
+    {
         None => None,
         Some(value) => value.as_u64().map(Some).ok_or_else(|| {
             Response::err(req.id, -32602, "generation must be an unsigned integer")

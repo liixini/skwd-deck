@@ -5,7 +5,7 @@ use serde_json::json;
 
 use paper_control::{Request, RequestParams, Response, ResponseBody, ResponseError};
 
-use super::adapter::{assignment_with_options, video_engine};
+use super::adapter::assignment_with_options;
 use super::*;
 use crate::backend::wallpaper::ApplyOutputRequest;
 use crate::config::Config;
@@ -21,7 +21,7 @@ fn mixed_apply_golden() {
         RequestParams::Apply(ApplyRequest {
             assignments: vec![
                 assignment(&["DP-1"], Source::static_file("/wall/a.png")),
-                assignment(&["DP-2"], Source::video("/wall/b.mp4", Some(VideoEngine::Default))),
+                assignment(&["DP-2"], Source::video("/wall/b.mp4")),
                 assignment(&["HDMI-A-1"], Source::wallpaper_engine("/scene/forest")),
             ],
             replace_all: true,
@@ -34,37 +34,10 @@ fn mixed_apply_golden() {
 }
 
 #[test]
-fn video_engines_golden() {
-    let request = Request::new(
-        13,
-        RequestParams::Apply(ApplyRequest {
-            assignments: vec![
-                assignment(
-                    &["DP-1"],
-                    Source::video("/wall/default.mp4", Some(VideoEngine::Default)),
-                ),
-                assignment(&["DP-3"], Source::tinier_video("/wall/tinier.ivf", "30000/1001")),
-            ],
-            replace_all: false,
-            policy: None,
-        }),
-    );
-    let golden = include_str!("../../../tests/golden/paper-apply-video-engines-v1.jsonl");
-    assert_eq!(encode_ndjson(&request).unwrap(), golden);
-    assert_eq!(decode_ndjson::<Request>(golden).unwrap(), request);
-}
-
-#[test]
 fn assignment_options_golden() {
     let configured = assignment_with_options(
         vec!["DP-1".into()],
-        Source {
-            kind: SourceKind::Video,
-            path: "/wall/a.mp4".into(),
-            engine: None,
-            frame_rate: None,
-            properties: None,
-        },
+        Source { kind: SourceKind::Video, path: "/wall/a.mp4".into(), properties: None },
         FillMode::Fit,
         false,
         55,
@@ -87,15 +60,11 @@ fn assignment_options_golden() {
 fn transition_policy_golden() {
     let mut configured = assignment(
         &["DP-1"],
-        Source {
-            kind: SourceKind::Video,
-            path: "/wall/b.mp4".into(),
-            engine: None,
-            frame_rate: None,
-            properties: None,
-        },
+        Source { kind: SourceKind::Video, path: "/wall/b.mp4".into(), properties: None },
     );
     configured.transition = Some(TransitionPolicy {
+        drawing: None,
+        drawing_source: None,
         fps: None,
         from: Some("/wall/a.png".into()),
         effect: Some("sand-bloom".into()),
@@ -141,13 +110,7 @@ fn transition_policy_golden() {
 
 #[test]
 fn response_goldens() {
-    let source = Source {
-        kind: SourceKind::Video,
-        path: "/wall/a.mp4".into(),
-        engine: None,
-        frame_rate: None,
-        properties: None,
-    };
+    let source = Source { kind: SourceKind::Video, path: "/wall/a.mp4".into(), properties: None };
     let status = AssignmentStatus {
         outputs: vec!["DP-1".into()],
         source,
@@ -159,6 +122,7 @@ fn response_goldens() {
         generation: 44,
         pid: Some(321),
         ready: true,
+        system_audio: None,
     };
     let apply = Response {
         id: 7,
@@ -200,7 +164,7 @@ fn phase_one_response_defaults() {
 
     let capabilities = decode_ndjson::<Response<CapabilitiesResult>>(concat!(
         r#"{"id":10,"result":{"protocol":"skwd-paper","version":1,"#,
-        r#""source_kinds":[],"video_engines":[],"fill_modes":[],"layers":[]}}"#,
+        r#""source_kinds":[],"fill_modes":[],"layers":[]}}"#,
         "\n"
     ))
     .unwrap();
@@ -210,36 +174,6 @@ fn phase_one_response_defaults() {
     assert_eq!(result.controls, ControlCapabilities::default());
     assert_eq!(result.transitions, TransitionCapabilities::default());
     assert_eq!(result.renderer_policy, RendererPolicyCapabilities::default());
-}
-
-#[test]
-fn video_engine_mapping() {
-    assert_eq!(video_engine("tinier"), VideoEngine::Tinier);
-    for value in ["", "vulkan", "regular", "tiny", "gl", "anything"] {
-        assert_eq!(video_engine(value), VideoEngine::Default, "{value}");
-    }
-}
-
-#[test]
-fn adapter_tinier_source() {
-    let config = Config::from_root(json!({"paper": {"videoEngine": "tinier"}}));
-    let adapter =
-        PaperClientAdapter::new(PaperClient::new("unused-paper", "/unused/paper.sock"), config);
-    let assignment = adapter
-        .assignment(ApplyOutputRequest {
-            output: "DP-1",
-            kind: wall_proto::kind::VIDEO,
-            path: "/cache/video.tinier-v1.ivf",
-            we_id: "",
-            fill_mode: "fill",
-            mute: true,
-            volume: 0,
-            frame_rate: Some("30000/1001"),
-            transition: None,
-        })
-        .unwrap();
-    assert_eq!(assignment.source.engine, Some(VideoEngine::Tinier));
-    assert_eq!(assignment.source.frame_rate.as_deref(), Some("30000/1001"));
 }
 
 #[test]
@@ -275,6 +209,7 @@ fn client_apply_round_trip() {
                         generation: 41,
                         pid: Some(700),
                         ready: true,
+                        system_audio: None,
                     }],
                 },
             },
@@ -284,10 +219,7 @@ fn client_apply_round_trip() {
     let client = PaperClient::new("unused-paper", &socket);
     let result = client
         .apply(ApplyRequest {
-            assignments: vec![assignment(
-                &["DP-1"],
-                Source::video("/wall/a.mp4", Some(VideoEngine::Default)),
-            )],
+            assignments: vec![assignment(&["DP-1"], Source::video("/wall/a.mp4"))],
             replace_all: false,
             policy: None,
         })
@@ -298,8 +230,8 @@ fn client_apply_round_trip() {
 }
 
 #[test]
-fn adapter_retired_tiny_engine() {
-    let config = Config::from_root(json!({"paper": {"videoEngine": "tiny"}}));
+fn stale_engine_ignored() {
+    let config = Config::from_root(json!({"paper": {"videoEngine": "tinier"}}));
     let adapter =
         PaperClientAdapter::new(PaperClient::new("unused-paper", "/unused/paper.sock"), config);
     let assignment = adapter
@@ -311,11 +243,11 @@ fn adapter_retired_tiny_engine() {
             fill_mode: "fit",
             mute: false,
             volume: 55,
-            frame_rate: None,
             transition: None,
+            fanout: None,
         })
         .unwrap();
-    assert_eq!(assignment.source.engine, Some(VideoEngine::Default));
+    assert_eq!(assignment.source, Source::video("/wall/a.mp4"));
     assert_eq!(assignment.fill_mode, FillMode::Fit);
     assert!(!assignment.mute);
     assert_eq!(assignment.volume, 55);
@@ -331,7 +263,7 @@ fn client_reports_a_controller_that_exits_before_binding() {
     std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
     let client = PaperClient::new(&binary, temp.path().join("paper.sock"));
 
-    let error = format!("{:#}", client.status().unwrap_err());
+    let error = format!("{:#}", client.status(Startup::Allowed).unwrap_err());
     assert!(error.contains("exited with exit status: 3 before binding"), "{error}");
 }
 
@@ -389,9 +321,9 @@ fn replacement(plan: PaperCompositionPlan) -> ApplyRequest {
 }
 
 #[test]
-fn composition_shared_tiny() {
+fn composition_shared_video() {
     let adapter = composition_adapter();
-    let config = Config::from_root(json!({"paper": {"videoEngine": "tiny"}}));
+    let config = Config::from_root(json!({"paper": {"videoEngine": "tinier"}}));
     let state = json!({
         "*": crate::audio::entry("video", "/video/a.mp4", "", false, 45)
     });
@@ -403,7 +335,7 @@ fn composition_shared_tiny() {
     assert!(request.replace_all);
     assert_eq!(request.assignments.len(), 1);
     assert_eq!(request.assignments[0].outputs, ["*"]);
-    assert_eq!(request.assignments[0].source.engine, Some(VideoEngine::Default));
+    assert_eq!(request.assignments[0].source, Source::video("/video/a.mp4"));
     assert!(!request.assignments[0].mute);
     assert_eq!(request.policy.unwrap().output_fps.len(), 2);
 }
@@ -502,7 +434,6 @@ fn composition_mixed_kinds() {
     let adapter = composition_adapter();
     let config = Config::from_root(json!({
         "paths": {"steamWorkshop": "/workshop"},
-        "paper": {"videoEngine": "regular"},
         "display": {"fillModes": {"DP-2": "center", "HDMI-A-1": "span"}}
     }));
     let state = json!({
@@ -522,52 +453,11 @@ fn composition_mixed_kinds() {
     assert_eq!(request.assignments.len(), 3);
     assert_eq!(request.assignments[0].source.kind, SourceKind::Static);
     assert_eq!(request.assignments[1].source.kind, SourceKind::Video);
-    assert_eq!(request.assignments[1].source.engine, Some(VideoEngine::Default));
     assert_eq!(request.assignments[1].fill_mode, FillMode::Center);
     assert_eq!(request.assignments[1].volume, 55);
     assert_eq!(request.assignments[2].source.kind, SourceKind::WallpaperEngine);
     assert_eq!(request.assignments[2].source.path, "/workshop/431960");
     assert_eq!(request.assignments[2].fill_mode, FillMode::Span);
-}
-
-#[test]
-fn tinier_composition_artifact() {
-    let temp = tempfile::tempdir().unwrap();
-    let source = temp.path().join("source.mp4");
-    let artifact = temp.path().join("loop.tinier-v1.ivf");
-    std::fs::write(&source, b"original-video-bytes").unwrap();
-    std::fs::write(&artifact, b"validated-av1").unwrap();
-    let wall = crate::state::WallState::test_new(json!({"paper": {"videoEngine": "tinier"}}));
-    wall.with_db(|connection| {
-        crate::db::tinier_convert_record(
-            connection,
-            source.to_str().unwrap(),
-            artifact.to_str().unwrap(),
-            "30000/1001",
-            crate::db::TINIER_CONVERT_PRESET,
-            20,
-            13,
-        )
-    })
-    .unwrap();
-    let state = json!({
-        "DP-1": crate::audio::entry("static", "/wall/a.png", "", true, 0),
-        "DP-2": crate::audio::entry("video", artifact.to_str().unwrap(), "", false, 75)
-    });
-    let request = replacement(
-        composition_adapter()
-            .tinier_composition_plan(
-                &wall,
-                &state,
-                &[output("DP-1", 60_000), output("DP-2", 60_000)],
-            )
-            .unwrap(),
-    );
-    assert!(request.replace_all);
-    assert_eq!(request.assignments[0].source.kind, SourceKind::Static);
-    assert_eq!(request.assignments[1].source.engine, Some(VideoEngine::Tinier));
-    assert_eq!(request.assignments[1].source.frame_rate.as_deref(), Some("30000/1001"));
-    assert!(request.assignments[1].mute);
 }
 
 #[test]
@@ -766,4 +656,160 @@ fn composition_wildcard_separates_backgrounds_and_preserves_uniform_override() {
             assert_eq!(request.assignments.len(), 1);
         }
     }
+}
+
+#[test]
+fn running_status_never_starts() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let socket = temp.path().join("paper.sock");
+    let marker = temp.path().join("started");
+    let binary = temp.path().join("paper");
+    std::fs::write(&binary, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let client = PaperClient::new(&binary, &socket);
+    assert!(client.status(Startup::ExistingOnly).is_err());
+    assert!(!marker.exists());
+    drop(UnixListener::bind(&socket).unwrap());
+    assert!(socket.exists());
+    assert!(client.status(Startup::ExistingOnly).is_err());
+    assert!(!marker.exists());
+}
+
+#[test]
+fn controls_existing_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let binary = directory.path().join("paper");
+    let marker = directory.path().join("started");
+    let socket = directory.path().join("paper.sock");
+    std::fs::write(&binary, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let client = PaperClient::new(&binary, &socket);
+    for stale in [false, true] {
+        if stale {
+            drop(UnixListener::bind(&socket).unwrap());
+        }
+        assert!(
+            client
+                .set_paused(paper_control::PauseRequest {
+                    overrides: std::collections::BTreeMap::new(),
+                    paused: true,
+                    outputs: vec!["DP-1".into()],
+                })
+                .is_err()
+        );
+        assert!(
+            client
+                .audio(paper_control::AudioSetRequest { duck: Some(true), ..Default::default() })
+                .is_err()
+        );
+        assert!(
+            client
+                .set_surface_overrides(paper_control::SurfaceOverridesRequest::default())
+                .is_err()
+        );
+        assert!(!marker.exists());
+    }
+}
+
+#[test]
+fn controls_wire_scope() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("paper.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for _ in 0..6 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+            let request: Request = decode_ndjson(&line).unwrap();
+            let result = match &request.params {
+                RequestParams::Capabilities(_) => {
+                    serde_json::to_value(CapabilitiesResult::current()).unwrap()
+                }
+                RequestParams::PlaybackPause(pause) => json!({"paused":pause.paused}),
+                RequestParams::PlaybackAudio(_) => json!({"updated":0,"assignments":[]}),
+                RequestParams::SurfaceOverrides(surface) => serde_json::to_value(surface).unwrap(),
+                _ => panic!("unexpected control"),
+            };
+            stream
+                .write_all(
+                    encode_ndjson(&Response::success(request.id, result)).unwrap().as_bytes(),
+                )
+                .unwrap();
+            if !matches!(request.params, RequestParams::Capabilities(_)) {
+                requests.push(request.params);
+            }
+        }
+        requests
+    });
+    let client = PaperClient::new("unused", socket);
+    let pause = paper_control::PauseRequest {
+        overrides: std::collections::BTreeMap::new(),
+        paused: false,
+        outputs: vec!["DP-1".into()],
+    };
+    let audio = paper_control::AudioSetRequest { duck: Some(true), ..Default::default() };
+    client.set_paused(pause.clone()).unwrap();
+    client.audio(audio.clone()).unwrap();
+    let surfaces = paper_control::SurfaceOverridesRequest::default();
+    client.set_surface_overrides(surfaces.clone()).unwrap();
+    assert_eq!(
+        server.join().unwrap(),
+        [
+            RequestParams::PlaybackPause(pause),
+            RequestParams::PlaybackAudio(audio),
+            RequestParams::SurfaceOverrides(surfaces)
+        ]
+    );
+}
+
+#[test]
+fn rejects_legacy_playback_controls() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("paper.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+            let request: Request = decode_ndjson(&line).unwrap();
+            assert!(matches!(request.params, RequestParams::Capabilities(_)));
+            let mut capabilities = CapabilitiesResult::current();
+            capabilities.controls.playback.clear();
+            capabilities.controls.surface_kinds.clear();
+            stream
+                .write_all(
+                    encode_ndjson(&Response::success(request.id, capabilities)).unwrap().as_bytes(),
+                )
+                .unwrap();
+        }
+    });
+    let client = PaperClient::new("unused", socket);
+    assert!(
+        client
+            .set_paused(paper_control::PauseRequest {
+                paused: true,
+                outputs: vec!["DP-1".into()],
+                ..Default::default()
+            })
+            .is_err()
+    );
+    assert!(
+        client
+            .audio(paper_control::AudioSetRequest {
+                duck: Some(true),
+                mute: Some(false),
+                ..Default::default()
+            })
+            .is_err()
+    );
+    assert!(
+        client.set_surface_overrides(paper_control::SurfaceOverridesRequest::default()).is_err()
+    );
+    server.join().unwrap();
 }

@@ -14,7 +14,7 @@ use super::super::concurrency::{decode_budget, image_decode_weight, scan_threads
 use super::common::{artifacts_ready, is_image, known_mtimes};
 use super::status::{disk_full, mark_disk_full};
 
-pub fn scan<F>(state: &WallState, on_item: F) -> usize
+pub fn scan<F>(state: &WallState, encoder: &crate::blocks::Encoder, on_item: F) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
@@ -29,7 +29,7 @@ where
                 &known,
                 &format!("static:{name}"),
                 *mtime,
-                artifacts_ready(&thumb),
+                artifacts_ready(&thumb, &paths::image_thumb_sm(name)),
                 scan_error_fresh(&thumb, *mtime),
             )
         })
@@ -45,7 +45,7 @@ where
     let count = AtomicUsize::new(0);
     let work = || {
         pending.par_iter().for_each(|(path, name, mtime)| {
-            if thumb_image(state, path, name, *mtime, &on_item) {
+            if thumb_image(state, path, name, *mtime, encoder, &on_item) {
                 count.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -69,6 +69,7 @@ pub(super) fn thumb_image<F>(
     path: &Path,
     name: &str,
     mtime: i64,
+    encoder: &crate::blocks::Encoder,
     on_item: &F,
 ) -> bool
 where
@@ -78,15 +79,24 @@ where
     let thumb_small = paths::image_thumb_sm(name);
     let result = {
         let _permit = decode_budget().acquire(image_decode_weight(path));
-        match media::generate_image_thumbs(path, &thumb, &thumb_small) {
+        match media::generate_image_thumbs(
+            path,
+            media::Thumbs { full: &thumb, small: &thumb_small, encoder },
+        ) {
             Ok(result) => result,
             Err(error) => {
+                let transient = error.chain().any(<dyn std::error::Error>::is::<std::io::Error>);
+                if transient {
+                    clear_scan_error(&thumb);
+                }
                 if media::is_disk_full(&error) {
                     mark_disk_full();
                     log::error!("thumb gen hit storage exhaustion for {}: {error}", path.display());
                 } else {
                     log::warn!("thumb gen failed for {}: {error}", path.display());
-                    write_scan_error(&thumb, mtime);
+                    if !transient {
+                        write_scan_error(&thumb, mtime);
+                    }
                 }
                 return false;
             }

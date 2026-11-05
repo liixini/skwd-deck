@@ -4,9 +4,9 @@ use crate::state::WallState;
 pub struct SinkSpec {
     pub name: &'static str,
     pub preview: fn(&WallState, &str, u64) -> anyhow::Result<()>,
-    pub preview_end: fn(&WallState),
+    pub preview_end: fn(&WallState, Option<u64>),
     pub forget: fn(&WallState),
-    pub arm: Option<fn(&WallState)>,
+    pub arm: Option<fn(&WallState, u64) -> bool>,
     pub restore_stale: Option<fn(&Config)>,
 }
 
@@ -15,7 +15,7 @@ pub const SINKS: [SinkSpec; 3] = [
         name: "noctalia",
         preview: crate::noctalia::preview,
         preview_end: crate::noctalia::preview_end,
-        forget: crate::noctalia::preview_end,
+        forget: |state| crate::noctalia::preview_end(state, None),
         arm: None,
         restore_stale: Some(crate::noctalia::restore_stale_preview),
     },
@@ -23,7 +23,7 @@ pub const SINKS: [SinkSpec; 3] = [
         name: "dms",
         preview: crate::dms::preview,
         preview_end: crate::dms::preview_end,
-        forget: crate::dms::preview_end,
+        forget: |state| crate::dms::preview_end(state, None),
         arm: None,
         restore_stale: Some(crate::dms::restore_stale_preview),
     },

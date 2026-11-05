@@ -102,57 +102,58 @@ fn capture_state(directory: &tempfile::TempDir) -> WallState {
 }
 
 #[test]
-fn live_scene_capture_returns_an_atomic_frame_and_restores_pause_policy() {
-    let directory = tempfile::tempdir().unwrap();
-    let input = directory.path().join("scene.stdin");
-    let state = capture_state(&directory);
-    let (child, stdin) = crate::infrastructure::renderers::capture_child(&input);
-    state.renderers().set_video_paper("DP-1", child, stdin);
-    state.renderers().mark_scene_paper("DP-1", true);
-
-    let observed = input.clone();
-    let writer = std::thread::spawn(move || {
-        for _ in 0..200 {
-            if let Ok(text) = std::fs::read_to_string(&observed)
-                && let Some(line) = text.lines().next()
-            {
-                let command: serde_json::Value = serde_json::from_str(line).unwrap();
-                let target = command["freeze"].as_str().expect("freeze target");
-                std::fs::write(target, b"P6\n2 2\n255\n\xff\0\0\0\xff\0\0\0\xff\xff\xff\xff")
-                    .unwrap();
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
+fn snapshot_preserves_playback() {
+    for still in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("scene.stdin");
+        let state = capture_state(&directory);
+        let (child, stdin) = crate::infrastructure::renderers::capture_child(&input);
+        if still {
+            state.renderers().set_output_still("DP-1", child, stdin);
+        } else {
+            state.renderers().set_video_paper("DP-1", child, stdin);
+            state.renderers().mark_scene_paper("DP-1", true);
         }
-        panic!("freeze request was not written");
-    });
 
-    let frame =
-        capture_transition_frame_with_timeout(&state, "DP-1", std::time::Duration::from_secs(1))
-            .expect("captured scene frame");
-    writer.join().unwrap();
-    assert!(std::fs::metadata(&frame).is_ok_and(|metadata| metadata.len() > 16));
-
-    let commands = (0..100)
-        .find_map(|_| {
-            let text = std::fs::read_to_string(&input).unwrap_or_default();
-            let lines = text.lines().collect::<Vec<_>>();
-            if lines.len() < 2 {
-                std::thread::sleep(std::time::Duration::from_millis(2));
-                return None;
+        let observed = input.clone();
+        let writer = std::thread::spawn(move || {
+            for _ in 0..200 {
+                if let Ok(text) = std::fs::read_to_string(&observed)
+                    && let Some(line) = text.lines().next()
+                {
+                    let command: serde_json::Value = serde_json::from_str(line).unwrap();
+                    let target = command["snapshot"]["path"].as_str().expect("snapshot target");
+                    std::fs::write(target, b"P6\n2 2\n255\n\xff\0\0\0\xff\0\0\0\xff\xff\xff\xff")
+                        .unwrap();
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            Some(
-                lines
-                    .into_iter()
-                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .expect("freeze and pause-policy commands");
-    assert_eq!(commands[0]["freeze"], frame);
-    assert_eq!(commands[1]["pause"], false);
-    std::fs::remove_file(frame).unwrap();
-    state.renderers().kill_all();
+            panic!("snapshot request was not written");
+        });
+
+        let frame = capture_transition_frame_with_timeout(
+            &state,
+            "DP-1",
+            std::time::Duration::from_secs(1),
+            CaptureFrame::Surface,
+        )
+        .expect("captured scene frame");
+        writer.join().unwrap();
+        assert!(std::fs::metadata(&frame).is_ok_and(|metadata| metadata.len() > 16));
+
+        let commands = std::fs::read_to_string(&input)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0]["snapshot"]["path"], frame);
+        assert_eq!(commands[0]["snapshot"]["output"], "DP-1");
+        assert!(commands[0].get("pause").is_none());
+        std::fs::remove_file(frame).unwrap();
+        state.renderers().kill_all();
+    }
 }
 
 #[test]
@@ -168,11 +169,12 @@ fn scene_capture_timeout_and_renderer_death_leave_no_partial_files() {
             &timeout_state,
             "DP-1",
             std::time::Duration::from_millis(25),
+            CaptureFrame::Surface,
         )
         .is_none()
     );
     let handoffs =
-        std::path::PathBuf::from(timeout_state.config().cache_dir()).join("scene-handoffs");
+        std::path::PathBuf::from(timeout_state.config().cache_dir()).join("renderer-handoffs");
     assert_eq!(std::fs::read_dir(handoffs).unwrap().count(), 0);
     timeout_state.renderers().kill_all();
 
@@ -193,12 +195,13 @@ fn scene_capture_timeout_and_renderer_death_leave_no_partial_files() {
             &death_state,
             "DP-1",
             std::time::Duration::from_secs(2),
+            CaptureFrame::Surface,
         )
         .is_none()
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(1));
     let handoffs =
-        std::path::PathBuf::from(death_state.config().cache_dir()).join("scene-handoffs");
+        std::path::PathBuf::from(death_state.config().cache_dir()).join("renderer-handoffs");
     assert_eq!(std::fs::read_dir(handoffs).unwrap().count(), 0);
     death_state.renderers().kill_all();
 }
@@ -320,6 +323,7 @@ fn scene_key_selected_outputs() {
 
 #[test]
 fn failed_property_swap_invalidates_the_previous_acknowledgement() {
+    let _guard = crate::outputs::enum_shared();
     let directory = tempfile::tempdir().unwrap();
     let item = directory.path().join("42");
     std::fs::create_dir(&item).unwrap();

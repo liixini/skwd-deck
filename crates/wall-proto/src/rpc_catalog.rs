@@ -1,4 +1,26 @@
 pub mod rpc {
+    pub const DRAWING_STATUS: &str = "drawing.status";
+    pub const DRAWING_REGISTER: &str = "drawing.register";
+    pub const DRAWING_DETACH: &str = "drawing.detach";
+    pub const DRAWING_PREPARE: &str = "drawing.prepare";
+    pub const DRAWING_CANCEL: &str = "drawing.cancel";
+    pub const DRAWING_PAUSE: &str = "drawing.pause";
+    pub const DRAWING_RESUME: &str = "drawing.resume";
+    pub const DRAWING_CLEAR_CACHE: &str = "drawing.clear_cache";
+    pub const DRAWING_PREVIEW: &str = "drawing.preview";
+    pub const DRAWING_SET_ENABLED: &str = "drawing.set_enabled";
+    pub const DRAWING_METHODS: &[&str] = &[
+        DRAWING_STATUS,
+        DRAWING_REGISTER,
+        DRAWING_PREPARE,
+        DRAWING_CANCEL,
+        DRAWING_PAUSE,
+        DRAWING_RESUME,
+        DRAWING_DETACH,
+        DRAWING_CLEAR_CACHE,
+        DRAWING_PREVIEW,
+        DRAWING_SET_ENABLED,
+    ];
     pub const THEME_APPS: &str = "theme.apps";
     pub const THEME_APPS_REFRESH: &str = "theme.apps.refresh";
     pub const THEME_APP_CUSTOMIZE: &str = "theme.app.customize";
@@ -93,6 +115,7 @@ pub mod rpc {
     pub const THEME_BACKENDS: &str = "theme.backends";
     pub const THEME_PREVIEW: &str = "theme.preview";
     pub const THEME_PREVIEWS: &str = "theme.previews";
+    pub const THEME_STUDIO: &str = "theme.studio";
 
     pub const TASK_LIST: &str = "task.list";
     pub const TASK_CONTROL: &str = "task.control";
@@ -101,6 +124,7 @@ pub mod rpc {
     pub const OPTIMIZE_STATUS: &str = "optimize.status";
 
     pub const SOURCE_LIST: &str = "source.list";
+    pub const SOURCE_DETAILS: &str = "source.details";
     pub const SOURCE_PREVIEW: &str = "source.preview";
     pub const SOURCE_DOWNLOAD: &str = "source.download";
     pub const WALLHAVEN_SEARCH: &str = "wallhaven.search";
@@ -111,7 +135,22 @@ pub mod rpc {
     pub const STEAM_PREVIEW: &str = "steam.preview";
     pub const STEAM_DOWNLOAD: &str = "steam.download";
 
+    pub const WIDGETS_SCENE: &str = "widgets.scene";
+    pub const WIDGETS_EDIT: &str = "widgets.edit";
+
     pub const ALL: &[&str] = &[
+        WIDGETS_SCENE,
+        WIDGETS_EDIT,
+        DRAWING_STATUS,
+        DRAWING_REGISTER,
+        DRAWING_PREPARE,
+        DRAWING_CANCEL,
+        DRAWING_PAUSE,
+        DRAWING_RESUME,
+        DRAWING_DETACH,
+        DRAWING_CLEAR_CACHE,
+        DRAWING_PREVIEW,
+        DRAWING_SET_ENABLED,
         STATUS,
         STATUS_BUG_REPORT,
         LOCKSCREEN_SET,
@@ -199,11 +238,13 @@ pub mod rpc {
         THEME_BACKENDS,
         THEME_PREVIEW,
         THEME_PREVIEWS,
+        THEME_STUDIO,
         TASK_LIST,
         TASK_CONTROL,
         OPTIMIZE_START,
         OPTIMIZE_STATUS,
         SOURCE_LIST,
+        SOURCE_DETAILS,
         SOURCE_PREVIEW,
         SOURCE_DOWNLOAD,
         WALLHAVEN_SEARCH,

@@ -9,6 +9,17 @@ fn preview_ready_round_trips() {
 }
 
 #[test]
+fn preview_failure_round_trips() {
+    let wire = serde_json::json!({
+        "id": "123", "path": "", "source": "steam",
+        "url": "https://images.steamusercontent.com/a", "error": "timed out"
+    });
+    let event: PreviewReady = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(event.error, "timed out");
+    assert_eq!(serde_json::to_value(event).unwrap(), wire);
+}
+
+#[test]
 fn remote_thumb_round_trips() {
     let wire = serde_json::json!({"id": "12345", "path": "/cache/remote/steam/12345.webp"});
     let event: RemoteThumb = serde_json::from_value(wire.clone()).unwrap();
@@ -107,12 +118,6 @@ fn apply_result_round_trips() {
     let event: ApplyResult = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(event.error_kind.as_deref(), Some("decode_failed"));
     assert_eq!(serde_json::to_value(&event).unwrap(), wire);
-
-    let queued_wire =
-        serde_json::json!({"request_id": 8, "ok": true, "output": "DP-1", "queued": true});
-    let queued: ApplyResult = serde_json::from_value(queued_wire.clone()).unwrap();
-    assert_eq!(queued.queued, Some(true));
-    assert_eq!(serde_json::to_value(&queued).unwrap(), queued_wire);
 
     let sparse: ApplyResult = serde_json::from_value(serde_json::json!({})).unwrap();
     assert!(sparse.ok);

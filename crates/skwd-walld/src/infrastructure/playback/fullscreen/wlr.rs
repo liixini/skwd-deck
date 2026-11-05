@@ -77,6 +77,7 @@ impl Dispatch<handle::ZwlrForeignToplevelHandleV1, ()> for Monitor {
                 let window = state.pending.entry(id).or_default();
                 window.fullscreen = has_state(&values, handle::State::Fullscreen as u32);
                 window.maximized = has_state(&values, handle::State::Maximized as u32);
+                window.focused = has_state(&values, handle::State::Activated as u32);
                 window.minimized = has_state(&values, handle::State::Minimized as u32);
             }
             handle::Event::OutputEnter { output } => {

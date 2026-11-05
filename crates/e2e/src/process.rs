@@ -119,8 +119,36 @@ fn pgrep_x(comm: &str) -> Vec<u32> {
         .collect()
 }
 
-fn parent_pid(pid: u32) -> Option<u32> {
+const ZOMBIE: &str = "Z";
+
+fn stat_fields(pid: u32) -> Option<Vec<String>> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let after_comm = stat.rsplit_once(')')?.1;
-    after_comm.split_whitespace().nth(1)?.parse().ok()
+    Some(after_comm.split_whitespace().map(str::to_owned).collect())
+}
+
+pub fn exited(pid: u32) -> bool {
+    stat_fields(pid).is_none_or(|fields| fields.first().is_some_and(|state| state == ZOMBIE))
+}
+
+fn parent_pid(pid: u32) -> Option<u32> {
+    stat_fields(pid)?.get(1)?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exited;
+    use std::time::Duration;
+
+    #[test]
+    fn zombie_counts_exited() {
+        let mut child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+        let pid = child.id();
+        assert!(!exited(pid));
+        child.kill().unwrap();
+        assert!(crate::wait::wait_until(|| exited(pid), Duration::from_secs(5)));
+        assert!(std::path::Path::new(&format!("/proc/{pid}")).exists());
+        child.wait().unwrap();
+        assert!(exited(pid));
+    }
 }

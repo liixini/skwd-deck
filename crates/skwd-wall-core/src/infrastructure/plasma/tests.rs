@@ -37,7 +37,7 @@ fn native_assignment_keeps_manual_pause_distinct_from_automatic_pause() {
     let outputs = vec![crate::outputs::OutputInfo { name: "DP-1".into(), ..Default::default() }];
     let map = serde_json::json!({"DP-1": {"type": "video", "path": "/video.mp4"}});
     for manual in [false, true] {
-        state.renderers().set_paused(manual);
+        state.renderers().set_paused(manual).unwrap();
         let payload = assignments(
             &state,
             &outputs,
@@ -55,7 +55,7 @@ fn assignments_are_connector_keyed_and_complete() {
     let state = crate::state::WallState::test_new(serde_json::json!({
         "display": {"fillModes": {"DP-2": "fit"}}
     }));
-    state.renderers().set_paused(true);
+    state.renderers().set_paused(true).unwrap();
     state
         .with_db(|connection| {
             crate::db::set_we_property(connection, "123", "speed", Some(&serde_json::json!(2)))
@@ -133,6 +133,8 @@ fn assignment_carries_only_the_requested_transition() {
     let transitions = std::collections::BTreeMap::from([(
         "DP-2".to_string(),
         crate::infrastructure::paper::TransitionPolicy {
+            drawing: None,
+            drawing_source: None,
             fps: None,
             from: Some("/wall/old.png".into()),
             effect: Some("inkwell-drop".into()),
@@ -144,6 +146,43 @@ fn assignment_carries_only_the_requested_transition() {
     assert_eq!(payload["DP-2"]["assignment"]["transition"]["from"], "/wall/old.png");
     assert_eq!(payload["DP-2"]["assignment"]["transition"]["effect"], "inkwell-drop");
     assert_eq!(payload["DP-2"]["assignment"]["transition"]["duration_ms"], 700);
+}
+
+#[test]
+fn drawing_reaches_paper() {
+    let state = crate::state::WallState::test_new(serde_json::json!({}));
+    let outputs = [crate::outputs::OutputInfo {
+        name: "DP-1".to_string(),
+        width: 2560,
+        height: 1440,
+        ..Default::default()
+    }];
+    let map = serde_json::json!({"DP-1": {"type": "we", "path": "", "we_id": "123"}});
+    let transition = crate::infrastructure::paper::TransitionPolicy {
+        drawing: Some(paper_control::DrawingTransition {
+            artifact: "/cache/drawing/manifest.json".into(),
+            colours: paper_control::DrawingColours::default(),
+            ink: paper_control::DrawingInk::Rainbow,
+        }),
+        drawing_source: Some("/cache/reference.png".into()),
+        fps: None,
+        from: Some("/wall/old.png".into()),
+        effect: Some(paper_control::DRAWING_EFFECT.into()),
+        duration_ms: Some(6500),
+    };
+    let transitions = std::collections::BTreeMap::from([("DP-1".to_string(), transition.clone())]);
+    let payload = assignments(&state, &outputs, map.as_object().unwrap(), &transitions).unwrap();
+    let wire = &payload["DP-1"]["assignment"]["transition"];
+    assert_eq!(wire["effect"], "drawing");
+    assert_eq!(wire["drawing"]["artifact"], "/cache/drawing/manifest.json");
+    assert_eq!(wire["drawing"]["ink"], "rainbow");
+    assert_eq!(wire["drawing_source"], "/cache/reference.png");
+    let assignment: paper_control::Assignment =
+        serde_json::from_value(payload["DP-1"]["assignment"].clone()).unwrap();
+    let received = assignment.transition.unwrap();
+    assert_eq!(received.drawing, transition.drawing);
+    assert_eq!(received.drawing_source, transition.drawing_source);
+    received.validate().unwrap();
 }
 
 #[test]

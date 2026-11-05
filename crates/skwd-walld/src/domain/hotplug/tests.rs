@@ -37,35 +37,21 @@ fn retained_persisted_order() {
 fn uniform_renderer_plan() {
     let uniform = outputs(&["*"]);
     assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Video), true, true, false),
+        hotplug_plan(&uniform, Some(AppliedKind::Video), false),
         HotplugPlan::RespawnUniformVideo
     );
+    assert_eq!(hotplug_plan(&uniform, Some(AppliedKind::Static), true), HotplugPlan::KeepAlive);
     assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Video), false, true, false),
-        HotplugPlan::KeepAlive
-    );
-    assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Video), false, false, false),
-        HotplugPlan::RespawnUniformVideo
-    );
-    assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Static), false, false, true),
-        HotplugPlan::KeepAlive
-    );
-    assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Static), false, false, false),
+        hotplug_plan(&uniform, Some(AppliedKind::Static), false),
         HotplugPlan::RespawnUniformStatic
     );
+    assert_eq!(hotplug_plan(&uniform, Some(AppliedKind::Other), false), HotplugPlan::Reconcile);
     assert_eq!(
-        hotplug_plan(&uniform, Some(AppliedKind::Other), false, false, false),
+        hotplug_plan(&outputs(&["DP-1"]), Some(AppliedKind::Video), false),
         HotplugPlan::Reconcile
     );
     assert_eq!(
-        hotplug_plan(&outputs(&["DP-1"]), Some(AppliedKind::Video), false, false, false),
-        HotplugPlan::Reconcile
-    );
-    assert_eq!(
-        hotplug_plan(&outputs(&["*", "DP-2"]), Some(AppliedKind::Static), false, false, false),
+        hotplug_plan(&outputs(&["*", "DP-2"]), Some(AppliedKind::Static), false),
         HotplugPlan::Reconcile
     );
 }

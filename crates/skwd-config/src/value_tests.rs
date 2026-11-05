@@ -47,3 +47,18 @@ fn typed_refs_no_coercion() {
     assert_eq!(arr_ref(&value, "a").len(), 2);
     assert!(arr_ref(&value, "missing").is_empty());
 }
+
+#[test]
+fn parses_rgb_hex() {
+    for (text, expected) in [
+        ("f1eee5", Some([241, 238, 229])),
+        ("#141816", Some([20, 24, 22])),
+        ("000000ff", Some([0, 0, 0])),
+        ("#fff", None),
+        ("+1+2+3", None),
+        ("f1eee5zz", None),
+        ("", None),
+    ] {
+        assert_eq!(parse_rgb(text), expected, "{text}");
+    }
+}

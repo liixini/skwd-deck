@@ -344,3 +344,89 @@ fn kde_complementary_stays_dark_for_light_schemes() {
     assert!(complementary.contains(&format!("\nForegroundNormal={}\n", render_doc(text, &light))));
     assert_ne!(section(&light_scheme, "Colors:View]"), section(&dark_scheme, "Colors:View]"));
 }
+
+#[test]
+fn palette_ansi_wins() {
+    let mut palette = nordish();
+    palette["ansi_red"] = json!("#ff0000");
+    let map = material_map(&palette, true);
+    assert_eq!(map["ansi_red"], Rgb(0xff, 0, 0));
+    assert_eq!(map["ansi_green"], material_map(&nordish(), true)["ansi_green"]);
+}
+
+#[test]
+fn partial_scheme_fills_roles() {
+    let studio = skwd_palette::studio::from_theme(&skwd_palette::preset("nord").unwrap());
+    for palette in [studio.desktop_value(), studio.theme_value()] {
+        let out = render_palette(
+            "{{colors.background.default.hex}} {{colors.secondary.default.hex}} {{colors.ansi_red.default.hex}}",
+            &palette,
+            true,
+        );
+        let map = material_map(&palette, true);
+        assert_eq!(
+            out,
+            format!("{} {} {}", studio.base.hex(), studio.second.hex(), map["ansi_red"].hex())
+        );
+    }
+}
+
+#[test]
+fn scheme_roles_stay_exact() {
+    let mut palette = nordish();
+    palette["_scheme"] = crate::material::document("#f06e44", true).unwrap();
+    palette["ansi_red"] = json!("#123456");
+    for (dark, selected) in [(true, "#ffb59e"), (false, "#8f4c36")] {
+        assert_eq!(
+            render_palette(
+                "{{colors.primary.default.hex}} {{colors.primary.dark.hex}} {{colors.primary.light.hex}} {{colors.ansi_red.default.hex}}",
+                &palette,
+                dark,
+            ),
+            format!("{selected} #ffb59e #8f4c36 #123456")
+        );
+    }
+}
+
+#[test]
+fn all_templates_render() {
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let studio = skwd_palette::studio::from_theme(&skwd_palette::preset("nord").unwrap());
+    let mut material = nordish();
+    material["_scheme"] = crate::material::document("#f06e44", true).unwrap();
+    let entries = ["matugen/templates", "app-themes"]
+        .into_iter()
+        .flat_map(|group| std::fs::read_dir(directory.join(group)).unwrap());
+    for entry in entries {
+        let path = entry.unwrap().path();
+        if !path.is_file() || path.extension().is_some_and(|ext| ext == "md" || ext == "lua") {
+            continue;
+        }
+        let template = std::fs::read_to_string(&path).unwrap();
+        for dark in [true, false] {
+            for palette in
+                [nordish(), studio.desktop_value(), studio.theme_value(), material.clone()]
+            {
+                let out = render_palette(&template, &palette, dark);
+                assert!(!out.contains("{{colors."), "{}", path.display());
+                if path.extension().is_some_and(|ext| ext == "json") {
+                    serde_json::from_str::<Value>(&out)
+                        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn quoted_runtime_placeholders() {
+    let template = include_str!("../../../../../data/matugen/templates/omp.json");
+    let out = render(template, &material_map(&nordish(), true));
+    let parsed: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed["console_title_template"], "{{ .Shell }} in {{ .Folder }}");
+    assert_eq!(
+        parsed["blocks"][0]["segments"][0]["template"],
+        " {{ .CurrentDate | date \"15:04\" }} "
+    );
+    assert_eq!(parsed["palette"]["primary"], "#88c0d0");
+}

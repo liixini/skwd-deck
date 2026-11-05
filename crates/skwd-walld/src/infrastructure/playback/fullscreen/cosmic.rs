@@ -139,6 +139,7 @@ impl Dispatch<handle::ZcosmicToplevelHandleV1, ()> for Monitor {
             handle::Event::State { state: values } => {
                 window.fullscreen = has_state(&values, handle::State::Fullscreen as u32);
                 window.maximized = has_state(&values, handle::State::Maximized as u32);
+                window.focused = has_state(&values, handle::State::Activated as u32);
                 window.minimized = has_state(&values, handle::State::Minimized as u32);
                 window.sticky = has_state(&values, handle::State::Sticky as u32);
             }

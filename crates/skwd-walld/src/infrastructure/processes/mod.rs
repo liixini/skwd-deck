@@ -3,7 +3,6 @@ mod scanner_log;
 mod supervisor;
 mod thumbnail_worker;
 mod thumbnails;
-mod video_optimizer;
 
 pub(crate) use scanner::spawn_scan;
 pub(crate) use supervisor::ProcessSupervisor;

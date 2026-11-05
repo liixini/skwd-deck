@@ -7,14 +7,13 @@ const RANDOM_ORDER: &str = " ORDER BY RANDOM()";
 const RANDOM_ONE: &str = " ORDER BY RANDOM() LIMIT 1";
 const SET_HIDDEN: &str = "UPDATE meta SET hidden = ?1 WHERE key = ?2 AND hidden != ?1";
 const COUNT_VISIBLE: &str = "SELECT count(*) FROM meta WHERE library_excluded = 0";
+const DRAWABLE_KEYS: &str = "SELECT key FROM meta WHERE library_excluded = 0 AND hidden = 0 AND type IN ('static', 'video', 'we') ORDER BY name";
 const VIDEO_SOURCE: &str =
     "SELECT video_file FROM meta WHERE key = ?1 AND key LIKE 'video:%' AND video_file != ''";
 const VIDEO_KEY: &str = "SELECT key FROM meta WHERE video_file = ?1 AND key LIKE 'video:%' LIMIT 1";
 const LIST_WALLPAPERS: &str = "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated, hidden FROM meta WHERE library_excluded = 0 ORDER BY name";
 const LIST_FAVOURITES: &str = "SELECT key, name, type, thumb, thumb_sm, favourite, hue, sat, tags, colors, matugen, video_file, we_id, analyzed_by, filesize, width, height, duration_ms, mtime, weather, richness, apply_count, last_applied, thumbnail_generated, hidden FROM meta WHERE library_excluded = 0 AND favourite = 1 ORDER BY name";
 
-pub const TINIER_CONVERT_MAX_BYTES: u64 = 256 * 1024 * 1024;
-pub const TINIER_CONVERT_PRESET: &str = "tinier-av1-v1";
 const WORKSHOP_KEY_PREFIX: &str = "we:";
 
 pub fn list_wallpapers(
@@ -388,6 +387,11 @@ pub fn item_count(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row(COUNT_VISIBLE, [], |row| row.get(0))
 }
 
+pub fn drawable_keys(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut statement = conn.prepare(DRAWABLE_KEYS)?;
+    statement.query_map([], |row| row.get(0))?.collect()
+}
+
 pub fn retire_video_converts(conn: &Connection) -> rusqlite::Result<Vec<String>> {
     let destinations = {
         let mut statement = conn.prepare("SELECT src, dest FROM video_convert")?;
@@ -399,48 +403,6 @@ pub fn retire_video_converts(conn: &Connection) -> rusqlite::Result<Vec<String>>
     };
     conn.execute("DELETE FROM video_convert", [])?;
     Ok(destinations)
-}
-
-pub fn tinier_convert_record(
-    conn: &Connection,
-    src: &str,
-    dest: &str,
-    frame_rate: &str,
-    preset: &str,
-    orig_size: i64,
-    new_size: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO tinier_convert(src, dest, frame_rate, preset, orig_size, new_size, converted_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, strftime('%s','now'))",
-        params![src, dest, frame_rate, preset, orig_size, new_size],
-    )?;
-    Ok(())
-}
-
-pub fn tinier_convert_entry(
-    conn: &Connection,
-    src: &str,
-) -> rusqlite::Result<Option<(String, String, String, i64)>> {
-    conn.query_row(
-        "SELECT dest, frame_rate, preset, COALESCE(orig_size, 0) FROM tinier_convert WHERE src = ?1",
-        params![src],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-    )
-    .optional()
-}
-
-pub fn tinier_convert_src(conn: &Connection, dest: &str) -> rusqlite::Result<Option<String>> {
-    conn.query_row("SELECT src FROM tinier_convert WHERE dest = ?1", params![dest], |row| {
-        row.get(0)
-    })
-    .optional()
-}
-
-pub fn tinier_convert_delete(conn: &Connection, src: &str) -> rusqlite::Result<Option<String>> {
-    let destination = tinier_convert_entry(conn, src)?.map(|entry| entry.0);
-    conn.execute("DELETE FROM tinier_convert WHERE src = ?1", params![src])?;
-    Ok(destination)
 }
 
 pub fn thumb_for_video(conn: &Connection, video_file: &str) -> rusqlite::Result<Option<String>> {

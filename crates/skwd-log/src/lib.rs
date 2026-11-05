@@ -7,8 +7,12 @@ pub use files::{
 };
 pub use level::{LogLevel, level_from};
 
+#[cfg(feature = "clock")]
+mod clock;
 #[cfg(feature = "facade")]
 mod facade;
+#[cfg(feature = "clock")]
+pub use clock::{local_time, seconds_until_local_hour};
 #[cfg(feature = "facade")]
 pub use facade::init_facade;
 

@@ -26,8 +26,6 @@ pub(crate) fn per_output_state_is_divergent(persisted_outputs: &[String]) -> boo
 pub(crate) fn hotplug_plan(
     persisted_outputs: &[String],
     uniform_kind: Option<AppliedKind>,
-    engine_is_vk: bool,
-    video_alive: bool,
     still_alive: bool,
 ) -> HotplugPlan {
     if persisted_outputs.len() != 1 || persisted_outputs[0] != "*" {
@@ -35,10 +33,7 @@ pub(crate) fn hotplug_plan(
     }
 
     match uniform_kind {
-        Some(AppliedKind::Video) if engine_is_vk || !video_alive => {
-            HotplugPlan::RespawnUniformVideo
-        }
-        Some(AppliedKind::Video) => HotplugPlan::KeepAlive,
+        Some(AppliedKind::Video) => HotplugPlan::RespawnUniformVideo,
         Some(AppliedKind::Static) if still_alive => HotplugPlan::KeepAlive,
         Some(AppliedKind::Static) => HotplugPlan::RespawnUniformStatic,
         Some(AppliedKind::Other) | None => HotplugPlan::Reconcile,

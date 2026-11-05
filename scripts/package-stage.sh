@@ -31,7 +31,7 @@ if [ -z "${SKWD_DECK_BIN_DIR:-}" ]; then
     cargo build --manifest-path "$root/Cargo.toml" --release --workspace
 fi
 
-for binary in skwd-walld skwd-wall-scan skwd-wall-effects skwd-steam skwd-helm; do
+for binary in skwd-walld skwd-wall-scan skwd-wall-effects skwd-wall-draw skwd-steam skwd-helm; do
     path="$binary_directory/$binary"
     if [ ! -f "$path" ] || [ ! -x "$path" ]; then
         echo "missing executable Deck release binary: $path" >&2
@@ -59,7 +59,7 @@ template_directory="$destination/usr/share/skwd-wall-v2/data/matugen/templates"
 mkdir -p "$destination/usr/bin" "$destination/usr/lib/systemd/user"
 mkdir -p "$license_directory" "$template_directory"
 
-for binary in skwd-walld skwd-wall-scan skwd-wall-effects skwd-steam skwd-helm; do
+for binary in skwd-walld skwd-wall-scan skwd-wall-effects skwd-wall-draw skwd-steam skwd-helm; do
     install -m755 "$binary_directory/$binary" "$destination/usr/bin/$binary"
 done
 

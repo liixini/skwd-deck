@@ -19,6 +19,9 @@ pub fn refresh_renderer_policy_locked(state: &WallState) -> anyhow::Result<()> {
     let Some(outputs) = current.as_object().filter(|outputs| !outputs.is_empty()) else {
         return Ok(());
     };
+    if super::service::refresh(state, &current)? {
+        return Ok(());
+    }
     if let Some(entry) = outputs.get("*") {
         let kind = entry.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
         let path = entry.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
@@ -54,5 +57,10 @@ pub fn refresh_renderer_policy_locked(state: &WallState) -> anyhow::Result<()> {
         monitors = outputs.keys().filter(|output| output.as_str() != "*").cloned().collect();
         monitors.sort();
     }
-    reconcile_outputs(state, &monitors, &ReconcileIntent::PolicyRefresh)
+    reconcile_outputs(
+        state,
+        &monitors,
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    )
 }

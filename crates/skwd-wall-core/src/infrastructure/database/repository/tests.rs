@@ -60,10 +60,10 @@ fn migrate_idempotent() {
         "playlist_assign",
         "image_optimize",
         "video_convert",
-        "tinier_convert",
     ] {
         assert!(tables.contains(&table.to_string()), "{table}");
     }
+    assert!(!tables.contains(&"tinier_convert".to_string()));
 
     let list = list_wallpapers(&conn, false).unwrap();
     assert_eq!(list.len(), 1);
@@ -196,4 +196,21 @@ fn database_files_private() {
     let connection = super::open_at(&path).unwrap();
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
     drop(connection);
+}
+
+#[test]
+fn tinier_table_retires() {
+    let conn = open_in_memory().unwrap();
+    assert_eq!(retiring_tinier_converts(&conn).unwrap(), None);
+    conn.execute_batch(
+        "CREATE TABLE tinier_convert(src TEXT PRIMARY KEY, dest TEXT NOT NULL);
+         INSERT INTO tinier_convert VALUES('/video/a.mp4', '/cache/video-opt/a.ivf');",
+    )
+    .unwrap();
+    migrate(&conn).unwrap();
+    let rows = retiring_tinier_converts(&conn).unwrap().unwrap();
+    assert_eq!(rows, [("/video/a.mp4".to_string(), "/cache/video-opt/a.ivf".to_string())]);
+    drop_tinier_converts(&conn).unwrap();
+    drop_tinier_converts(&conn).unwrap();
+    assert_eq!(retiring_tinier_converts(&conn).unwrap(), None);
 }

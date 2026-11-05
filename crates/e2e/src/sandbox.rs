@@ -5,6 +5,8 @@ use std::process::Command;
 
 use crate::paths::target_bin;
 
+const CPU_SCANNER: (&str, &str) = ("SKWD_SCAN_GPU", "0");
+
 pub struct Sandbox {
     pub root: PathBuf,
     pub keep_on_fail: bool,
@@ -78,19 +80,23 @@ impl Sandbox {
 
     pub fn env(&self) -> Vec<(String, String)> {
         let dir = |sub: &str| self.root.join(sub).to_string_lossy().into_owned();
-        vec![
-            ("XDG_RUNTIME_DIR".into(), dir("runtime")),
+        let mut environment = vec![
             ("XDG_CONFIG_HOME".into(), dir("config")),
             ("XDG_CACHE_HOME".into(), dir("cache")),
             ("XDG_DATA_HOME".into(), dir("data")),
             ("XDG_STATE_HOME".into(), dir("state")),
             ("SKWD_WALL_V2_SOCK".into(), self.socket().to_string_lossy().into_owned()),
+            ("SKWD_PAPER_V2_SOCKET".into(), dir("runtime/paper.sock")),
+            (
+                skwd_wall_core::plasma::PRESENTATION_DIRECTORY_ENV.into(),
+                dir("runtime/skwd-paper-plasma"),
+            ),
             ("SKWD_WALLD_NO_REAP".into(), "1".into()),
             ("SKWD_WALL_LOG".into(), "info".into()),
-        ]
-        .into_iter()
-        .chain(self.extra_env.iter().cloned())
-        .collect()
+            (CPU_SCANNER.0.into(), CPU_SCANNER.1.into()),
+        ];
+        environment.extend(self.extra_env.iter().cloned());
+        environment
     }
 
     pub fn walld_command(&self) -> Command {
@@ -140,4 +146,31 @@ impl Drop for Sandbox {
 fn set_mode(path: &Path, mode: u32) {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CPU_SCANNER, Sandbox};
+
+    #[test]
+    fn isolates_ipc() {
+        let sandbox = Sandbox::new("runtime-env");
+        let environment = sandbox.env();
+        let paper = sandbox.root.join("runtime/paper.sock").to_string_lossy().into_owned();
+        let plasma = sandbox.root.join("runtime/skwd-paper-plasma").to_string_lossy().into_owned();
+        assert!(!environment.iter().any(|(key, _)| key == "XDG_RUNTIME_DIR"));
+        assert!(
+            environment
+                .iter()
+                .any(|(key, value)| { key == CPU_SCANNER.0 && value == CPU_SCANNER.1 })
+        );
+        assert!(
+            environment
+                .iter()
+                .any(|(key, path)| { key == "SKWD_PAPER_V2_SOCKET" && path == &paper })
+        );
+        assert!(environment.iter().any(|(key, path)| {
+            key == skwd_wall_core::plasma::PRESENTATION_DIRECTORY_ENV && path == &plasma
+        }));
+    }
 }

@@ -8,3 +8,4 @@ mod runtime;
 mod storage;
 
 pub(crate) use runtime::{list, note_external_apply, reload, start};
+pub(crate) use storage::base_file;

@@ -75,6 +75,8 @@ pub(super) fn apply_static_owned(
         let plasma_transition = (transition.enabled()
             && from.is_some_and(|previous| previous != path))
         .then(|| crate::infrastructure::paper::TransitionPolicy {
+            drawing: None,
+            drawing_source: None,
             fps: None,
             from: from.map(str::to_string),
             effect: Some(transition.shader().to_string()),
@@ -295,16 +297,26 @@ fn spawn_resolved_stills(
 pub(super) struct StaticMultiRequest<'a, 'state> {
     pub(super) map: &'a serde_json::Map<String, serde_json::Value>,
     pub(super) targets: &'a [String],
+    pub(super) previous_assignments: &'a std::collections::HashMap<String, String>,
     pub(super) keep_still: &'a mut Vec<String>,
     pub(super) pending: &'a mut Vec<ReadyHandoff<'state>>,
     pub(super) reuse: ReusePolicy,
+    pub(super) policy: &'a super::policy::PolicyGate<'a>,
 }
 
 pub(super) fn reconcile_static_multi<'a>(
     state: &'a WallState,
     request: StaticMultiRequest<'_, 'a>,
 ) -> std::collections::HashSet<String> {
-    let StaticMultiRequest { map, targets, keep_still, pending, reuse } = request;
+    let StaticMultiRequest {
+        map,
+        targets,
+        previous_assignments,
+        keep_still,
+        pending,
+        reuse,
+        policy,
+    } = request;
     let mut groups: std::collections::BTreeMap<(String, String, String), Vec<String>> =
         std::collections::BTreeMap::new();
     for output in targets {
@@ -316,19 +328,8 @@ pub(super) fn reconcile_static_multi<'a>(
         if path.is_empty() || !is_safe_positional(path) || output.contains(',') {
             continue;
         }
-        groups
-            .entry((
-                path.to_string(),
-                state.config().display().fill_mode_for(output),
-                if state.config().display().background_affects_for(output) {
-                    serde_json::to_string(&state.config().display().background_for(output))
-                        .expect("background serializes")
-                } else {
-                    String::new()
-                },
-            ))
-            .or_default()
-            .push(output.clone());
+        let (fill, background) = super::still_policy::still_surface_key(state, output);
+        groups.entry((path.to_string(), fill, background)).or_default().push(output.clone());
     }
     let mut handled = std::collections::HashSet::new();
     for ((path, fill, _background), mut outputs) in groups {
@@ -337,8 +338,16 @@ pub(super) fn reconcile_static_multi<'a>(
         }
         outputs.sort();
         let key = outputs.join(",");
-        let reused = reuse.allows_warm() && state.renderers().output_still_swap(&key, &path, &fill);
-        if reused {
+        let unchanged =
+            outputs.iter().all(|output| previous_assignments.get(output) == Some(&path))
+                && super::still_policy::still_kept(state, &key)
+                && policy.current();
+        if unchanged {
+            log::info!("reconcile {key}: static {path} (unchanged, keep)");
+        } else if reuse.allows_warm()
+            && super::still_policy::still_background_current(state, &key)
+            && state.renderers().output_still_swap(&key, &path, &fill)
+        {
             for output in &outputs {
                 state.renderers().set_assignment(output, &path);
                 state.renderers().kill_output_still(output);
@@ -384,24 +393,30 @@ pub(super) struct StaticReconcileRequest<'a> {
     pub(super) path: &'a str,
     pub(super) previous: &'a str,
     pub(super) reuse: ReusePolicy,
+    pub(super) policy: &'a super::policy::PolicyGate<'a>,
 }
 
 pub(super) fn reconcile_static<'a>(
     state: &'a WallState,
     request: StaticReconcileRequest<'_>,
 ) -> anyhow::Result<Option<ReadyHandoff<'a>>> {
-    let StaticReconcileRequest { output, path, previous, reuse } = request;
-    if reuse.allows_warm() && previous == path && state.renderers().has_output_still(output) {
+    let StaticReconcileRequest { output, path, previous, reuse, policy } = request;
+    if previous == path && super::still_policy::still_kept(state, output) && policy.current() {
         log::info!("reconcile {output}: static {path} (unchanged, keep)");
         return Ok(None);
     }
     let output_fill = state.config().display().fill_mode_for(output);
-    let slide = reuse.allows_warm().then(|| state.apply().take_swap_slide()).flatten();
+    let warm = reuse.allows_warm() && super::still_policy::still_background_current(state, output);
+    let slide = warm.then(|| state.apply().take_swap_slide()).flatten();
     let reused = match &slide {
-        Some((direction, slide_duration)) if reuse.allows_warm() => state
-            .renderers()
-            .output_still_swap_slide(output, path, direction, *slide_duration, &output_fill),
-        _ if reuse.allows_warm() => state.renderers().output_still_swap(output, path, &output_fill),
+        Some((direction, slide_duration)) if warm => state.renderers().output_still_swap_slide(
+            output,
+            path,
+            direction,
+            *slide_duration,
+            &output_fill,
+        ),
+        _ if warm => state.renderers().output_still_swap(output, path, &output_fill),
         _ => false,
     };
     let handoff = if reused {

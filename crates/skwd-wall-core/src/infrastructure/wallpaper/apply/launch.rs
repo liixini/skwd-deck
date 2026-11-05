@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
@@ -207,6 +207,7 @@ pub(crate) struct RendererLaunchSpec {
     kind: RendererLaunchKind,
     arguments: Vec<String>,
     prepare_hidden: bool,
+    still_path: Option<String>,
 }
 
 impl RendererLaunchSpec {
@@ -225,7 +226,7 @@ impl RendererLaunchSpec {
         };
         let mut arguments = still_args(output, path, fill_mode);
         arguments.push("--persist".to_string());
-        Self { kind, arguments, prepare_hidden: false }
+        Self { kind, arguments, prepare_hidden: false, still_path: Some(path.to_string()) }
     }
 
     pub(crate) fn prepare_hidden(mut self, hidden: bool) -> Self {
@@ -241,7 +242,7 @@ impl RendererLaunchSpec {
         } else {
             RendererLaunchKind::PerOutputVideo { output: output.to_string() }
         };
-        Self { kind, arguments, prepare_hidden: false }
+        Self { kind, arguments, prepare_hidden: false, still_path: None }
     }
 
     pub(crate) fn native_scene(outputs: &str, arguments: Vec<String>) -> Self {
@@ -249,6 +250,7 @@ impl RendererLaunchSpec {
             kind: RendererLaunchKind::NativeScene { outputs: outputs.to_string(), fps: None },
             arguments,
             prepare_hidden: false,
+            still_path: None,
         }
     }
 
@@ -265,6 +267,7 @@ impl RendererLaunchSpec {
             kind: RendererLaunchKind::ManagedTransition { output },
             arguments,
             prepare_hidden: false,
+            still_path: None,
         }
     }
 
@@ -274,6 +277,7 @@ impl RendererLaunchSpec {
             kind: RendererLaunchKind::StandaloneTransition { output: output.to_string() },
             arguments,
             prepare_hidden: false,
+            still_path: None,
         }
     }
 
@@ -296,8 +300,7 @@ impl RendererLaunchSpec {
         let mut command = crate::proc::renderer(&executable);
         command.env(
             "SKWD_PAPER_BACKGROUND",
-            serde_json::to_string(&config.display().background_for(self.kind.output()))
-                .expect("background serializes"),
+            super::still_policy::still_background(state, self.kind.output()),
         );
         command.env_remove("SKWD_PAPER_PREPARE_HIDDEN");
         if self.prepare_hidden {
@@ -324,7 +327,7 @@ impl RendererLaunchSpec {
         );
         let gpu = config.renderer().gpu_device();
         if gpu != "auto" {
-            command.env("SKWD_VK_DEVICE", gpu);
+            command.env(skwd_config::GPU_DEVICE_ENV, gpu);
         }
         if matches!(
             self.kind,
@@ -403,6 +406,18 @@ impl RendererLaunchSpec {
         let pid = child.id();
         let stdin = child.stdin.take();
         let detached = target.install(state, child, stdin);
+        if let RendererTarget::OutputStill(output) = &target {
+            super::still_policy::record_still_background(state, output);
+        }
+        if let Some(path) = &self.still_path {
+            match &target {
+                RendererTarget::BaseStill => state.renderers().greet_still(None, path),
+                RendererTarget::OutputStill(output) => {
+                    state.renderers().greet_still(Some(output), path);
+                }
+                _ => {}
+            }
+        }
         Ok(RendererStartup {
             transaction: RendererTransaction {
                 state,
@@ -584,6 +599,7 @@ impl DisplacedRenderers {
             Self::BaseStill(Some(renderer)) => state.renderers().restore_base_still(renderer),
             Self::OutputStill { output, renderer: Some(renderer) } => {
                 state.renderers().restore_output_still(&output, renderer);
+                super::still_policy::clear_still_background(state, &output);
             }
             Self::SharedVideo { videos, paper } => {
                 state.renderers().restore_video_paper_entries(
@@ -734,9 +750,13 @@ impl<'a> RendererStartup<'a> {
 
     pub(crate) fn wait_ready(self) -> anyhow::Result<ReadyRenderer<'a>> {
         let mut transaction = self.transaction;
-        if transaction.state.renderers().wait_ready(transaction.pid, transaction.timeout)
-            && transaction.candidate_alive()
-        {
+        let started = Instant::now();
+        let ready = transaction.state.renderers().wait_ready(transaction.pid, transaction.timeout);
+        transaction
+            .state
+            .apply()
+            .note_phase(crate::backend::wallpaper::ApplyPhase::Ready, started.elapsed());
+        if ready && transaction.candidate_alive() {
             Ok(ReadyRenderer { transaction })
         } else {
             anyhow::bail!("{} did not become ready and remain alive", transaction.label)
@@ -920,7 +940,7 @@ mod tests {
         let ready_socket = wall_proto::resolve_socket().display().to_string();
         for command in [&steady, &transition, &scene] {
             assert_eq!(
-                command_env(command, "SKWD_VK_DEVICE").as_deref(),
+                command_env(command, skwd_config::GPU_DEVICE_ENV).as_deref(),
                 Some("uuid:22222222222222222222222222222222")
             );
             assert_eq!(

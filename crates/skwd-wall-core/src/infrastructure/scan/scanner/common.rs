@@ -35,11 +35,11 @@ pub(super) fn known_mtimes(state: &WallState) -> HashMap<String, i64> {
 
 fn blocks_ready(thumb: &Path) -> bool {
     let (near, far) = crate::blocks::dests_for(&thumb.to_string_lossy());
-    near.exists() && far.exists()
+    near.is_file() && far.is_file()
 }
 
-pub(super) fn artifacts_ready(thumb: &Path) -> bool {
-    thumb.exists() && blocks_ready(thumb)
+pub(super) fn artifacts_ready(thumb: &Path, small: &Path) -> bool {
+    thumb.is_file() && small.is_file() && blocks_ready(thumb)
 }
 
 pub(super) fn candidates(

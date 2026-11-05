@@ -1,4 +1,5 @@
 pub mod ev {
+    pub const DRAWING_STATUS: &str = "skwd.wall.drawing_status";
     use serde::{Deserialize, Serialize};
 
     pub const APPLIED: &str = "skwd.wall.applied";
@@ -48,6 +49,12 @@ pub mod ev {
     pub struct PreviewReady {
         pub id: String,
         pub path: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        pub source: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        pub url: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        pub error: String,
     }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -144,19 +151,11 @@ pub mod ev {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub detail: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub queued: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub activity: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub apply_token: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub task_id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub visible: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub cancelled: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub superseded: Option<bool>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]

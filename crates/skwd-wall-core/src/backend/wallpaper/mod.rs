@@ -2,10 +2,10 @@ mod application;
 mod runtime;
 
 pub use application::{
-    ApplyOutputRequest, ApplyStaticRequest, ApplyVideoRequest, OutputTransitionRequest,
-    StaticSmartRequest, VideoTransitionRequest, WallpaperApplication,
+    ApplyFanout, ApplyOutputRequest, ApplyStaticRequest, ApplyVideoRequest,
+    OutputTransitionRequest, StaticSmartRequest, VideoTransitionRequest, WallpaperApplication,
 };
-pub use runtime::{ApplyIntent, ApplyRuntime};
+pub use runtime::{ApplyIntent, ApplyPhase, ApplyPhases, ApplyRuntime, PhaseRecording};
 
 #[cfg(test)]
 mod tests;

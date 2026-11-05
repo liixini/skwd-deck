@@ -462,6 +462,12 @@ impl RendererSupervisor {
         map_entry_alive(&self.output_stills, output)
     }
 
+    pub fn output_still_key(&self, output: &str) -> Option<String> {
+        let keys: Vec<String> = lock(&self.output_stills).keys().cloned().collect();
+        keys.into_iter()
+            .find(|key| key.split(',').any(|member| member == output) && self.has_output_still(key))
+    }
+
     pub(crate) fn output_still_pid_alive(&self, output: &str, pid: u32) -> bool {
         map_entry_pid_alive(&self.output_stills, output, pid)
     }

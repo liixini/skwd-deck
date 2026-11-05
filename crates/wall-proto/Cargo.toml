@@ -10,6 +10,7 @@ description = "JSON-RPC wire types for the skwd-wall resident"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
+paper-control = { path = "../../../skwd-paper/crates/paper-control" }
 url = "2"
 
 [lints]

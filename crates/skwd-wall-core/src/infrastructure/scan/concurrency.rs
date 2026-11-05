@@ -39,19 +39,15 @@ pub(super) fn decode_memory_budget_bytes() -> usize {
 }
 
 pub(super) fn image_decode_weight(path: &Path) -> usize {
-    let pixel_floor = image::image_dimensions(path)
-        .ok()
-        .and_then(|(width, height)| {
-            usize::try_from(u64::from(width).saturating_mul(u64::from(height)).saturating_mul(4))
-                .ok()
-        })
-        .unwrap_or(DECODE_FIXED_OVERHEAD_BYTES);
     let decoded = image::ImageReader::open(path)
         .and_then(image::ImageReader::with_guessed_format)
         .ok()
         .and_then(|reader| reader.into_decoder().ok())
-        .and_then(|decoder| usize::try_from(decoder.total_bytes()).ok())
-        .map_or(pixel_floor, |bytes| bytes.max(pixel_floor));
+        .map_or(DECODE_FIXED_OVERHEAD_BYTES, |decoder| {
+            let (width, height) = decoder.dimensions();
+            let pixel_floor = u64::from(width).saturating_mul(u64::from(height)).saturating_mul(4);
+            usize::try_from(decoder.total_bytes().max(pixel_floor)).unwrap_or(usize::MAX)
+        });
     decoded.saturating_add(DECODE_FIXED_OVERHEAD_BYTES)
 }
 

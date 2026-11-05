@@ -36,6 +36,7 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
         [config.cache_dir() + "/video-opt", config.video_dir()]
     });
     crate::infrastructure::video_optimization::retire_general_cache(state);
+    crate::infrastructure::video_optimization::retire_tinier(state);
     for sink in &skwd_wall_core::theme_sink::SINKS {
         if let Some(restore) = sink.restore_stale {
             restore(&state.config());
@@ -44,6 +45,7 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
     crate::infrastructure::effects_preview::sweep_effects_previews(
         &skwd_wall_core::paths::cache_dir().join("effects-preview"),
     );
+    crate::infrastructure::widgets::install(ctx);
     crate::infrastructure::theme_worker::start_theme_worker(ctx.clone());
     // Must publish the power snapshot before restore reads renderer policy.
     crate::infrastructure::power::start(ctx.clone());
@@ -53,6 +55,7 @@ pub(crate) fn start_services(ctx: &Ctx, debug: bool) -> anyhow::Result<tokio::ru
     crate::infrastructure::watcher::start_watcher(ctx.clone());
     crate::composition::runtime::rotation::start_rotation(ctx.clone());
     crate::composition::runtime::schedule::start_scheduler(ctx.clone());
+    crate::composition::runtime::studio_clock::start(ctx.clone());
     crate::composition::runtime::playlist::start(ctx.clone());
     crate::composition::runtime::weather::start(ctx.clone());
     crate::infrastructure::workspaces::start(ctx.clone());

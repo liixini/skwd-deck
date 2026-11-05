@@ -3,6 +3,8 @@
 use super::{arm, cache_key, forget, preview_end};
 use crate::config::Config;
 use crate::state::WallState;
+use std::sync::Barrier;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn cache_key_mode() {
@@ -36,9 +38,9 @@ fn end_restores_side_files() {
         ],
     }));
 
-    super::arm(&st);
+    assert!(super::arm(&st, st.theme().shell_preview_generation()));
     std::fs::write(&kde, "HOVERED").unwrap();
-    super::preview_end(&st);
+    super::preview_end(&st, None);
 
     assert_eq!(std::fs::read_to_string(&kde).unwrap(), "APPLIED");
 }
@@ -50,7 +52,7 @@ fn end_restores_palette() {
     st.theme().arm_bridge_preview(std::fs::read(tmp.path().join("colors.json")).unwrap());
     std::fs::write(tmp.path().join("colors.json"), r##"{"background":"#hovered"}"##).unwrap();
 
-    preview_end(&st);
+    preview_end(&st, None);
 
     let back = std::fs::read_to_string(tmp.path().join("colors.json")).unwrap();
     assert!(back.contains("#applied"), "{back}");
@@ -85,9 +87,9 @@ fn early_end_restores() {
     let tmp = tempfile::tempdir().unwrap();
     let st = state_with_bridge(tmp.path(), "applied");
 
-    arm(&st);
+    assert!(arm(&st, st.theme().shell_preview_generation()));
     std::fs::write(tmp.path().join("colors.json"), "hovered").unwrap();
-    preview_end(&st);
+    preview_end(&st, None);
 
     assert_eq!(std::fs::read_to_string(tmp.path().join("colors.json")).unwrap(), "applied");
 }
@@ -96,8 +98,59 @@ fn early_end_restores() {
 fn end_without_preview_noop() {
     let tmp = tempfile::tempdir().unwrap();
     let st = state_with_bridge(tmp.path(), "applied");
-    preview_end(&st);
+    preview_end(&st, None);
     assert_eq!(std::fs::read_to_string(tmp.path().join("colors.json")).unwrap(), "applied");
+}
+
+#[test]
+fn stale_arm_preserves() {
+    let tmp = tempfile::tempdir().unwrap();
+    let st = state_with_bridge(tmp.path(), "applied");
+    let stale = st.theme().shell_preview_generation();
+    st.theme().bump_shell_preview();
+
+    assert!(!arm(&st, stale));
+    assert!(!st.theme().bridge_preview_armed());
+    assert_eq!(std::fs::read_to_string(tmp.path().join("colors.json")).unwrap(), "applied");
+}
+
+#[test]
+fn cancel_owns_generation() {
+    let state = WallState::test_new(serde_json::json!({}));
+    let old = state.theme().shell_preview_generation();
+    let next = state.theme().cancel_shell_preview(old).unwrap();
+    assert_eq!(next, state.theme().shell_preview_generation());
+    assert_eq!(state.theme().cancel_shell_preview(old), None);
+    assert_eq!(state.theme().shell_preview_generation(), next);
+}
+
+#[test]
+fn blocked_end_preserves_hover() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state_with_bridge(dir.path(), "applied");
+    let old = state.theme().shell_preview_generation();
+    assert!(arm(&state, old));
+    std::fs::write(dir.path().join("colors.json"), "old-hover").unwrap();
+    let serial = state.theme().lock_shell_preview();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+
+    std::thread::scope(|scope| {
+        let old_end = scope.spawn(|| {
+            started_tx.send(()).unwrap();
+            preview_end(&state, Some(old));
+            finished_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(finished_rx.try_recv().is_err());
+        state.theme().bump_shell_preview();
+        std::fs::write(dir.path().join("colors.json"), "new-hover").unwrap();
+        drop(serial);
+        old_end.join().unwrap();
+    });
+
+    assert_eq!(std::fs::read_to_string(dir.path().join("colors.json")).unwrap(), "new-hover");
+    assert!(state.theme().bridge_preview_armed());
 }
 
 #[test]
@@ -172,4 +225,81 @@ fn edited_profiles_override_cached_palettes_without_stale_results() {
     profile["enabled"] = json!(false);
     let config = base.with_override("theme.wallpaperProfiles", json!([profile]));
     assert_eq!(super::cached_palette_for_config(&state, &config, "/image.png"), Some(cached));
+}
+
+#[test]
+fn concurrent_palette_generates_once() {
+    const CALLERS: usize = 8;
+    const GENERATION_DELAY: std::time::Duration = std::time::Duration::from_millis(20);
+    let state = WallState::test_new(serde_json::json!({}));
+    let start = Barrier::new(CALLERS);
+    let calls = AtomicUsize::new(0);
+
+    std::thread::scope(|scope| {
+        let threads: Vec<_> = (0..CALLERS)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    state.theme().palette_or_generate("shared", || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(GENERATION_DELAY);
+                        Some(b"palette".to_vec())
+                    })
+                })
+            })
+            .collect();
+        for thread in threads {
+            assert_eq!(thread.join().unwrap(), Some(b"palette".to_vec()));
+        }
+    });
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_palette_retries() {
+    let state = WallState::test_new(serde_json::json!({}));
+    let calls = AtomicUsize::new(0);
+    let first = state.theme().palette_or_generate("missing", || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        None
+    });
+    let second = state.theme().palette_or_generate("missing", || {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Some(b"ready".to_vec())
+    });
+    assert_eq!(first, None);
+    assert_eq!(second, Some(b"ready".to_vec()));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn source_replacement_invalidates_palette() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = dir.path().join("image.png");
+    let replacement = dir.path().join("replacement.png");
+    let config = Config::from_root(serde_json::json!({}));
+    let state = WallState::test_new(serde_json::json!({}));
+    std::fs::write(&image, b"first").unwrap();
+    let path = image.to_str().unwrap();
+    let first_key = cache_key(&config, path);
+    let first = state.theme().palette_or_generate(&first_key, || std::fs::read(&image).ok());
+    std::fs::write(&replacement, b"second").unwrap();
+    std::fs::rename(&replacement, &image).unwrap();
+    let next_key = cache_key(&config, path);
+    let next = state.theme().palette_or_generate(&next_key, || std::fs::read(&image).ok());
+    assert_ne!(first_key, next_key);
+    assert_eq!(first, Some(b"first".to_vec()));
+    assert_eq!(next, Some(b"second".to_vec()));
+}
+
+#[test]
+fn cached_roles_match() {
+    let state = WallState::test_new(serde_json::json!({}));
+    let config = Config::from_root(serde_json::json!({
+        "theme": { "backend": "static", "staticTheme": "nord", "mode": "dark" }
+    }));
+    let image = "/unused-static-image.png";
+    let expected = crate::theme::preview_palette(&config, image);
+    assert_eq!(super::cached_palette_for_config(&state, &config, image), expected);
+    assert_eq!(super::cached_palette_for_config(&state, &config, image), expected);
 }

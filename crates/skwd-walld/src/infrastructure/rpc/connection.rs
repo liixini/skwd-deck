@@ -7,14 +7,16 @@ use tokio::net::unix::OwnedWriteHalf;
 use tokio::sync::mpsc::{Receiver, Sender};
 use wall_proto::{Request, Response, rpc};
 
+use super::preview_queue::PreviewQueue;
 use super::router::dispatch;
-use super::source::{LIST_DEADLINE, ListLifecycle, list_call, run_list};
+use super::source::{DETAILS_DEADLINE, LIST_DEADLINE, ListLifecycle, list_call, run_list};
 use crate::composition::context::Ctx;
 use crate::infrastructure::events::SUBSCRIBER_CHANNEL_CAPACITY;
 use crate::infrastructure::stats::Stats;
 
+const WRITER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
-const MAX_GENERATED_LISTS_PER_CONNECTION: usize = 8;
+const MAX_SOURCE_TASKS_PER_CONNECTION: usize = 8;
 const INLINE_METHODS: [&str; 5] = [
     rpc::PAPER_READY,
     rpc::PAPER_FAILED,
@@ -80,22 +82,19 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
     ctx.stats.conn_open();
     let conn_id = next_conn_id();
     let mut subscribed = false;
-    let mut previewing = false;
+    let mut editing = false;
     let source_lifecycle = Arc::new(ListLifecycle::default());
     let mut source_tasks = tokio::task::JoinSet::new();
+    let preview_queue = PreviewQueue::default();
     let (sender, receiver) = tokio::sync::mpsc::channel::<String>(SUBSCRIBER_CHANNEL_CAPACITY);
     let (read_half, write_half) = stream.into_split();
-    let (close, mut closing) = tokio::sync::watch::channel(false);
+    let (close, closing) = tokio::sync::watch::channel(false);
+    let (drain, draining) = tokio::sync::watch::channel(false);
     let replies = ResponseSink { sender: sender.clone(), close };
     tokio::spawn(async move {
         tokio::select! {
-            () = writer_task(write_half, receiver) => {},
-            () = async {
-                while closing.changed().await.is_ok() {
-                    if *closing.borrow() { return; }
-                }
-                std::future::pending::<()>().await;
-            } => {},
+            () = writer_task(write_half, receiver, draining) => {},
+            () = wait_for_close(closing) => {},
         }
     });
 
@@ -114,6 +113,7 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
                 )) {
                     replies.send(text);
                 }
+                drain.send_replace(true);
                 break;
             }
             Err(_) => break,
@@ -131,17 +131,32 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
             }
         };
         if request.method == rpc::WALL_APPLY {
+            if super::wallpaper::validate_apply_request(&request).is_none() {
+                preview_queue.cancel_pending(ctx);
+            }
             ctx.apply_queue.submit(ctx, request, replies.clone());
             continue;
         }
-        if request.method == rpc::WALL_SHELL_PREVIEW {
-            previewing = true;
-        } else if request.method == rpc::WALL_SHELL_PREVIEW_END {
-            previewing = false;
+        if let Some(active) = crate::infrastructure::widgets::edit_request(&request)
+            && active != editing
+        {
+            editing = active;
+            let state = Arc::clone(&ctx.state);
+            let _ = tokio::task::spawn_blocking(move || {
+                crate::infrastructure::widgets::set_editing(&state, active);
+            })
+            .await;
         }
         if request.method == rpc::SUBSCRIBE && !subscribed {
             subscribed = true;
             ctx.events.subscribe(conn_id, sender.clone());
+        }
+        if matches!(
+            request.method.as_str(),
+            rpc::THEME_PREVIEW | rpc::WALL_SHELL_PREVIEW | rpc::WALL_SHELL_PREVIEW_END
+        ) {
+            preview_queue.submit(ctx, request, replies.clone());
+            continue;
         }
         while source_tasks.try_join_next().is_some() {}
         match list_call(&request) {
@@ -153,11 +168,12 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
             }
             Ok(Some(call)) => {
                 let request_id = request.id;
+                let detached = call.generation.is_some() || request.method == rpc::SOURCE_DETAILS;
                 if let Some(generation) = call.generation {
                     source_lifecycle.observe(call.provider, generation);
-                    if source_tasks.len() >= MAX_GENERATED_LISTS_PER_CONNECTION {
-                        let _ = source_tasks.join_next().await;
-                    }
+                }
+                if detached && source_tasks.len() >= MAX_SOURCE_TASKS_PER_CONNECTION {
+                    let _ = source_tasks.join_next().await;
                 }
                 let task_ctx = ctx.clone();
                 let task_request = request.clone();
@@ -167,11 +183,15 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
                     task_lifecycle,
                     call,
                     request_id,
-                    LIST_DEADLINE,
+                    if request.method == rpc::SOURCE_DETAILS {
+                        DETAILS_DEADLINE
+                    } else {
+                        LIST_DEADLINE
+                    },
                     task_stats,
                     move || dispatch(&task_ctx, &task_request),
                 );
-                if call.generation.is_some() {
+                if detached {
                     let task_replies = replies.clone();
                     source_tasks.spawn(async move {
                         let response = response.await;
@@ -205,17 +225,25 @@ pub(crate) async fn handle_conn(stream: UnixStream, ctx: &Ctx) {
     }
     source_tasks.abort_all();
     while source_tasks.join_next().await.is_some() {}
+    let shell_cleanup = preview_queue.close(ctx);
     if subscribed {
         ctx.events.unsubscribe(conn_id);
     }
-    if previewing {
+    if let Some(generation) = shell_cleanup {
         log::warn!("client disconnected mid-preview, restoring the shell colour scheme");
         let state = Arc::clone(&ctx.state);
         let _ = tokio::task::spawn_blocking(move || {
-            state.theme().bump_shell_preview();
             for sink in &skwd_wall_core::theme_sink::SINKS {
-                (sink.preview_end)(&state);
+                (sink.preview_end)(&state, Some(generation));
             }
+        })
+        .await;
+    }
+    if editing {
+        log::warn!("widgets: editor disconnected mid-edit, showing widgets again");
+        let state = Arc::clone(&ctx.state);
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::infrastructure::widgets::set_editing(&state, false);
         })
         .await;
     }
@@ -247,9 +275,48 @@ async fn read_bounded_line<R: AsyncBufRead + Unpin>(
     }
 }
 
-async fn writer_task(write_half: OwnedWriteHalf, mut receiver: Receiver<String>) {
+async fn wait_for_close(mut closing: tokio::sync::watch::Receiver<bool>) {
+    while !*closing.borrow_and_update() {
+        if closing.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+async fn writer_task(
+    write_half: OwnedWriteHalf,
+    receiver: Receiver<String>,
+    draining: tokio::sync::watch::Receiver<bool>,
+) {
+    let writer = write_replies(write_half, receiver, draining.clone());
+    tokio::pin!(writer);
+    tokio::select! {
+        () = &mut writer => {},
+        () = wait_for_close(draining) => {
+            let _ = tokio::time::timeout(WRITER_DRAIN_TIMEOUT, writer).await;
+        },
+    }
+}
+
+async fn write_replies(
+    write_half: OwnedWriteHalf,
+    mut receiver: Receiver<String>,
+    draining: tokio::sync::watch::Receiver<bool>,
+) {
     let mut writer = BufWriter::new(write_half);
-    while let Some(message) = receiver.recv().await {
+    let draining = wait_for_close(draining);
+    tokio::pin!(draining);
+    loop {
+        let message = tokio::select! {
+            biased;
+            () = &mut draining, if !receiver.is_closed() => {
+                receiver.close();
+                continue;
+            },
+            message = receiver.recv() => message,
+        };
+        let Some(message) = message else { break };
+
         if writer.write_all(message.as_bytes()).await.is_err()
             || writer.write_all(b"\n").await.is_err()
             || writer.flush().await.is_err()

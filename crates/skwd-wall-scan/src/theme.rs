@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use skwd_palette::studio;
 use skwd_wall_core::{WallState, media};
+use wall_proto::{StudioArea, StudioMethod, StudioResult};
 
 pub(crate) fn preview_swatch(image: &str, dark: bool) -> Vec<String> {
     let Some(rgba) = media::load_rgba(Path::new(image), 256) else {
@@ -49,6 +51,81 @@ pub(crate) fn print_semantic(image: &str, dark: bool, auto: bool) {
         "dark": dark,
     });
     println!("{output}");
+}
+
+const SEED_CLUSTERS: usize = 8;
+
+fn wire(made: &studio::Made, light: &studio::Made, key: &str) -> StudioMethod {
+    let (mask, sectors) = match &made.shape {
+        studio::Shape::Plain => (Vec::new(), Vec::new()),
+        studio::Shape::Mask(points) => (points.clone(), Vec::new()),
+        studio::Shape::Sectors(points) => (Vec::new(), points.clone()),
+    };
+    StudioMethod {
+        key: key.to_string(),
+        dark: made.palette.to_wire(),
+        light: light.palette.to_wire(),
+        mark: made.mark,
+        mask,
+        sectors,
+    }
+}
+
+fn area_result(image: &str, area: StudioArea) -> Option<StudioResult> {
+    let (rgba, width, height) = media::load_rgba_sized(Path::new(image), studio::AREA_EDGE)?;
+    let bounds =
+        studio::Area { left: area.left, top: area.top, right: area.right, bottom: area.bottom };
+    let found = studio::area_patches(&rgba, width, height, bounds);
+    let seed = studio::area_seed(&found)?;
+    let dark = studio::area_palette(&found, true)?;
+    let light = studio::area_palette(&found, false)?;
+    Some(StudioResult {
+        image: image.to_string(),
+        seed: studio::from_oklch(seed.lch).hex(),
+        grey: false,
+        wheel: studio::area_wheel(&found).to_vec(),
+        methods: vec![StudioMethod {
+            key: studio::AREA_KEY.to_string(),
+            dark: dark.to_wire(),
+            light: light.to_wire(),
+            mark: None,
+            mask: Vec::new(),
+            sectors: Vec::new(),
+        }],
+        materials: Vec::new(),
+        dark: None,
+    })
+}
+
+pub(crate) fn studio_result(image: &str, area: Option<StudioArea>) -> Option<StudioResult> {
+    if let Some(area) = area {
+        return area_result(image, area);
+    }
+    let (rgba, width, height) = media::load_rgba_sized(Path::new(image), studio::ANALYSIS_EDGE)?;
+    let analysis = studio::Analysis::new(&rgba, width, height)?;
+    let methods = studio::Method::ALL
+        .iter()
+        .map(|method| {
+            wire(&method.make(&analysis, true), &method.make(&analysis, false), method.key())
+        })
+        .collect();
+    Some(StudioResult {
+        image: image.to_string(),
+        seed: skwd_palette::seed::seed(&rgba, width, height, SEED_CLUSTERS)
+            .unwrap_or_else(|| analysis.seed().color())
+            .hex(),
+        grey: analysis.grey,
+        wheel: studio::wheel(&analysis).to_vec(),
+        methods,
+        materials: Vec::new(),
+        dark: None,
+    })
+}
+
+pub(crate) fn print_studio(image: &str, area: Option<StudioArea>) {
+    if let Some(result) = studio_result(image, area) {
+        println!("{}", serde_json::to_string(&result).unwrap_or_default());
+    }
 }
 
 pub(crate) fn print_preview(image: &str, dark: bool) {

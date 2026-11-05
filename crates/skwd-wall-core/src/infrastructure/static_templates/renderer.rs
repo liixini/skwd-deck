@@ -6,9 +6,19 @@ use serde_json::Value;
 use crate::config::Config;
 
 pub use skwd_palette::Rgb;
-use skwd_palette::{from_hsl, parse_hex as parse, to_hsl};
+use skwd_palette::parse_hex as parse;
 
 const BRIDGE_FILE: &str = "colors.json";
+const TOKEN_OPEN: &str = "{{";
+const TOKEN_CLOSE: &str = "}}";
+const TERMINAL_KEYS: [(&str, &str, usize); 6] = [
+    ("ansi_red", "ansi_red_bright", 0),
+    ("ansi_green", "ansi_green_bright", 1),
+    ("ansi_yellow", "ansi_yellow_bright", 2),
+    ("ansi_blue", "ansi_blue_bright", 3),
+    ("ansi_magenta", "ansi_magenta_bright", 4),
+    ("ansi_cyan", "ansi_cyan_bright", 5),
+];
 
 pub fn material_map(palette: &Value, dark: bool) -> HashMap<&'static str, Rgb> {
     let get = |key: &str, dflt: &str| {
@@ -73,20 +83,11 @@ pub fn material_map(palette: &Value, dark: bool) -> HashMap<&'static str, Rgb> {
     map.insert("shadow", black);
     map.insert("scrim", black);
     map.insert("source_color", primary);
-    let (_, sat, light) = to_hsl(primary);
-    let sat = sat.max(0.35);
-    let base = if dark { light.clamp(0.6, 0.78) } else { light.clamp(0.3, 0.45) };
-    let lift = if dark { (base + 0.08).min(0.9) } else { (base - 0.08).max(0.2) };
-    for (slot, bright, hue) in [
-        ("ansi_red", "ansi_red_bright", 10.0),
-        ("ansi_yellow", "ansi_yellow_bright", 65.0),
-        ("ansi_green", "ansi_green_bright", 145.0),
-        ("ansi_cyan", "ansi_cyan_bright", 185.0),
-        ("ansi_blue", "ansi_blue_bright", 230.0),
-        ("ansi_magenta", "ansi_magenta_bright", 315.0),
-    ] {
-        map.insert(slot, from_hsl(hue, sat, base));
-        map.insert(bright, from_hsl(hue, sat, lift));
+    let terminal = skwd_palette::template_terminal(primary, dark);
+    for (slot, bright, index) in TERMINAL_KEYS {
+        let own = |key: &str| palette.get(key).and_then(Value::as_str).and_then(parse);
+        map.insert(slot, own(slot).unwrap_or(terminal.normal[index]));
+        map.insert(bright, own(bright).unwrap_or(terminal.bright[index]));
     }
     map
 }
@@ -107,21 +108,30 @@ fn format_token(col: Rgb, fmt: &str) -> Option<String> {
 fn expand(template: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
-    while let Some(start) = rest.find("{{") {
+    while let Some(start) = rest.find(TOKEN_OPEN) {
         out.push_str(&rest[..start]);
-        let after = &rest[start + 2..];
-        let Some(end) = after.find("}}") else {
+        let after = &rest[start + TOKEN_OPEN.len()..];
+        let mut literal = serde_json::Deserializer::from_str(after).into_iter::<String>();
+        if let Some(Ok(text)) = literal.next()
+            && let Some(tail) =
+                after[literal.byte_offset()..].trim_start().strip_prefix(TOKEN_CLOSE)
+        {
+            out.push_str(&text);
+            rest = tail;
+            continue;
+        }
+        let Some(end) = after.find(TOKEN_CLOSE) else {
             out.push_str(&rest[start..]);
             return out;
         };
         if let Some(val) = resolve(after[..end].trim()) {
             out.push_str(&val);
         } else {
-            out.push_str("{{");
+            out.push_str(TOKEN_OPEN);
             out.push_str(&after[..end]);
-            out.push_str("}}");
+            out.push_str(TOKEN_CLOSE);
         }
-        rest = &after[end + 2..];
+        rest = &after[end + TOKEN_CLOSE.len()..];
     }
     out.push_str(rest);
     out
@@ -170,9 +180,7 @@ pub(crate) fn render_palette(template: &str, palette: &Value, dark: bool) -> Str
     };
     crate::material::select_mode(&mut doc, dark);
     let rendered = render_doc(template, &doc);
-    let mut ansi = material_map(palette, dark);
-    ansi.retain(|key, _| key.starts_with("ansi_"));
-    render(&rendered, &ansi)
+    render(&rendered, &material_map(palette, dark))
 }
 
 pub fn render_bridge(config: &Config, palette: &Value, dark: bool) -> Option<String> {

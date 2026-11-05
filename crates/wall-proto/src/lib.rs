@@ -4,6 +4,7 @@ mod app_themes;
 pub use app_themes::{AppThemeRefresh, AppThemeSet, AppThemeStatus, AppThemesResult};
 pub mod client;
 mod download;
+pub mod drawing;
 mod envelope;
 mod event_catalog;
 pub mod helm;
@@ -24,11 +25,13 @@ pub mod sources;
 mod status;
 mod task_status;
 mod theme;
+mod theme_studio;
 mod thumbnail;
 pub mod transitions;
 mod wallpaper_item;
 mod we_property;
 mod weather;
+pub mod widgets;
 mod workshop;
 mod workspace;
 pub use weather::{
@@ -57,6 +60,10 @@ pub use status::{
 };
 pub use task_status::{TaskCapabilities, TaskControl, TaskState, TaskStatus};
 pub use theme::THEME_BACKENDS;
+pub use theme_studio::{
+    STUDIO_AREA_FLAG, STUDIO_CAPABILITY, STUDIO_ENGINE, STUDIO_SCAN_FLAG, StudioArea, StudioMethod,
+    StudioRequest, StudioResult,
+};
 pub use thumbnail::{ThumbnailEncodeRequest, ThumbnailEncodeResponse};
 pub use wallpaper_item::WallpaperItem;
 pub use we_property::{WeProperty, WePropertyOption, we_property_kind};

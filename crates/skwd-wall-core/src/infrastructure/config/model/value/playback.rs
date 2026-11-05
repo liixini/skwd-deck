@@ -18,6 +18,7 @@ impl<'a> PlaybackConfig<'a> {
         pause_processes: str(skwd_config::keys::playback::PROCESSES, "");
         fullscreen_pause: bool(skwd_config::keys::playback::FULLSCREEN, false);
         maximized_pause: bool(skwd_config::keys::playback::MAXIMIZED, false);
+        focused_pause: bool(skwd_config::keys::playback::FOCUSED, false);
         fullscreen_scope: str(skwd_config::keys::playback::FULLSCREEN_SCOPE, "all");
         mute_on_other_audio: bool(skwd_config::keys::playback::MUTE_ON_OTHER_AUDIO, false);
     }
@@ -31,7 +32,10 @@ impl<'a> PlaybackConfig<'a> {
     }
 
     pub fn window_pause_enabled(&self) -> bool {
-        self.fullscreen_pause() || self.maximized_pause() || self.full_width_pause()
+        self.fullscreen_pause()
+            || self.maximized_pause()
+            || self.focused_pause()
+            || self.full_width_pause()
     }
 
     pub fn resume_delay(&self) -> std::time::Duration {

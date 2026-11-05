@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::model::{BaseWallpaper, WorkspaceRule};
 
-pub(super) fn base_file(cache_dir: &str) -> PathBuf {
+pub(crate) fn base_file(cache_dir: &str) -> PathBuf {
     PathBuf::from(cache_dir).join("workspace-base.json")
 }
 

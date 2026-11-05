@@ -154,11 +154,10 @@ fn main() {
     if !current {
         return;
     }
-    let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR") else {
+    let Ok(root) = skwd_wall_core::plasma::presentation_directory() else {
         return;
     };
     let status = presentation(&dir).to_string();
-    let root = Path::new(&runtime).join("skwd-paper-plasma");
     for entry in assignments.values() {
         if let Some(id) = entry["presentationId"].as_str() {
             let _ = std::fs::write(root.join(format!("{id}.json")), &status);

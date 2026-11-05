@@ -11,9 +11,7 @@ pub(super) struct Pending {
 
 impl Pending {
     pub(super) fn new(payload: &mut serde_json::Value) -> anyhow::Result<Self> {
-        let runtime =
-            std::env::var_os("XDG_RUNTIME_DIR").context("Plasma apply needs XDG_RUNTIME_DIR")?;
-        Self::create(&PathBuf::from(runtime).join("skwd-paper-plasma"), payload)
+        Self::create(&super::presentation_directory()?, payload)
     }
 
     fn create(root: &Path, payload: &mut serde_json::Value) -> anyhow::Result<Self> {

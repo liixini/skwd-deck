@@ -1,6 +1,7 @@
 use crate::lock;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 
@@ -14,6 +15,20 @@ use super::availability::resolve_backend;
 use super::availability::{
     ALL_BACKENDS, available_backends, backend_available, effective_backend, probe_cached,
 };
+
+pub(crate) fn source_stamp(image: &str) -> Option<String> {
+    let meta = std::fs::metadata(image).ok()?;
+    Some(format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        meta.dev(),
+        meta.ino(),
+        meta.len(),
+        meta.mtime(),
+        meta.mtime_nsec(),
+        meta.ctime(),
+        meta.ctime_nsec()
+    ))
+}
 
 pub fn wallust_command(config: &Config, image: &str, dark: bool) -> String {
     let mut cmd = String::from("wallust run");
@@ -67,7 +82,7 @@ fn iris_preview(image: &str, dark: bool) -> Vec<String> {
 }
 
 fn skwd_iris_run(image: &str, dark: bool, auto: bool) -> Option<serde_json::Value> {
-    let bin = crate::paths::sibling_bin("skwd-wall-scan");
+    let bin = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let mut cmd = Command::new(bin);
     cmd.arg("--semantic").arg(image);
     if auto {
@@ -107,7 +122,7 @@ pub fn semantic_palette(val: &serde_json::Value) -> Option<(serde_json::Value, S
 }
 
 fn ansi16_run(image: &str, dark: bool, variant: &str) -> Option<Vec<String>> {
-    let bin = crate::paths::sibling_bin("skwd-wall-scan");
+    let bin = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let mut cmd = Command::new(bin);
     cmd.arg("--ansi16").arg(image).arg("--variant").arg(variant);
     if !dark {
@@ -345,7 +360,7 @@ fn write_picker_palette(config: &Config, image: &str) {
 }
 
 fn run_native(image: &str, dark: bool) {
-    let bin = crate::paths::sibling_bin("skwd-wall-scan");
+    let bin = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let mut cmd = Command::new(bin);
     cmd.arg("--theme").arg(image);
     if !dark {
@@ -357,13 +372,13 @@ fn run_native(image: &str, dark: bool) {
     }
 }
 
-fn run_capture(cmd: &mut Command) -> Option<String> {
+pub(super) fn run_capture(cmd: &mut Command) -> Option<String> {
     let out = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn native_preview(image: &str, dark: bool) -> Vec<String> {
-    let bin = crate::paths::sibling_bin("skwd-wall-scan");
+    let bin = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let mut cmd = Command::new(bin);
     cmd.arg("--theme-preview").arg(image);
     if !dark {
@@ -650,6 +665,9 @@ pub fn preview_palette(config: &Config, image: &str) -> Option<serde_json::Value
     let dark = resolve_dark(config, image);
     match resolve_backend(config).as_str() {
         "static" => return static_palette_value(config, dark),
+        wall_proto::STUDIO_ENGINE => {
+            return super::studio::palette(config, image).map(|(palette, _)| palette);
+        }
         "off" => return None,
         "noctalia" => {
             return aliased_preview(crate::noctalia::preview_palette(config, image, dark));
@@ -697,7 +715,7 @@ pub fn preview_colors(config: &Config, image: &str) -> Vec<String> {
 }
 
 pub fn tone_dark(image: &str) -> Option<bool> {
-    let bin = crate::paths::sibling_bin("skwd-wall-scan");
+    let bin = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let mut cmd = Command::new(bin);
     cmd.arg("--tone").arg(image);
     run_capture(&mut cmd)
@@ -706,6 +724,27 @@ pub fn tone_dark(image: &str) -> Option<bool> {
 }
 
 const TONE_CACHE_CAP: usize = 512;
+
+fn cached_tone(
+    cache: &Mutex<HashMap<String, bool>>,
+    image: &str,
+    probe: impl FnOnce() -> Option<bool>,
+) -> bool {
+    let key = format!("{image}\0{}", source_stamp(image).unwrap_or_default());
+    if let Some(hit) = lock(cache).get(&key) {
+        return *hit;
+    }
+    let dark = probe().unwrap_or_else(|| {
+        log::warn!("auto mode: could not read {image}, defaulting to dark");
+        true
+    });
+    let mut map = lock(cache);
+    if map.len() >= TONE_CACHE_CAP {
+        map.clear();
+    }
+    map.insert(key, dark);
+    dark
+}
 
 pub fn resolve_dark(config: &Config, image: &str) -> bool {
     static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
@@ -719,19 +758,7 @@ pub fn resolve_dark(config: &Config, image: &str) -> bool {
         return mode != "light";
     }
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = lock(cache).get(image) {
-        return *hit;
-    }
-    let dark = tone_dark(image).unwrap_or_else(|| {
-        log::warn!("auto mode: could not read {image}, defaulting to dark");
-        true
-    });
-    let mut map = lock(cache);
-    if map.len() >= TONE_CACHE_CAP {
-        map.clear();
-    }
-    map.insert(image.to_string(), dark);
-    dark
+    cached_tone(cache, image, || tone_dark(image))
 }
 
 pub fn apply(config: &Config, image_path: &str) -> bool {
@@ -791,6 +818,13 @@ pub fn apply(config: &Config, image_path: &str) -> bool {
             publish_colors(config, &iris_colors_from_cache(), dark, image_path);
             run_reloads(config);
             true
+        }
+        wall_proto::STUDIO_ENGINE => {
+            let Some((palette, dark)) = super::studio::palette(config, image_path) else {
+                log::warn!("studio: no palette for {image_path}");
+                return false;
+            };
+            super::profiles::publish(config, &palette, dark)
         }
         "skwd-iris" => {
             publish_colors(config, &skwd_iris_preview(image_path, dark), dark, image_path);

@@ -7,13 +7,19 @@ use wall_proto::rpc;
 
 use crate::reporter::Reporter;
 
-pub(crate) fn full_scan(state: &WallState, reporter: &Reporter, request_id: Option<&str>) {
+pub(crate) fn full_scan(
+    state: &WallState,
+    reporter: &Reporter,
+    request_id: Option<&str>,
+    encoder: &skwd_wall_core::blocks::Encoder,
+) {
     log::info!("scanning images in {:?}", state.config().library_folders());
-    let image_count = scan::scan(state, |item| reporter.send(rpc::SCAN_ITEM, item));
+    let image_count = scan::scan(state, encoder, |item| reporter.send(rpc::SCAN_ITEM, item));
     log::info!("scanning videos in {:?}", state.config().library_folders());
-    let video_count = scan::scan_videos(state, |item| reporter.send(rpc::SCAN_ITEM, item));
+    let video_count = scan::scan_videos(state, encoder, |item| reporter.send(rpc::SCAN_ITEM, item));
     log::info!("scanning WE in {}", state.config().we_dir().display());
-    let wallpaper_engine_count = scan::scan_we(state, |item| reporter.send(rpc::SCAN_ITEM, item));
+    let wallpaper_engine_count =
+        scan::scan_we(state, encoder, |item| reporter.send(rpc::SCAN_ITEM, item));
     let pruned = prune(state, reporter);
     log::info!(
         "scan complete: {image_count} images, {video_count} videos, \
@@ -35,8 +41,10 @@ pub(crate) fn changed_paths(
     reporter: &Reporter,
     changed: &[PathBuf],
     request_id: Option<&str>,
+    encoder: &skwd_wall_core::blocks::Encoder,
 ) {
-    let count = scan::scan_paths(state, changed, |item| reporter.send(rpc::SCAN_ITEM, item));
+    let count =
+        scan::scan_paths(state, changed, encoder, |item| reporter.send(rpc::SCAN_ITEM, item));
     log::info!("delta scan: {count} items from {} changed paths", changed.len());
     reporter.send(
         rpc::SCAN_DONE,
@@ -186,6 +194,7 @@ pub(crate) fn scene_thumbnail(
     id: &str,
     image: &str,
     reporter: &Reporter,
+    encoder: &skwd_wall_core::blocks::Encoder,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(skwd_wall_core::we::valid_we_id(id), "invalid scene thumbnail id");
     let thumb = skwd_wall_core::paths::we_thumb(id);
@@ -194,7 +203,10 @@ pub(crate) fn scene_thumbnail(
     let temporary = tempfile::tempdir_in(skwd_wall_core::paths::cache_dir())?;
     let staged_thumb = temporary.path().join("thumb.webp");
     let staged_small = temporary.path().join("small.webp");
-    skwd_wall_core::media::generate_image_thumbs(Path::new(image), &staged_thumb, &staged_small)?;
+    skwd_wall_core::media::generate_image_thumbs(
+        Path::new(image),
+        skwd_wall_core::media::Thumbs { full: &staged_thumb, small: &staged_small, encoder },
+    )?;
     let (staged_near, staged_far) =
         skwd_wall_core::blocks::dests_for(&staged_thumb.to_string_lossy());
     let (near, far) = skwd_wall_core::blocks::dests_for(&thumb.to_string_lossy());
@@ -231,7 +243,11 @@ pub(crate) fn scene_thumbnail(
     log::info!("we thumbnail {id}: captured rendered scene");
     Ok(())
 }
-pub(crate) fn scene_thumbnail_stream(state: &WallState, reporter: &Reporter) -> anyhow::Result<()> {
+pub(crate) fn scene_thumbnail_stream(
+    state: &WallState,
+    reporter: &Reporter,
+    encoder: &skwd_wall_core::blocks::Encoder,
+) -> anyhow::Result<()> {
     use std::io::{BufRead, Read, Write};
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
@@ -242,7 +258,7 @@ pub(crate) fn scene_thumbnail_stream(state: &WallState, reporter: &Reporter) -> 
         }
         anyhow::ensure!(line.len() <= 1024 * 1024, "thumbnail job is too large");
         let request: wall_proto::ThumbnailEncodeRequest = serde_json::from_slice(&line)?;
-        let error = scene_thumbnail(state, &request.we_id, &request.image, reporter)
+        let error = scene_thumbnail(state, &request.we_id, &request.image, reporter, encoder)
             .err()
             .map(|error| format!("{error:#}"));
         serde_json::to_writer(&mut output, &wall_proto::ThumbnailEncodeResponse { error })?;

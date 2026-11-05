@@ -73,10 +73,17 @@ pub struct ThumbResult {
     pub duration_ms: i64,
 }
 
-pub fn generate_placeholder_thumbs(thumb: &Path, small: &Path) -> anyhow::Result<ThumbResult> {
+#[derive(Clone, Copy)]
+pub struct Thumbs<'a> {
+    pub full: &'a Path,
+    pub small: &'a Path,
+    pub encoder: &'a crate::blocks::Encoder,
+}
+
+pub fn generate_placeholder_thumbs(thumbs: Thumbs<'_>) -> anyhow::Result<ThumbResult> {
     let image =
         DynamicImage::ImageRgb8(image::RgbImage::from_pixel(16, 9, image::Rgb([48, 48, 48])));
-    let mut result = write_thumbs(image, thumb, small)?;
+    let mut result = write_thumbs(image, thumbs)?;
     result.width = 0;
     result.height = 0;
     Ok(result)
@@ -109,11 +116,8 @@ pub fn preshrink_dims(w: u32, h: u32, cover_w: u32, cover_h: u32) -> Option<(u32
     ))
 }
 
-pub(super) fn write_thumbs(
-    img: DynamicImage,
-    thumb_path: &Path,
-    thumb_sm_path: &Path,
-) -> anyhow::Result<ThumbResult> {
+pub(super) fn write_thumbs(img: DynamicImage, thumbs: Thumbs<'_>) -> anyhow::Result<ThumbResult> {
+    let Thumbs { full: thumb_path, small: thumb_sm_path, encoder } = thumbs;
     let (width, height) = (img.width(), img.height());
     let base = if let Some((tw, th)) = preshrink_dims(width, height, THUMB_W, THUMB_H) {
         let shrunk = img.thumbnail(tw, th);
@@ -132,9 +136,7 @@ pub(super) fn write_thumbs(
     let small = full.resize_to_fill(SMALL_W, SMALL_H, FilterType::Lanczos3);
     encode_webp(&small, thumb_sm_path, SMALL_QUALITY)?;
     let (near_dest, far_dest) = crate::blocks::dests_for(&thumb_path.to_string_lossy());
-    if let Err(err) = crate::blocks::write_blocks(&full, &near_dest, &far_dest) {
-        log::warn!("block bake failed for {}: {err}", thumb_path.display());
-    }
+    crate::blocks::write_blocks(&full, &near_dest, &far_dest, encoder)?;
     let (hue, sat, richness) = extract_hue_sat(&full);
     Ok(ThumbResult { hue, sat, richness, width, height, duration_ms: 0 })
 }
@@ -157,13 +159,9 @@ pub fn generate_image_tall_thumb(
     write_tall(&img, thumb_path)
 }
 
-pub fn generate_image_thumbs(
-    src: &Path,
-    thumb_path: &Path,
-    thumb_sm_path: &Path,
-) -> anyhow::Result<ThumbResult> {
+pub fn generate_image_thumbs(src: &Path, thumbs: Thumbs<'_>) -> anyhow::Result<ThumbResult> {
     let img = open_limited(src).with_context(|| format!("decode {}", src.display()))?;
-    write_thumbs(img, thumb_path, thumb_sm_path)
+    write_thumbs(img, thumbs)
 }
 
 pub fn image_dimensions(src: &Path) -> Option<(u32, u32)> {

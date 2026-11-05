@@ -208,8 +208,21 @@ fn failed_end_keeps_state() {
     }));
     let orig = ("wallpaper".to_string(), "m3-content".to_string());
     st.theme().set_noctalia_preview_orig(orig.clone());
-    preview_end(&st);
+    preview_end(&st, None);
     assert_eq!(st.theme().noctalia_preview_orig(), Some(orig));
+}
+
+#[test]
+fn stale_end_keeps_state() {
+    let state = WallState::test_new(serde_json::json!({}));
+    let original = ("wallpaper".to_string(), "m3-content".to_string());
+    state.theme().set_noctalia_preview_orig(original.clone());
+    let old = state.theme().shell_preview_generation();
+    state.theme().bump_shell_preview();
+
+    preview_end(&state, Some(old));
+
+    assert_eq!(state.theme().noctalia_preview_orig(), Some(original));
 }
 
 fn scheme_tokens() -> serde_json::Value {
@@ -277,4 +290,21 @@ fn preview_cache_inputs() {
     assert_ne!(key, preview_cache_key(&config, image, "vibrant"));
     std::fs::write(&path, b"replacement").unwrap();
     assert_ne!(key, preview_cache_key(&config, image, "m3-content"));
+}
+
+#[cfg(unix)]
+#[test]
+fn capture_times_out() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let script = tmp.path().join("noctalia");
+    std::fs::write(&script, "#!/bin/sh\nexec sleep 30\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let cfg = Config::from_root(serde_json::json!({
+        "paths": { "cache": tmp.path().to_string_lossy(), "noctaliaBin": script.to_string_lossy() },
+    }));
+    let started = Instant::now();
+    let out = msg_capture_within(&cfg, &GET_SCHEME_ARGS, Duration::from_millis(100));
+    assert!(out.is_none());
+    assert!(started.elapsed() < Duration::from_secs(5));
 }

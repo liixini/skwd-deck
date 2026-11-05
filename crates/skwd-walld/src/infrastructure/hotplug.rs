@@ -110,8 +110,6 @@ fn reapply_outputs_state(
     let plan = hotplug_plan(
         &persisted,
         map.get("*").map(applied_kind),
-        application.video_engine_is_vk(),
-        state.renderers().has_video_paper("*"),
         state.renderers().has_base_still(),
     );
     if plan != HotplugPlan::Reconcile {
@@ -167,8 +165,8 @@ fn reapply_outputs_state(
         fill_mode: &fill_mode,
         mute,
         volume,
-        frame_rate: None,
         transition: None,
+        fanout: None,
     }) {
         Ok(()) => {
             publisher.publish(ev::OUTPUTS_CHANGED, json!({ "outputs": live }));
@@ -257,8 +255,7 @@ fn restore_pass(ctx: &Ctx, source: ApplySource) -> anyhow::Result<()> {
         state.renderers().kill_video_paper("multi");
     }
     let assignments = state.renderers().assignments();
-    if application.video_engine_is_vk()
-        && state.renderers().has_video_paper("*")
+    if state.renderers().has_video_paper("*")
         && live.iter().any(|output| !assignments.contains_key(output))
     {
         state.renderers().kill_video_paper("*");

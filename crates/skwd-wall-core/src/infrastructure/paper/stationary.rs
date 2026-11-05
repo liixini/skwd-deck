@@ -18,6 +18,19 @@ pub fn stationary_surface(config: &Config, kind: paper_control::SourceKind) -> S
     }
 }
 
+pub fn stationary_surfaces(config: &Config) -> paper_control::SurfaceOverridesRequest {
+    paper_control::SurfaceOverridesRequest {
+        surfaces: [
+            paper_control::SourceKind::Static,
+            paper_control::SourceKind::Video,
+            paper_control::SourceKind::WallpaperEngine,
+        ]
+        .into_iter()
+        .map(|kind| (kind, stationary_surface(config, kind)))
+        .collect(),
+    }
+}
+
 pub(crate) fn configure_stationary(
     command: &mut std::process::Command,
     config: &Config,
@@ -48,43 +61,4 @@ pub(crate) fn configure_stationary(
             .arg("--dim")
             .arg(surface.dim.to_string());
     }
-}
-
-pub fn restore_tinier(state: &crate::state::WallState) -> anyhow::Result<bool> {
-    let config = state.config().clone();
-    if config.renderer().video_engine() != "tinier" {
-        return Ok(false);
-    }
-    let mut current = crate::audio::read_state(&config.cache_dir());
-    let outputs = crate::outputs::enumerate();
-    if let Some(map) = current.as_object_mut()
-        && let Some(wildcard) = map.remove("*")
-    {
-        for output in &outputs {
-            map.entry(output.name.clone()).or_insert_with(|| wildcard.clone());
-        }
-    }
-    let adapter = super::PaperClientAdapter::configured(&config);
-    let super::PaperCompositionPlan::Replace(request) =
-        adapter.tinier_composition_plan(state, &current, &outputs)?
-    else {
-        return Ok(false);
-    };
-    if !request.assignments.iter().any(|entry| {
-        entry.source.effective_video_engine() == Some(paper_control::VideoEngine::Tinier)
-    }) {
-        return Ok(false);
-    }
-    adapter.apply_request(request)?;
-    crate::awww::stop();
-    state.renderers().kill_all();
-    let assignments = outputs
-        .into_iter()
-        .filter_map(|output| {
-            let entry = current.get(&output.name).or_else(|| current.get("*"))?;
-            Some((output.name, entry.get("path")?.as_str()?.to_string()))
-        })
-        .collect();
-    state.renderers().replace_assignments(assignments);
-    Ok(true)
 }

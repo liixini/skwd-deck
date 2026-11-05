@@ -28,8 +28,12 @@ pub fn release_outputs(state: &WallState, outputs: &[String]) -> anyhow::Result<
         let native_active = !state.renderers().wallpaper_pids().is_empty()
             || state.renderers().renderer_alive(wall_proto::kind::WE);
         if native_active && !remaining.is_empty() {
-            if let Err(error) = reconcile_outputs(state, &monitors, &ReconcileIntent::PolicyRefresh)
-            {
+            if let Err(error) = reconcile_outputs(
+                state,
+                &monitors,
+                &ReconcileIntent::PolicyRefresh,
+                super::reconcile::ReconcileScope::All,
+            ) {
                 crate::audio::write_state(&cache, &previous);
                 return Err(error);
             }

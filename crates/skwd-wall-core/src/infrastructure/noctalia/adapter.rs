@@ -1,5 +1,7 @@
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
@@ -23,17 +25,53 @@ pub fn bin(config: &Config) -> String {
     )
 }
 
-fn msg_capture(config: &Config, args: &[&str]) -> Option<String> {
-    let out = Command::new(bin(config))
-        .args(args)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+const MSG_TIMEOUT_MS: u64 = 2000;
+const POLL_MS: u64 = 10;
+
+fn wait_bounded(child: &mut Child, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(POLL_MS));
+    }
 }
 
-const MSG_TIMEOUT_MS: u64 = 2000;
+fn msg_capture(config: &Config, args: &[&str]) -> Option<String> {
+    msg_capture_within(config, args, Duration::from_millis(MSG_TIMEOUT_MS))
+}
+
+fn msg_capture_within(config: &Config, args: &[&str], timeout: Duration) -> Option<String> {
+    let mut child = Command::new(bin(config))
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    match wait_bounded(&mut child, timeout) {
+        Ok(Some(status)) if status.success() => {
+            let mut out = String::new();
+            child.stdout.take()?.read_to_string(&mut out).ok()?;
+            Some(out)
+        }
+        Ok(Some(_)) => None,
+        Ok(None) => {
+            log::warn!("noctalia capture: no response in {}ms, giving up", timeout.as_millis());
+            None
+        }
+        Err(err) => {
+            log::warn!("noctalia capture: wait failed: {err}");
+            None
+        }
+    }
+}
 
 fn msg_wait(config: &Config, args: &[String], what: &str) -> bool {
     let mut child = match Command::new(bin(config))
@@ -49,28 +87,20 @@ fn msg_wait(config: &Config, args: &[String], what: &str) -> bool {
             return false;
         }
     };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(MSG_TIMEOUT_MS);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    log::warn!("noctalia {what}: exited {status}");
-                }
-                return status.success();
+    match wait_bounded(&mut child, Duration::from_millis(MSG_TIMEOUT_MS)) {
+        Ok(Some(status)) => {
+            if !status.success() {
+                log::warn!("noctalia {what}: exited {status}");
             }
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    log::warn!("noctalia {what}: no response in {MSG_TIMEOUT_MS}ms, giving up");
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return false;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(err) => {
-                log::warn!("noctalia {what}: wait failed: {err}");
-                return false;
-            }
+            status.success()
+        }
+        Ok(None) => {
+            log::warn!("noctalia {what}: no response in {MSG_TIMEOUT_MS}ms, giving up");
+            false
+        }
+        Err(err) => {
+            log::warn!("noctalia {what}: wait failed: {err}");
+            false
         }
     }
 }
@@ -284,13 +314,11 @@ pub fn cli_tokens_to_custom_palette(cli: &serde_json::Value) -> Option<serde_jso
 }
 
 fn preview_cache_key(config: &Config, image: &str, scheme: &str) -> String {
-    let metadata = std::fs::metadata(image).ok();
-    let stamp = metadata.as_ref().and_then(|meta| meta.modified().ok());
-    let size = metadata.as_ref().map(std::fs::Metadata::len);
     format!(
-        "noctalia\0{}\0{scheme}\0{}\0{image}\0{stamp:?}\0{size:?}",
+        "noctalia\0{}\0{scheme}\0{}\0{image}\0{}",
         bin(config),
-        config.theme().noctalia_pure_black()
+        config.theme().noctalia_pure_black(),
+        crate::theme::source_stamp(image).unwrap_or_default()
     )
 }
 
@@ -369,8 +397,11 @@ pub fn restore_args(orig: (String, String)) -> Vec<String> {
     vec!["msg".to_string(), "color-scheme-set".to_string(), orig.0, orig.1]
 }
 
-pub fn preview_end(state: &WallState) {
+pub fn preview_end(state: &WallState, expected: Option<u64>) {
     let _serial = state.theme().lock_shell_preview();
+    if expected.is_some_and(|generation| state.theme().shell_preview_generation() != generation) {
+        return;
+    }
     let Some(orig) = state.theme().take_noctalia_preview_orig() else {
         return;
     };

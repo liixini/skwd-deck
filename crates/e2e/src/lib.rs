@@ -18,7 +18,7 @@ pub use fixtures::{ffmpeg_still, ffmpeg_video};
 pub use paths::target_bin;
 pub use plasma::{EVALUATE_SCRIPT, FakePlasma, script_assignments};
 pub use plasma_plugin::FakePlugin;
-pub use process::{Walld, child_pids, procs_with_env, pss_mb, scan_pids};
+pub use process::{Walld, child_pids, exited, procs_with_env, pss_mb, scan_pids};
 pub use rpc::{Client, err_code, err_message, field, wall_outputs};
 pub use sandbox::Sandbox;
 pub use wait::wait_until;

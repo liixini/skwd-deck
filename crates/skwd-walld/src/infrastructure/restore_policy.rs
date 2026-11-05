@@ -128,6 +128,7 @@ fn remember_output_wallpapers(outputs: &[OutputInfo], wallpaper: &Wallpaper, ove
         let entry = known.entry(output.identity_key()).or_insert_with(|| json!({}));
         remember_wallpaper(entry, wallpaper, overwrite);
         entry["connector"] = json!(output.name);
+        entry["monitor"] = json!(output.monitor());
         entry["make"] = json!(output.make);
         entry["model"] = json!(output.model);
     }
@@ -189,6 +190,7 @@ pub(crate) fn remember_monitors(outputs: &[OutputInfo]) {
     for output in outputs {
         let entry = known.entry(output.identity_key()).or_insert_with(|| json!({}));
         entry["connector"] = json!(output.name);
+        entry["monitor"] = json!(output.monitor());
         entry["make"] = json!(output.make);
         entry["model"] = json!(output.model);
         entry["portrait"] = json!(output.portrait());
@@ -361,6 +363,7 @@ pub(crate) fn known_monitors(live: &[OutputInfo]) -> Value {
             json!({
                 "id": key,
                 "connector": entry.get("connector").cloned().unwrap_or(Value::Null),
+                "monitor": entry.get("monitor").cloned().unwrap_or(Value::Null),
                 "make": entry.get("make").cloned().unwrap_or(Value::Null),
                 "model": entry.get("model").cloned().unwrap_or(Value::Null),
                 "portrait": entry.get("portrait").cloned().unwrap_or(Value::Null),

@@ -1,6 +1,7 @@
 use crate::Rgb;
 
-use super::color_space::{distance_squared, to_lab};
+use super::cluster::{Clusters, cluster};
+use super::color_space::to_lab;
 use super::sampling::sample;
 
 pub const ACHROMATIC_CHROMA: f32 = 8.0;
@@ -17,92 +18,16 @@ pub struct Swatch {
     pub light: f32,
 }
 
-fn initial_centers(lab: &[(f32, f32, f32)], count: usize) -> Vec<(f32, f32, f32)> {
-    let mut centers = Vec::with_capacity(count);
-    let mean = lab.iter().fold((0.0f64, 0.0f64, 0.0f64), |acc, point| {
-        (acc.0 + f64::from(point.0), acc.1 + f64::from(point.1), acc.2 + f64::from(point.2))
-    });
-    let sample_count = lab.len() as f64;
-    let mean = (
-        (mean.0 / sample_count) as f32,
-        (mean.1 / sample_count) as f32,
-        (mean.2 / sample_count) as f32,
-    );
-    let first = lab
-        .iter()
-        .copied()
-        .min_by(|a, b| distance_squared(*a, mean).total_cmp(&distance_squared(*b, mean)))
-        .unwrap_or(mean);
-    centers.push(first);
-
-    let mut nearest: Vec<f32> = lab.iter().map(|point| distance_squared(*point, first)).collect();
-    while centers.len() < count {
-        let Some((index, farthest)) = nearest
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.total_cmp(b.1))
-            .map(|(index, distance)| (index, *distance))
-        else {
-            break;
-        };
-        if farthest <= f32::EPSILON {
-            break;
-        }
-        let next = lab[index];
-        centers.push(next);
-        for (slot, point) in nearest.iter_mut().zip(lab) {
-            *slot = slot.min(distance_squared(*point, next));
-        }
-    }
-    centers
-}
-
 pub fn swatches(rgba: &[u8], width: usize, height: usize, count: usize) -> Vec<Swatch> {
     let samples = sample(rgba, width, height);
     if samples.is_empty() || count == 0 {
         return Vec::new();
     }
     let lab: Vec<(f32, f32, f32)> = samples.iter().map(|(color, _)| to_lab(*color)).collect();
-    let mut centers = initial_centers(&lab, count);
+    let weights: Vec<f32> = samples.iter().map(|(_, weight)| *weight).collect();
+    let Clusters { centers, owner } = cluster(&lab, &weights, count, LLOYD_PASSES);
     if centers.is_empty() {
         return Vec::new();
-    }
-    let mut owner = vec![usize::MAX; lab.len()];
-
-    for _ in 0..LLOYD_PASSES {
-        let mut moved = false;
-        for (index, point) in lab.iter().enumerate() {
-            let mut best = 0usize;
-            let mut best_distance = f32::MAX;
-            for (center_id, center) in centers.iter().enumerate() {
-                let distance = distance_squared(*point, *center);
-                if distance < best_distance {
-                    best_distance = distance;
-                    best = center_id;
-                }
-            }
-            if owner[index] != best {
-                owner[index] = best;
-                moved = true;
-            }
-        }
-        if !moved {
-            break;
-        }
-        let mut sums = vec![(0.0f64, 0.0f64, 0.0f64, 0.0f64); centers.len()];
-        for (index, point) in lab.iter().enumerate() {
-            let weight = f64::from(samples[index].1);
-            let slot = &mut sums[owner[index]];
-            slot.0 += f64::from(point.0) * weight;
-            slot.1 += f64::from(point.1) * weight;
-            slot.2 += f64::from(point.2) * weight;
-            slot.3 += weight;
-        }
-        for (center, sum) in centers.iter_mut().zip(&sums) {
-            if sum.3 > 0.0 {
-                *center = ((sum.0 / sum.3) as f32, (sum.1 / sum.3) as f32, (sum.2 / sum.3) as f32);
-            }
-        }
     }
 
     let mut accumulators = vec![Accumulator::default(); centers.len()];

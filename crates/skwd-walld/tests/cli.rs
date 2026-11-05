@@ -31,9 +31,8 @@ fn image_optimize_worker() {
     let config_dir = root.path().join("config/skwd-wall-v2");
     let data_dir = root.path().join("data");
     let cache_dir = root.path().join("cache");
-    let runtime_dir = root.path().join("run");
     let wallpaper_dir = root.path().join("walls");
-    for path in [&config_dir, &data_dir, &cache_dir, &runtime_dir, &wallpaper_dir] {
+    for path in [&config_dir, &data_dir, &cache_dir, &wallpaper_dir] {
         std::fs::create_dir_all(path).unwrap();
     }
 
@@ -61,7 +60,6 @@ fn image_optimize_worker() {
         .env("XDG_CONFIG_HOME", root.path().join("config"))
         .env("XDG_DATA_HOME", &data_dir)
         .env("XDG_CACHE_HOME", &cache_dir)
-        .env("XDG_RUNTIME_DIR", &runtime_dir)
         .env_remove("SKWD_WALL_CONFIG")
         .env_remove("SKWD_WALL_V2_CACHE")
         .stdin(Stdio::piped())

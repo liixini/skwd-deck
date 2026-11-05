@@ -31,6 +31,7 @@ jobs:
       TMP: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
       TEMP: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
       RUNNER_TEMP: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
+      SKWD_MODEL_CACHE: /var/tmp/skwd-deck-models-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: skwd-deck
@@ -60,7 +61,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-paper
-          ref: b04bdc55b115b18543762c8211ec7bef0f6117ee
+          ref: 37eb0bc1925c969c867c1db099e0d30b3f868822
           path: skwd-paper
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -69,7 +70,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-lens
-          ref: d1c985756d8e0be37af80c34cb263da3a2259775
+          ref: 16d60523a70a1a2cb2406f6b6a26de583a8d6164
           path: skwd-lens
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -78,7 +79,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-verify
-          ref: f4ddae32cf2ecc7242937619e2110b05c1618f1b
+          ref: 062e18087cfcb6045a42afbc8c3e0909f5c30ed1
           path: skwd-verify
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -169,6 +170,36 @@ jobs:
         if: steps.tests.outcome == 'success' && steps.release.outcome == 'success'
         continue-on-error: true
         run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.process-e2e --out ci-artifacts/results/deck-process-e2e.json -- scripts/test-e2e.sh
+
+      - name: Restore Drawing model cache
+        id: drawing-cache
+        if: steps.release.outcome == 'success'
+        uses: https://code.forgejo.org/actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SKWD_MODEL_CACHE }}
+          key: deck-drawing-models-${{ hashFiles('skwd-deck/packaging/skwd-drawing-model-1.0.0.tar.xz.sha256', 'skwd-deck/packaging/skwd-lens-model-1.0.0.tar.xz.sha256') }}
+
+      - name: Install Drawing model pack
+        id: drawing-pack
+        if: steps.release.outcome == 'success'
+        continue-on-error: true
+        run: python3 scripts/install_drawing_model.py "$SKWD_MODEL_CACHE" "$TMPDIR/drawing-install" --device cpu >> "$GITHUB_ENV"
+
+      - name: Drawing E2E
+        if: steps.tests.outcome == 'success' && steps.release.outcome == 'success' && steps.drawing-pack.outcome == 'success'
+        continue-on-error: true
+        run: python3 "$SKWD_VERIFY_ROOT/scripts/ci-report.py" wrap --suite deck.drawing-live --out ci-artifacts/results/deck-drawing-live.json -- scripts/test-drawing-live.sh
+
+      - name: Save Drawing model cache
+        if: steps.drawing-pack.outcome == 'success' && steps.drawing-cache.outputs.cache-hit != 'true'
+        uses: https://code.forgejo.org/actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.SKWD_MODEL_CACHE }}
+          key: deck-drawing-models-${{ hashFiles('skwd-deck/packaging/skwd-drawing-model-1.0.0.tar.xz.sha256', 'skwd-deck/packaging/skwd-lens-model-1.0.0.tar.xz.sha256') }}
+
+      - name: Remove Drawing model files
+        if: always()
+        run: rm -rf "$SKWD_MODEL_CACHE" "$TMPDIR/drawing-install"
 
       - name: Record deliberate VM coverage
         if: always()

@@ -277,8 +277,7 @@ fn validate_preview_dimensions(
 }
 
 pub fn validate_cached_preview(path: &std::path::Path) -> anyhow::Result<()> {
-    crate::infrastructure::sniff::check_file(path, crate::infrastructure::sniff::Kind::Image)?;
-    validate_preview_dimensions(path, REMOTE_PREVIEW_LIMITS)?;
+    validate_cached_preview_header(path)?;
     let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
     let mut decode_limits = image::Limits::default();
     decode_limits.max_image_width = Some(REMOTE_PREVIEW_LIMITS.dimension);
@@ -286,6 +285,12 @@ pub fn validate_cached_preview(path: &std::path::Path) -> anyhow::Result<()> {
     decode_limits.max_alloc = Some(REMOTE_PREVIEW_LIMITS.allocation);
     reader.limits(decode_limits);
     reader.decode()?;
+    Ok(())
+}
+
+pub fn validate_cached_preview_header(path: &std::path::Path) -> anyhow::Result<()> {
+    crate::infrastructure::sniff::check_file(path, crate::infrastructure::sniff::Kind::Image)?;
+    validate_preview_dimensions(path, REMOTE_PREVIEW_LIMITS)?;
     Ok(())
 }
 
@@ -303,7 +308,8 @@ fn stream_to_dest(
     drop(file);
     let checked = copied
         .and_then(|_| crate::infrastructure::sniff::check_file(&tmp, want))
-        .and_then(|()| validate_preview_dimensions(&tmp, limits));
+        .and_then(|()| validate_preview_dimensions(&tmp, limits))
+        .and_then(|()| validate_cached_preview(&tmp));
     checked?;
     std::fs::rename(&tmp, dest)?;
     cleanup.commit();

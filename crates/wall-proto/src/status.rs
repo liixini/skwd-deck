@@ -6,6 +6,7 @@ pub const SERVICE_NAME: &str = "skwd-deck";
 pub const SERVICE_COMPONENT: &str = "skwd-walld";
 pub const STEAM_CLIENT_AVAILABLE_FIELD: &str = "steam_client_available";
 pub const CAPABILITIES: &[&str] = &[
+    crate::STUDIO_CAPABILITY,
     "effects",
     "events",
     "history",

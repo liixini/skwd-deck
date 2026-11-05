@@ -1,4 +1,4 @@
-pub const THEME_BACKENDS: [&str; 14] = [
+pub const THEME_BACKENDS: [&str; 15] = [
     "off",
     "native",
     "static",
@@ -13,4 +13,5 @@ pub const THEME_BACKENDS: [&str; 14] = [
     "noctalia",
     "dms",
     "end4",
+    crate::STUDIO_ENGINE,
 ];

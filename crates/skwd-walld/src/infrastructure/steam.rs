@@ -1,4 +1,6 @@
 use serde::Deserialize;
+use std::io::Read;
+use wall_proto::sources::{WorkshopDetails, WorkshopPreview};
 
 pub const APP_ID: &str = "431960";
 pub const CLIENT_BACKEND: &str = "steam";
@@ -11,6 +13,51 @@ const ITEM_ID_PARAM: &str = "publishedfileids[0]";
 const ONE_ITEM: &str = "1";
 const ITEM_DETAILS_URL: &str =
     "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
+const WEB_DETAILS_URL: &str = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/";
+const PLAYER_SUMMARIES_URL: &str = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/";
+const WEB_DETAILS_PROVIDER: &str = "Steam Workshop details";
+const WEB_DETAILS_TOO_LARGE: &str = "Steam Workshop details are too large";
+const WEB_KEY_MISSING: &str = "Steam Web API key is missing";
+const API_KEY_PARAM: &str = "key";
+const PLAYER_IDS_PARAM: &str = "steamids";
+const PLAYER_SUMMARIES_PROVIDER: &str = "Steam creator profile";
+const PLAYER_SUMMARIES_TOO_LARGE: &str = "Steam creator profile is too large";
+const PLAYER_SUMMARIES_LIMIT: u64 = 128 * 1024;
+const PLAYER_NAME_CHARS: usize = 128;
+const PLAYER_SUMMARIES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const WEB_DETAILS_LIMIT: u64 = 2 * 1024 * 1024;
+const WEB_DETAILS_FLAGS: [(&str, &str); 4] = [
+    ("includeadditionalpreviews", "true"),
+    ("includetags", "true"),
+    ("includevotes", "true"),
+    ("includemetadata", "true"),
+];
+const WORKSHOP_PAGE_URL: &str = "https://steamcommunity.com/sharedfiles/filedetails/";
+const STEAM_SOURCE: &str = wall_proto::sources::Provider::Steam.key();
+const PAGE_ID_PARAM: &str = "id";
+const GALLERY_PROVIDER: &str = "Steam Workshop gallery";
+const GALLERY_TOO_LARGE: &str = "Steam gallery page is too large";
+const GALLERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
+const GALLERY_HTML_LIMIT: u64 = 2 * 1024 * 1024;
+const YOUTUBE_ID_LEN: usize = 11;
+const GALLERY_CACHE_ITEMS: usize = 64;
+const GALLERY_CACHE_LIFETIME: std::time::Duration = std::time::Duration::from_secs(300);
+const SCREENSHOTS_START: &str = "var rgFullScreenshotURLs = [";
+const SCREENSHOTS_END: &str = "];";
+const MOVIES_START: &str = "var rgMovieFlashvars = {";
+const MOVIES_END: &str = "var rgCommonFlashVars = {";
+const SCREENSHOT_URL_MARKER: &str = "'url': '";
+const YOUTUBE_ID_MARKER: &str = "YOUTUBE_VIDEO_ID: \"";
+const CREATORS_START: &str = "<div class=\"creatorsBlock\">";
+const CREATOR_NAME_START: &str = "<div class=\"friendBlockContent\">";
+const CREATOR_NAME_END: &str = "<br";
+const HTML_ENTITIES: [(&str, &str); 5] =
+    [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'")];
+const DESCRIPTION_INPUT_CHARS: usize = 16_384;
+const DESCRIPTION_CHARS: usize = 8_192;
+const BB_TAGS: [&str; 14] = [
+    "b", "i", "u", "h1", "h2", "h3", "url", "img", "list", "olist", "code", "quote", "spoiler", "*",
+];
 
 pub struct SearchParams {
     pub query: String,
@@ -37,6 +84,8 @@ impl Default for SearchParams {
 }
 
 pub fn query_pairs(params: &SearchParams) -> Vec<(String, String)> {
+    const VOTES_FLAG: &str = "return_vote_data";
+    const FLAG_ON: &str = "true";
     let mut pairs: Vec<(String, String)> = vec![
         ("appid".into(), APP_ID.into()),
         ("query_type".into(), params.query_type.to_string()),
@@ -44,6 +93,7 @@ pub fn query_pairs(params: &SearchParams) -> Vec<(String, String)> {
         ("page".into(), params.page.max(1).to_string()),
         ("return_previews".into(), "true".into()),
         ("return_tags".into(), "true".into()),
+        (VOTES_FLAG.into(), FLAG_ON.into()),
         ("match_all_tags".into(), "true".into()),
     ];
     if !params.query.is_empty() {
@@ -77,14 +127,62 @@ struct ApiDetail {
     preview_url: String,
     #[serde(default)]
     file_size: serde_json::Value,
-    #[serde(default)]
+    #[serde(default, alias = "consumer_appid")]
     consumer_app_id: Option<u32>,
     #[serde(default)]
     result: Option<u32>,
     #[serde(default)]
-    subscriptions: u64,
+    subscriptions: Option<u64>,
+    #[serde(default)]
+    creator: String,
+    #[serde(default, alias = "description")]
+    file_description: String,
+    #[serde(default)]
+    time_created: u64,
+    #[serde(default)]
+    time_updated: u64,
+    #[serde(default)]
+    vote_data: ApiVotes,
+    #[serde(default)]
+    votes_up: Option<u32>,
+    #[serde(default)]
+    votes_down: Option<u32>,
+    #[serde(default)]
+    previews: Vec<ApiPreview>,
     #[serde(default)]
     tags: Vec<ApiTag>,
+}
+
+#[derive(Default, Deserialize)]
+struct ApiVotes {
+    #[serde(default)]
+    votes_up: Option<u32>,
+    #[serde(default)]
+    votes_down: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct ApiPreview {
+    #[serde(default)]
+    preview_type: u32,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    youtubevideoid: String,
+}
+
+impl ApiPreview {
+    fn into_preview(self) -> Option<WorkshopPreview> {
+        match self.preview_type {
+            0 if crate::infrastructure::http::require_source(STEAM_SOURCE, &self.url).is_ok() => {
+                Some(WorkshopPreview::Image { url: self.url })
+            }
+            1 if valid_youtube_id(&self.youtubevideoid) => {
+                Some(WorkshopPreview::Youtube { id: self.youtubevideoid })
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -111,6 +209,22 @@ struct ItemDetailsRoot {
     response: Option<ItemDetailsResponse>,
 }
 
+#[derive(Deserialize)]
+struct PlayerSummariesRoot {
+    response: PlayerSummariesResponse,
+}
+
+#[derive(Deserialize)]
+struct PlayerSummariesResponse {
+    players: Vec<PlayerSummary>,
+}
+
+#[derive(Deserialize)]
+struct PlayerSummary {
+    steamid: String,
+    personaname: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SteamResult {
     pub id: String,
@@ -119,8 +233,10 @@ pub struct SteamResult {
     pub file_size: u64,
     pub subscriptions: u64,
     pub tags: String,
+    pub workshop: WorkshopDetails,
 }
 
+#[derive(Clone)]
 pub struct SearchPage {
     pub results: Vec<SteamResult>,
     pub last_page: u32,
@@ -149,6 +265,17 @@ pub fn parse_search(json: &str, page: u32, numperpage: u32) -> anyhow::Result<Se
 }
 
 fn result_from_detail(det: ApiDetail) -> SteamResult {
+    let workshop = WorkshopDetails {
+        description: description_text(&det.file_description),
+        creator_id: det.creator,
+        subscriptions: det.subscriptions,
+        votes_up: det.vote_data.votes_up.or(det.votes_up),
+        votes_down: det.vote_data.votes_down.or(det.votes_down),
+        time_created: det.time_created,
+        time_updated: det.time_updated,
+        previews: det.previews.into_iter().filter_map(ApiPreview::into_preview).collect(),
+        ..WorkshopDetails::default()
+    };
     SteamResult {
         id: det.publishedfileid,
         title: det.title,
@@ -158,7 +285,8 @@ fn result_from_detail(det: ApiDetail) -> SteamResult {
             .as_u64()
             .or_else(|| det.file_size.as_str()?.parse().ok())
             .unwrap_or(0),
-        subscriptions: det.subscriptions,
+        subscriptions: det.subscriptions.unwrap_or_default(),
+        workshop,
         tags: det
             .tags
             .into_iter()
@@ -167,6 +295,29 @@ fn result_from_detail(det: ApiDetail) -> SteamResult {
             .collect::<Vec<_>>()
             .join(", "),
     }
+}
+
+fn description_text(raw: &str) -> String {
+    let bounded: String = raw.chars().take(DESCRIPTION_INPUT_CHARS).collect();
+    let mut output = String::with_capacity(bounded.len());
+    let mut rest = bounded.as_str();
+    while let Some(start) = rest.find('[') {
+        output.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let Some(end) = after.find(']') else {
+            rest = &rest[start..];
+            break;
+        };
+        let tag = after[..end].trim_start_matches('/').split('=').next().unwrap_or("");
+        if BB_TAGS.iter().any(|known| tag.eq_ignore_ascii_case(known)) {
+            rest = &after[end + 1..];
+        } else {
+            output.push('[');
+            rest = after;
+        }
+    }
+    output.push_str(rest);
+    output.chars().take(DESCRIPTION_CHARS).collect()
 }
 
 pub fn parse_item_details(json: &str, id: u64) -> anyhow::Result<SearchPage> {
@@ -199,6 +350,169 @@ pub fn item_details(id: u64) -> anyhow::Result<SearchPage> {
     parse_item_details(&response.into_string()?, id)
 }
 
+struct WebDetailsEntry {
+    id: u64,
+    time: std::time::Instant,
+    page: SearchPage,
+}
+
+fn parse_creator_name(json: &str, creator_id: &str) -> anyhow::Result<String> {
+    let root: PlayerSummariesRoot = serde_json::from_str(json)?;
+    Ok(root
+        .response
+        .players
+        .into_iter()
+        .find(|player| player.steamid == creator_id)
+        .map_or_else(String::new, |player| {
+            player.personaname.chars().take(PLAYER_NAME_CHARS).collect()
+        }))
+}
+
+fn creator_name(creator_id: &str, api_key: &str) -> anyhow::Result<String> {
+    let request = crate::infrastructure::http::agent()
+        .get(PLAYER_SUMMARIES_URL)
+        .set(USER_AGENT_HEADER, crate::infrastructure::http::USER_AGENT)
+        .query(API_KEY_PARAM, api_key)
+        .query(PLAYER_IDS_PARAM, creator_id)
+        .timeout(PLAYER_SUMMARIES_TIMEOUT);
+    let response = crate::infrastructure::http::send(request, PLAYER_SUMMARIES_PROVIDER)?;
+    let mut body = Vec::new();
+    response.into_reader().take(PLAYER_SUMMARIES_LIMIT + 1).read_to_end(&mut body)?;
+    anyhow::ensure!(body.len() as u64 <= PLAYER_SUMMARIES_LIMIT, PLAYER_SUMMARIES_TOO_LARGE);
+    parse_creator_name(std::str::from_utf8(&body)?, creator_id)
+}
+
+pub fn web_item_details(id: u64, api_key: &str) -> anyhow::Result<SearchPage> {
+    use std::collections::VecDeque;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<VecDeque<WebDetailsEntry>>> = OnceLock::new();
+    anyhow::ensure!(!api_key.is_empty(), WEB_KEY_MISSING);
+    let cache = CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Some(entry) = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|entry| entry.id == id && entry.time.elapsed() < GALLERY_CACHE_LIFETIME)
+    {
+        return Ok(entry.page.clone());
+    }
+    let id_text = id.to_string();
+    let mut request = crate::infrastructure::http::agent()
+        .get(WEB_DETAILS_URL)
+        .set(USER_AGENT_HEADER, crate::infrastructure::http::USER_AGENT)
+        .query(API_KEY_PARAM, api_key)
+        .query(ITEM_ID_PARAM, &id_text)
+        .timeout(GALLERY_TIMEOUT);
+    for (name, value) in WEB_DETAILS_FLAGS {
+        request = request.query(name, value);
+    }
+    let response = crate::infrastructure::http::send(request, WEB_DETAILS_PROVIDER)?;
+    let mut body = Vec::new();
+    response.into_reader().take(WEB_DETAILS_LIMIT + 1).read_to_end(&mut body)?;
+    anyhow::ensure!(body.len() as u64 <= WEB_DETAILS_LIMIT, WEB_DETAILS_TOO_LARGE);
+    let mut page = parse_item_details(std::str::from_utf8(&body)?, id)?;
+    if let Some(item) = page.results.first_mut()
+        && !item.workshop.creator_id.is_empty()
+    {
+        item.workshop.creator_name =
+            creator_name(&item.workshop.creator_id, api_key).unwrap_or_default();
+    }
+    let mut entries = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    entries.retain(|entry| entry.id != id);
+    entries.push_back(WebDetailsEntry { id, time: std::time::Instant::now(), page: page.clone() });
+    if entries.len() > GALLERY_CACHE_ITEMS {
+        entries.pop_front();
+    }
+    Ok(page)
+}
+
+fn quoted_values<'a>(block: &'a str, marker: &str, end: char) -> impl Iterator<Item = &'a str> {
+    block
+        .split(marker)
+        .skip(1)
+        .filter_map(move |fragment| fragment.split_once(end).map(|(value, _)| value))
+}
+
+fn valid_youtube_id(id: &str) -> bool {
+    id.len() == YOUTUBE_ID_LEN
+        && id.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+fn gallery_from_html(html: &str) -> anyhow::Result<(String, Vec<WorkshopPreview>)> {
+    let name = html
+        .split_once(CREATORS_START)
+        .and_then(|(_, tail)| tail.split_once(CREATOR_NAME_START))
+        .and_then(|(_, tail)| tail.split_once(CREATOR_NAME_END))
+        .map_or("", |(name, _)| name)
+        .trim();
+    let creator_name = HTML_ENTITIES
+        .iter()
+        .fold(name.to_string(), |name, (encoded, decoded)| name.replace(encoded, decoded));
+    let screenshots = html
+        .split_once(SCREENSHOTS_START)
+        .and_then(|(_, tail)| tail.split_once(SCREENSHOTS_END))
+        .ok_or_else(|| anyhow::anyhow!("Steam gallery is unavailable"))?
+        .0;
+    let movies = html
+        .split_once(MOVIES_START)
+        .and_then(|(_, tail)| tail.split_once(MOVIES_END))
+        .map_or("", |(block, _)| block);
+    let images = quoted_values(screenshots, SCREENSHOT_URL_MARKER, '\'')
+        .map(|url| url.split_once('?').map_or(url, |(base, _)| base))
+        .filter(|url| crate::infrastructure::http::require_source(STEAM_SOURCE, url).is_ok())
+        .map(|url| WorkshopPreview::Image { url: url.to_string() });
+    let youtube = quoted_values(movies, YOUTUBE_ID_MARKER, '"')
+        .filter(|id| valid_youtube_id(id))
+        .map(|id| WorkshopPreview::Youtube { id: id.to_string() });
+    Ok((creator_name, images.chain(youtube).collect()))
+}
+
+struct GalleryEntry {
+    id: String,
+    time: std::time::Instant,
+    creator_name: String,
+    previews: Vec<WorkshopPreview>,
+}
+
+pub fn gallery(id: &str) -> anyhow::Result<(String, Vec<WorkshopPreview>)> {
+    use std::collections::VecDeque;
+    use std::sync::{Mutex, OnceLock};
+
+    static CACHE: OnceLock<Mutex<VecDeque<GalleryEntry>>> = OnceLock::new();
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
+    if let Some(entry) = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|entry| entry.id == id && entry.time.elapsed() < GALLERY_CACHE_LIFETIME)
+    {
+        return Ok((entry.creator_name.clone(), entry.previews.clone()));
+    }
+    let agent = AGENT.get_or_init(|| ureq::AgentBuilder::new().try_proxy_from_env(true).build());
+    let response = crate::infrastructure::http::send(
+        agent.get(WORKSHOP_PAGE_URL).query(PAGE_ID_PARAM, id).timeout(GALLERY_TIMEOUT),
+        GALLERY_PROVIDER,
+    )?;
+    let mut body = Vec::new();
+    std::io::Read::take(response.into_reader(), GALLERY_HTML_LIMIT + 1).read_to_end(&mut body)?;
+    anyhow::ensure!(body.len() as u64 <= GALLERY_HTML_LIMIT, GALLERY_TOO_LARGE);
+    let (creator_name, previews) = gallery_from_html(std::str::from_utf8(&body)?)?;
+    let mut entries = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    entries.retain(|entry| entry.id != id);
+    entries.push_back(GalleryEntry {
+        id: id.to_string(),
+        time: std::time::Instant::now(),
+        creator_name: creator_name.clone(),
+        previews: previews.clone(),
+    });
+    if entries.len() > GALLERY_CACHE_ITEMS {
+        entries.pop_front();
+    }
+    Ok((creator_name, previews))
+}
+
 pub fn parse_helper_search(json: &str, page: u32) -> anyhow::Result<SearchPage> {
     #[derive(Deserialize)]
     struct HItem {
@@ -214,6 +528,8 @@ pub fn parse_helper_search(json: &str, page: u32) -> anyhow::Result<SearchPage> 
         subscriptions: u64,
         #[serde(default)]
         tags: String,
+        #[serde(default)]
+        workshop: WorkshopDetails,
     }
     #[derive(Deserialize)]
     struct HRoot {
@@ -240,6 +556,10 @@ pub fn parse_helper_search(json: &str, page: u32) -> anyhow::Result<SearchPage> 
             file_size: item.file_size,
             subscriptions: item.subscriptions,
             tags: item.tags,
+            workshop: WorkshopDetails {
+                description: description_text(&item.workshop.description),
+                ..item.workshop
+            },
         })
         .collect();
     let page = page.max(1);

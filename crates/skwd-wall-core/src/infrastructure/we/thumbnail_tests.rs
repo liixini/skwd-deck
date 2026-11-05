@@ -96,6 +96,6 @@ fn parallel_monitors_serialize_on_the_scene_lock() {
     let second = std::fs::File::options().write(true).open(&path).unwrap();
     first.lock().unwrap();
     assert!(matches!(second.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
-    drop(first);
+    first.unlock().unwrap();
     assert!(second.try_lock().is_ok());
 }

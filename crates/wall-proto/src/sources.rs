@@ -158,6 +158,70 @@ pub struct ListItem {
     pub duration_secs: u64,
     #[serde(default)]
     pub downloaded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workshop: Option<WorkshopDetails>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkshopDetails {
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub creator_id: String,
+    #[serde(default)]
+    pub creator_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscriptions: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub votes_up: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub votes_down: Option<u32>,
+    #[serde(default)]
+    pub time_created: u64,
+    #[serde(default)]
+    pub time_updated: u64,
+    #[serde(default)]
+    pub previews: Vec<WorkshopPreview>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkshopPreview {
+    Image { url: String },
+    Youtube { id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkshopGallery {
+    pub id: String,
+    pub source: String,
+    #[serde(default)]
+    pub creator_name: String,
+    pub previews: Vec<WorkshopPreview>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewStatus {
+    Fetching,
+    Ready,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreviewRequest {
+    pub source: String,
+    pub id: String,
+    pub full_url: String,
+    #[serde(default)]
+    pub refresh: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreviewResponse {
+    pub id: String,
+    pub status: PreviewStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

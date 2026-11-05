@@ -48,7 +48,13 @@ fn cli_probe(binary: &str, flag: &str) -> bool {
 
 pub fn backend_available(config: &Config, backend: &str) -> bool {
     match backend {
-        "off" | "native" | "static" | "skwd-iris" | "skwd-pywal" | "skwd-wallust" => true,
+        "off"
+        | "native"
+        | "static"
+        | "skwd-iris"
+        | "skwd-pywal"
+        | "skwd-wallust"
+        | wall_proto::STUDIO_ENGINE => true,
         "matugen" => cli_available("matugen"),
         "dms" => cli_available("matugen") && cli_probe("dms", "version"),
         "wallust" => cli_available("wallust"),
@@ -60,7 +66,7 @@ pub fn backend_available(config: &Config, backend: &str) -> bool {
     }
 }
 
-pub const ALL_BACKENDS: [&str; 14] = wall_proto::THEME_BACKENDS;
+pub const ALL_BACKENDS: [&str; 15] = wall_proto::THEME_BACKENDS;
 
 pub fn available_backends(config: &Config) -> Vec<&'static str> {
     std::thread::scope(|scope| {

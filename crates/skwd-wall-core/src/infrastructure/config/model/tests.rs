@@ -188,7 +188,6 @@ fn feature_facades_preserve_legacy_aliases_and_serialized_root() {
     assert_eq!(config.display().fill_mode_for("DP-2"), "fit");
     assert!(config.display().output_locked("DP-2"));
     assert_eq!(config.renderer().engine(), "awww");
-    assert_eq!(config.renderer().video_engine(), "tinier");
     assert_eq!(
         config.renderer().we_scene_fill_mode(wall_proto::apply_fields::ALL_OUTPUTS),
         "center"
@@ -306,16 +305,9 @@ fn optimize_assets_getters() {
 }
 
 #[test]
-fn video_engine_getters() {
+fn video_process_getters() {
     let defaults = Config::from_root(json!({}));
-    assert_eq!(defaults.renderer().video_engine(), "vulkan");
     assert!(defaults.renderer().video_multi_process());
-    let gl = Config::from_root(json!({"paper": {"videoEngine": "gl"}}));
-    assert_eq!(gl.renderer().video_engine(), "vulkan");
-    let retired = Config::from_root(json!({"paper": {"videoEngine": "tiny"}}));
-    assert_eq!(retired.renderer().video_engine(), "vulkan");
-    let tinier = Config::from_root(json!({"paper": {"videoEngine": "tinier"}}));
-    assert_eq!(tinier.renderer().video_engine(), "tinier");
     let compatibility = Config::from_root(json!({"paper": {"videoMultiProcess": false}}));
     assert!(!compatibility.renderer().video_multi_process());
     let vk_path = Config::from_root(json!({"paths": {"paperVkBin": "/opt/skwd-wall-vk"}}));
@@ -368,6 +360,27 @@ fn transition_getters() {
     let performance = Config::from_root(json!({"paper": {"performanceMode": true}}));
     assert!(performance.transition().enabled());
     assert!(!performance.transition().active());
+}
+
+#[test]
+fn preset_transition_timing() {
+    let configured = Config::from_root(json!({"transition": {
+        "shader": "paper-heart", "durationMs": 4000
+    }}));
+    assert_eq!(configured.transition().duration_ms(), 3900);
+    assert_eq!(configured.transition().duration_for("paper-heart"), 3900);
+    assert_eq!(configured.transition().duration_for("random"), 4000);
+    assert_eq!(configured.transition().duration_for("crossfade"), 4000);
+
+    let manual = Config::from_root(json!({"transition": {
+        "shader": "paper-heart", "durationMs": 4000, "presetTiming": false
+    }}));
+    assert_eq!(manual.transition().duration_ms(), 4000);
+    assert_eq!(manual.transition().duration_for("paper-heart"), 4000);
+
+    let defaults = Config::from_root(json!({"transition": {"shader": "photo-cutout"}}));
+    assert_eq!(defaults.transition().duration_ms(), 3400);
+    assert_eq!(defaults.transition().duration_for("random"), 600);
 }
 
 #[test]
@@ -636,7 +649,6 @@ fn getters_non_object_root() {
         assert!(cfg.transition().enabled());
         assert_eq!(cfg.transition().shader(), "random");
         assert_eq!(cfg.transition().duration_ms(), 600);
-        assert_eq!(cfg.renderer().video_engine(), "vulkan");
         assert!(cfg.renderer().mute());
         assert_eq!(cfg.renderer().volume(), 100);
         assert_eq!(cfg.theme().backend(), "skwd-iris");
@@ -849,7 +861,6 @@ fn getters_survive_fuzz() {
             cfg.renderer().paper_bin(),
             cfg.renderer().still_bin(),
             cfg.renderer().vk_bin(),
-            cfg.renderer().video_engine(),
         );
         let _ =
             (cfg.transition().enabled(), cfg.transition().shader(), cfg.transition().duration_ms());
@@ -914,6 +925,17 @@ fn maximized_pause_is_opt_in_and_independent_of_fullscreen() {
     assert!(config.playback().maximized_pause());
     assert!(!config.playback().fullscreen_pause());
     assert!(config.playback().window_pause_enabled());
+}
+
+#[test]
+fn focused_pause_is_opt_in_and_enables_window_pause_policy() {
+    let config = Config::from_root(json!({}));
+    assert!(!config.playback().focused_pause());
+    let config = Config::from_root(json!({"playback": {"focused": true}}));
+    assert!(config.playback().focused_pause());
+    assert!(config.playback().window_pause_enabled());
+    assert!(!config.playback().fullscreen_pause());
+    assert!(!config.playback().maximized_pause());
 }
 
 #[test]
@@ -1061,4 +1083,12 @@ fn reload_repairs_permissions() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert!(Config::load_path_if_changed(&link, &bytes).is_none());
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o644);
+}
+
+#[test]
+fn studio_method_setting() {
+    let defaults = Config::from_root(json!({}));
+    assert_eq!(defaults.theme().studio_method(), "tonal");
+    let selected = Config::from_root(json!({"theme": {"studioMethod": "pigment"}}));
+    assert_eq!(selected.theme().studio_method(), "pigment");
 }

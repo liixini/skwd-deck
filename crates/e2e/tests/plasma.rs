@@ -11,9 +11,6 @@ const STUB: &str = "fake_renderer";
 #[path = "plasma/transitions.rs"]
 mod transitions;
 
-#[path = "plasma/preparation.rs"]
-mod preparation;
-
 fn plasma_session(name: &str) -> (Sandbox, FakePlasma) {
     let mut sandbox = Sandbox::new(name);
     let plasma = FakePlasma::install(
@@ -39,7 +36,7 @@ fn plasma_session(name: &str) -> (Sandbox, FakePlasma) {
         "effects": {"autoRecolor": false, "autoTheme": ""},
         "theme": {"policy": "off"},
         "transition": {"enabled": false},
-        "playback": {"fullscreen": true, "fullscreenScope": "display", "resumeDelay": 0},
+        "playback": {"fullscreen": true, "focused": true, "fullscreenScope": "display", "resumeDelay": 0},
     }));
     (sandbox, plasma)
 }
@@ -236,7 +233,7 @@ fn subscriptions_preserve_activity_config() {
     assert_eq!(source(&scripted(&plasma)["DP-2"]), (SourceKind::Static, first));
     assert!(left.entries().is_empty());
     assert!(right.entries().is_empty());
-    assert!(left.lines().iter().all(|line| line["capabilities"] == json!([])));
+    assert!(left.lines().iter().all(|line| line["capabilities"] == json!(["focused"])));
 }
 
 #[test]
@@ -295,8 +292,20 @@ fn plasma_pauses_reach_only_their_output() {
         walld.log_contents()
     );
     assert!(right.lines().iter().all(|line| line["paused"] == false), "{:?}", right.lines());
-    assert!(left.lines().iter().all(|line| line["capabilities"] == json!([])));
+    assert!(left.lines().iter().all(|line| line["capabilities"] == json!(["focused"])));
     left.report(false);
+    assert!(paused(&left, false), "{:?}", left.lines());
+    left.report_focused(true);
+    assert!(paused(&left, true), "{:?}", left.lines());
+    assert!(wait_until(
+        || {
+            let state = walld.client().call("status", json!({}), 4).unwrap();
+            state["result"]["playback"]["focused_paused"] == true
+                && state["result"]["playback"]["outputs"] == json!(["DP-1"])
+        },
+        Duration::from_secs(5)
+    ));
+    left.report_focused(false);
     assert!(paused(&left, false), "{:?}", left.lines());
 
     call(&walld, &mut client, "wall.apply", json!({"type": "static", "path": image}));

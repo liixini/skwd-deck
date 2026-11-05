@@ -43,6 +43,9 @@ pub fn same(left: &Path, right: &Path) -> bool {
 
 // Scanners and watchers must never surface anything below this as a wallpaper.
 pub const INTERNAL_LIBRARY_DIR: &str = ".skwd-wall-v2";
+pub const SCAN_BIN: &str = "skwd-wall-scan";
+pub const DRAW_BIN: &str = "skwd-wall-draw";
+const PAPER_BIN_NAME: &str = "skwd-paper-v2";
 
 pub fn is_internal_library_path(path: &Path) -> bool {
     path.components().any(|component| component.as_os_str() == INTERNAL_LIBRARY_DIR)
@@ -105,6 +108,17 @@ pub fn sibling_bin(name: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+#[cfg(test)]
+pub(crate) fn test_scratch() -> PathBuf {
+    std::env::temp_dir().join(format!("skwd-core-tests-{}", std::process::id()))
+}
+
+#[cfg(test)]
+pub fn paper_bin() -> PathBuf {
+    test_scratch().join(PAPER_BIN_NAME)
+}
+
+#[cfg(not(test))]
 pub fn paper_bin() -> PathBuf {
     let bin_dir = std::env::current_exe()
         .ok()
@@ -113,10 +127,10 @@ pub fn paper_bin() -> PathBuf {
 }
 
 pub fn resolve_paper_bin(bin_dir: Option<&Path>, search_path: Option<&OsStr>) -> PathBuf {
-    resolve_binary(bin_dir, None, OsStr::new("skwd-paper-v2"))
+    resolve_binary(bin_dir, None, OsStr::new(PAPER_BIN_NAME))
         .or_else(|| resolve_binary(bin_dir, None, OsStr::new("skwd-paper")))
-        .or_else(|| resolve_binary(None, search_path, OsStr::new("skwd-paper-v2")))
-        .unwrap_or_else(|| PathBuf::from("skwd-paper-v2"))
+        .or_else(|| resolve_binary(None, search_path, OsStr::new(PAPER_BIN_NAME)))
+        .unwrap_or_else(|| PathBuf::from(PAPER_BIN_NAME))
 }
 
 pub fn resolve_preferred_binary(

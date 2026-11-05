@@ -1,4 +1,5 @@
 use super::*;
+use wall_proto::drawing::Device;
 
 #[test]
 fn we_renderer_canonicalizes() {
@@ -62,6 +63,69 @@ fn audio_settings_bounded() {
     assert_eq!(wallpaper_volume(&json!({})), 100);
     assert_eq!(wallpaper_volume(&json!({"wallpaperVolume": 250})), 100);
     assert_eq!(wallpaper_volume(&json!({"wallpaperVolume": 40})), 40);
+}
+
+#[test]
+fn drawing_device_choice() {
+    assert_eq!(drawing_device(&json!({})), Device::Auto);
+    assert_eq!(drawing_device(&json!({"drawing": {"device": "webgpu"}})), Device::Webgpu);
+    assert_eq!(drawing_device(&json!({"drawing": {"device": "rocm"}})), Device::Auto);
+    let stored = crate::schema::normalize_value(crate::keys::drawing::DEVICE, &json!("cuda"));
+    assert_eq!(drawing_device(&json!({"drawing": {"device": stored}})), Device::Cuda);
+}
+
+#[test]
+fn drawing_invalid_settings_reported() {
+    let device = |value: serde_json::Value| {
+        let stored = crate::schema::normalize_value(crate::keys::drawing::DEVICE, &value);
+        json!({"drawing": {"device": stored}})
+    };
+    let bad = device(json!("rocm"));
+    assert_eq!(
+        (drawing_device(&bad), drawing_device_invalid(&bad)),
+        (Device::Auto, Some("rocm".to_string()))
+    );
+    assert_eq!(drawing_device_invalid(&device(json!("cuda"))), None);
+    assert_eq!(drawing_device_invalid(&json!({})), None);
+    let limit = |value: serde_json::Value| json!({"drawing": {"memoryLimitMib": value}});
+    let bad = limit(json!("lots"));
+    assert_eq!(
+        (drawing_memory_limit_mib(&bad), drawing_memory_limit_invalid(&bad)),
+        (None, Some("\"lots\"".to_string()))
+    );
+    assert_eq!(drawing_memory_limit_invalid(&limit(json!("2048"))), None);
+    assert_eq!(drawing_memory_limit_invalid(&json!({})), None);
+}
+
+#[test]
+fn drawing_memory_bounds() {
+    let limit = |value: serde_json::Value| {
+        drawing_memory_limit_mib(&json!({"drawing": {"memoryLimitMib": value}}))
+    };
+    assert_eq!(drawing_memory_limit_mib(&json!({})), None);
+    assert_eq!(limit(json!("auto")), None);
+    assert_eq!(limit(json!(4096)), Some(4096));
+    assert_eq!(limit(json!(1)), Some(512));
+    assert_eq!(limit(json!(1_000_000)), Some(65_536));
+    let stored =
+        crate::schema::normalize_value(crate::keys::drawing::MEMORY_LIMIT_MIB, &json!(3072));
+    assert_eq!(stored, Some(json!("3072")));
+    assert_eq!(limit(stored.unwrap()), Some(3072));
+}
+
+#[test]
+fn drawing_card_defaults() {
+    let root = json!({"drawing": {"enabled": false, "wallpapers": {
+        "static:first.png": true, "static:second.png": false
+    }}});
+    assert!(drawing_enabled(&root, "static:first.png"));
+    assert!(!drawing_enabled(&root, "static:second.png"));
+    assert!(!drawing_enabled(&root, "static:third.png"));
+    let global = json!({"drawing": {"enabled": true, "wallpapers": {
+        "static:second.png": false
+    }}});
+    assert!(drawing_enabled(&global, "static:first.png"));
+    assert!(!drawing_enabled(&global, "static:second.png"));
 }
 
 #[test]

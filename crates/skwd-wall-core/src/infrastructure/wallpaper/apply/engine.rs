@@ -10,10 +10,6 @@ pub(super) fn video_engine(state: &WallState) -> VideoEngine {
     VideoEngine { bin: state.config().renderer().vk_bin() }
 }
 
-pub const fn video_engine_is_vk(_: &WallState) -> bool {
-    true
-}
-
 pub(super) fn apply_static_override(
     state: &WallState,
     output: &str,

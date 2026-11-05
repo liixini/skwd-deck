@@ -5,14 +5,13 @@ use serde_json::Value;
 
 use crate::config::Config;
 use crate::outputs::OutputInfo;
-use crate::state::WallState;
 
 use paper_control::{
     ApplyRequest, ApplyResult, Assignment, FillMode, Layer, RendererPolicy, SandPolicy,
     SandQuality, SandScope, ScenePolicy, Source, StopResult,
 };
 
-use super::adapter::{PaperClientAdapter, assignment_with_options, fill_mode, video_engine};
+use super::adapter::{PaperClientAdapter, assignment_with_options, fill_mode};
 
 const PERF_SCENE_FPS: u32 = 30;
 const PERF_SCENE_MAX_DIMENSION: u32 = 2048;
@@ -38,29 +37,6 @@ impl PaperClientAdapter {
         state: &Value,
         live_outputs: &[OutputInfo],
     ) -> Result<PaperCompositionPlan> {
-        Self::composition_plan_with(config, state, live_outputs, |path| {
-            Ok(Source::video(path, Some(video_engine(&config.renderer().video_engine()))))
-        })
-    }
-
-    pub fn tinier_composition_plan(
-        &self,
-        wall: &WallState,
-        state: &Value,
-        live_outputs: &[OutputInfo],
-    ) -> Result<PaperCompositionPlan> {
-        let config = wall.config();
-        Self::composition_plan_with(&config, state, live_outputs, |path| {
-            tinier_or_default_source(wall, path)
-        })
-    }
-
-    fn composition_plan_with(
-        config: &Config,
-        state: &Value,
-        live_outputs: &[OutputInfo],
-        video_source: impl Fn(&str) -> Result<Source>,
-    ) -> Result<PaperCompositionPlan> {
         let entries = selected_entries(config, state, live_outputs)?;
         if entries.is_empty() {
             return Ok(PaperCompositionPlan::StopAll);
@@ -76,7 +52,6 @@ impl PaperClientAdapter {
                 &entry,
                 &dedup_mute,
                 live_outputs,
-                &video_source,
             )?);
         }
         let request = ApplyRequest {
@@ -193,7 +168,6 @@ fn composition_assignment(
     entry: &Value,
     dedup_mute: &BTreeSet<String>,
     live_outputs: &[OutputInfo],
-    video_source: &impl Fn(&str) -> Result<Source>,
 ) -> Result<Assignment> {
     let we_scene = we_scene_project(config, entry);
     let entry = entry
@@ -205,7 +179,7 @@ fn composition_assignment(
         .with_context(|| format!("Paper composition entry for {output} is missing type"))?;
     let source = match kind {
         wall_proto::kind::STATIC => Source::static_file(entry_path(entry, output)?),
-        wall_proto::kind::VIDEO => video_source(entry_path(entry, output)?)?,
+        wall_proto::kind::VIDEO => Source::video(entry_path(entry, output)?),
         wall_proto::kind::WE => {
             let we_id = entry
                 .get("we_id")
@@ -218,8 +192,7 @@ fn composition_assignment(
         }
         kind => bail!("unsupported Paper composition source kind {kind} for {output}"),
     };
-    let mute = source.effective_video_engine() == Some(paper_control::VideoEngine::Tinier)
-        || dedup_mute.contains(output)
+    let mute = dedup_mute.contains(output)
         || entry.get("mute").and_then(Value::as_bool).unwrap_or_else(|| config.renderer().mute());
     let volume = entry
         .get("volume")
@@ -247,30 +220,6 @@ fn composition_assignment(
     };
     assignment.background = config.display().background_for(background_output);
     Ok(assignment)
-}
-
-pub(crate) fn tinier_or_default_source(wall: &WallState, path: &str) -> Result<Source> {
-    let (original, entry) = wall
-        .with_db(|connection| {
-            let source = crate::db::tinier_convert_src(connection, path)?;
-            let original = source.unwrap_or_else(|| path.to_string());
-            let entry = crate::db::tinier_convert_entry(connection, &original)?;
-            Ok((original, entry))
-        })
-        .context("read Tinier conversion record")?;
-    let Some((destination, frame_rate, preset, original_size)) = entry else {
-        return Ok(Source::video(original, Some(paper_control::VideoEngine::Default)));
-    };
-    let source_size = std::fs::metadata(&original).map_or(0, |metadata| metadata.len() as i64);
-    let valid = std::fs::metadata(&destination).is_ok_and(|metadata| {
-        metadata.is_file()
-            && metadata.len() > 0
-            && metadata.len() <= crate::db::TINIER_CONVERT_MAX_BYTES
-    });
-    if preset != crate::db::TINIER_CONVERT_PRESET || original_size != source_size || !valid {
-        return Ok(Source::video(original, Some(paper_control::VideoEngine::Default)));
-    }
-    Ok(Source::tinier_video(destination, frame_rate))
 }
 
 fn selected_entries(

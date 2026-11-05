@@ -12,7 +12,7 @@ use super::common::{artifacts_ready, is_video, known_mtimes};
 
 static VIDEO_DECODE_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-pub fn scan_videos<F>(state: &WallState, on_item: F) -> usize
+pub fn scan_videos<F>(state: &WallState, encoder: &crate::blocks::Encoder, on_item: F) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
@@ -23,14 +23,14 @@ where
         .iter()
         .filter(|(_, name, mtime)| {
             let unchanged = known.get(&format!("video:{name}")).copied() == Some(*mtime);
-            !unchanged || !artifacts_ready(&paths::video_thumb(name))
+            !unchanged || !artifacts_ready(&paths::video_thumb(name), &paths::video_thumb_sm(name))
         })
         .collect();
 
     let count = AtomicUsize::new(0);
     let work = || {
         pending.par_iter().for_each(|(path, name, mtime)| {
-            if thumb_video(state, path, name, *mtime, &on_item) {
+            if thumb_video(state, path, name, *mtime, encoder, &on_item) {
                 count.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -48,6 +48,7 @@ pub(super) fn thumb_video<F>(
     path: &Path,
     name: &str,
     mtime: i64,
+    encoder: &crate::blocks::Encoder,
     on_item: &F,
 ) -> bool
 where
@@ -58,7 +59,11 @@ where
     let result = {
         let _gate = lock(&VIDEO_DECODE_GATE);
         let _permit = decode_budget().acquire_exclusive();
-        match media::generate_video_thumbs(path, &thumb, &thumb_small, 1) {
+        match media::generate_video_thumbs(
+            path,
+            media::Thumbs { full: &thumb, small: &thumb_small, encoder },
+            1,
+        ) {
             Ok(result) => result,
             Err(error) => {
                 log::warn!("video thumb failed for {}: {error}", path.display());

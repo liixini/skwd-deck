@@ -6,6 +6,9 @@ use crate::{bool_true_unless_false, keys, str_at, u64_at};
 
 pub const DEFAULT_BATTERY_FPS: u32 = 60;
 pub const DEFAULT_BATTERY_VIDEO_IDLE_SECONDS: u32 = 120;
+pub const GPU_UUID_BYTES: usize = 16;
+pub const GPU_DEVICE_ENV: &str = "SKWD_VK_DEVICE";
+const GPU_UUID_PREFIX: &str = "uuid:";
 const POWER_SUPPLY_ROOT: &str = "/sys/class/power_supply";
 static LAST_KNOWN_ON_BATTERY: AtomicBool = AtomicBool::new(false);
 static POWER_SOURCE_SNAPSHOT: AtomicU8 = AtomicU8::new(0);
@@ -50,14 +53,11 @@ pub fn battery_wallpaper_performance(root: &Value) -> bool {
 pub fn configured_gpu_device(root: &Value) -> String {
     let value = str_at(root, keys::performance::GPU_DEVICE, "auto");
     let value = value.trim();
-    if value
-        .strip_prefix("uuid:")
-        .is_some_and(|uuid| uuid.len() == 32 && uuid.bytes().all(|byte| byte.is_ascii_hexdigit()))
-    {
-        value.to_ascii_lowercase()
-    } else {
-        String::from("auto")
-    }
+    if gpu_uuid(value).is_some() { value.to_ascii_lowercase() } else { String::from("auto") }
+}
+
+pub fn gpu_uuid(device: &str) -> Option<[u8; GPU_UUID_BYTES]> {
+    crate::value::hex_bytes(device.strip_prefix(GPU_UUID_PREFIX)?)
 }
 
 pub fn configured_gpu_preference(root: &Value) -> &'static str {

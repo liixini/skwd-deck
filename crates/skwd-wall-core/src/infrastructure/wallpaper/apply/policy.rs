@@ -3,7 +3,7 @@ use crate::state::WallState;
 use super::engine::video_engine;
 use super::launch::{NativeScenePolicy, current_native_scene_policy};
 
-pub(super) const PAPER_POLICY_KEY: &str = "paperpolicy";
+pub(crate) const PAPER_POLICY_KEY: &str = "paperpolicy";
 pub(super) const NATIVE_SCENE_POLICY_KEY: &str = "scenepolicy";
 const NATIVE_SCENE_PROPERTIES_KEY: &str = "sceneproperties";
 
@@ -16,7 +16,6 @@ pub(super) struct PaperPolicy {
     pub(super) idle_pause_seconds: u32,
     pub(super) renderer_bin: String,
     pub(super) renderer_identity: String,
-    pub(super) video_engine: String,
     pub(super) layer: String,
     pub(super) stationary: bool,
     pub(super) multi_process: bool,
@@ -44,7 +43,6 @@ impl PaperPolicy {
             self.idle_pause_seconds,
             self.renderer_bin,
             self.renderer_identity,
-            self.video_engine,
             self.layer,
             self.multi_process,
             self.independent_playback,
@@ -98,7 +96,6 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
         idle_pause_seconds: config.renderer().idle_pause_seconds(),
         renderer_bin: renderer.bin,
         renderer_identity,
-        video_engine: config.renderer().video_engine(),
         layer: config.renderer().wallpaper_layer(),
         stationary: crate::infrastructure::paper::stationary_wallpaper(&config),
         multi_process: config.renderer().video_multi_process(),
@@ -116,6 +113,21 @@ pub(super) fn current_paper_policy(state: &WallState) -> PaperPolicy {
     }
 }
 
+pub(super) struct PolicyGate<'a> {
+    state: &'a WallState,
+    current: std::cell::OnceCell<bool>,
+}
+
+impl<'a> PolicyGate<'a> {
+    pub(super) fn new(state: &'a WallState) -> Self {
+        Self { state, current: std::cell::OnceCell::new() }
+    }
+
+    pub(super) fn current(&self) -> bool {
+        *self.current.get_or_init(|| paper_policy_matches(self.state))
+    }
+}
+
 pub fn independent_playback(state: &WallState) -> bool {
     let config = state.config();
     state.renderers().independent_playback()
@@ -127,12 +139,16 @@ pub fn independent_playback(state: &WallState) -> bool {
 }
 
 pub fn paper_policy_matches(state: &WallState) -> bool {
-    let current = current_paper_policy(state).signature();
+    let current = paper_policy_signature(state);
     state.renderers().policy(PAPER_POLICY_KEY).is_none_or(|previous| previous == current)
 }
 
-pub(super) fn record_paper_policy(state: &WallState) {
-    state.renderers().set_policy(PAPER_POLICY_KEY, &current_paper_policy(state).signature());
+pub(crate) fn paper_policy_signature(state: &WallState) -> String {
+    current_paper_policy(state).signature()
+}
+
+pub(crate) fn record_paper_policy(state: &WallState) {
+    state.renderers().set_policy(PAPER_POLICY_KEY, &paper_policy_signature(state));
 }
 
 pub(crate) fn native_scene_policy_matches(state: &WallState) -> bool {
@@ -216,5 +232,7 @@ pub fn active_renderer_policy_matches(state: &WallState) -> bool {
         }
     }
     (!needs_paper_policy || paper_policy_matches(state))
-        && (!needs_we_policy || renderer_policy_matches(state, wall_proto::kind::WE))
+        && (!needs_we_policy
+            || renderer_policy_matches(state, wall_proto::kind::WE)
+            || super::service::policy_matches(state, &current))
 }

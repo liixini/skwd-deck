@@ -78,3 +78,27 @@ fn existing_file_pin() {
     std::fs::remove_file(&path).ok();
     assert!(!wallpaper_is_present(&still));
 }
+
+#[test]
+fn remembered_monitor_keeps_key() {
+    let (_guard, _root) = crate::testenv::lock();
+    let path = monitors_path();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let output = OutputInfo {
+        name: String::from("DP-7"),
+        make: String::from("Dell Inc."),
+        model: String::from("DELL P2723DE"),
+        width: 2560,
+        height: 1440,
+        description: String::from("Dell Inc. DELL P2723DE 317ZNR3 (DP-7)"),
+        ..OutputInfo::default()
+    };
+    remember_monitors(std::slice::from_ref(&output));
+    let rows = known_monitors(&[]);
+    let row = &rows["monitors"][0];
+    assert_eq!(row["monitor"], "Dell Inc. DELL P2723DE 317ZNR3");
+    assert_eq!(row["connector"], "DP-7");
+    assert_eq!(row["connected"], false);
+    assert_eq!(known_monitors(&[output])["monitors"][0]["connected"], true);
+}

@@ -10,7 +10,7 @@ fn monitor() -> Monitor {
         }}}))
         .unwrap();
     monitor.event(&json!({"WorkspacesChanged":{"workspaces":[
-        {"id":1,"output":"DP-1","is_active":true},
+        {"id":1,"output":"DP-1","is_active":true,"is_focused":false},
         {"id":2,"output":"DP-1","is_active":false},
         {"id":3,"output":"DP-2","is_active":true}
     ]}}));
@@ -85,4 +85,48 @@ fn niri_tiled_geometry_without_positions_uses_the_active_column() {
     assert_eq!(monitor.snapshot().outputs.len(), 1);
     monitor.event(&json!({"WorkspaceActivated":{"id":2,"focused":true}}));
     assert!(monitor.snapshot().outputs.is_empty());
+}
+
+#[test]
+fn focused_window_follows_exact_focus_events_and_output_moves() {
+    let mut monitor = monitor();
+    assert!(monitor.snapshot().focused_outputs.is_empty());
+    monitor.event(&json!({"WindowFocusChanged":{"id":8}}));
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-1".into()]));
+    monitor.event(&json!({"WindowOpenedOrChanged":{"window":{
+        "id":8,"workspace_id":3,"is_focused":true,"is_floating":false,
+        "layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[800,800],"tile_pos_in_workspace_view":[0,0]}
+    }}}));
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-2".into()]));
+    monitor.event(&json!({"WindowFocusChanged":{"id":null}}));
+    assert!(monitor.snapshot().focused_outputs.is_empty());
+    monitor.event(&json!({"WindowFocusChanged":{"id":8}}));
+    monitor.event(&json!({"WindowClosed":{"id":8}}));
+    assert!(monitor.snapshot().focused_outputs.is_empty());
+}
+
+#[test]
+fn initial_window_snapshot_reports_focus() {
+    let mut monitor = monitor();
+    monitor.event(&json!({"WorkspacesChanged":{"workspaces":[
+        {"id":1,"output":"DP-1","is_active":true,"is_focused":true,"active_window_id":8},
+        {"id":2,"output":"DP-1","is_active":false,"is_focused":false,"active_window_id":null},
+        {"id":3,"output":"DP-2","is_active":true,"is_focused":false,"active_window_id":null}
+    ]}}));
+    monitor.event(&json!({"WindowsChanged":{"windows":[{
+        "id":8,"workspace_id":1,"is_focused":false,"is_floating":true,
+        "layout":{"pos_in_scrolling_layout":null,"tile_size":[400,300],"tile_pos_in_workspace_view":[10,10]}
+    }]}}));
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-1".into()]));
+}
+
+#[test]
+fn focused_workspace_events_track_active_window_without_window_focus_flags() {
+    let mut monitor = monitor();
+    monitor.event(&json!({"WorkspaceActivated":{"id":1,"focused":true}}));
+    monitor.event(&json!({"WorkspaceActiveWindowChanged":{"workspace_id":1,"active_window_id":8}}));
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-1".into()]));
+    monitor
+        .event(&json!({"WorkspaceActiveWindowChanged":{"workspace_id":1,"active_window_id":null}}));
+    assert!(monitor.snapshot().focused_outputs.is_empty());
 }

@@ -2,7 +2,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{keys, schema};
 
-pub const KEYS: [&str; 14] = [
+pub const KEYS: [&str; 22] = [
     keys::theme::POLICY,
     keys::theme::AUTHORITY,
     keys::theme::ENGINE,
@@ -17,6 +17,14 @@ pub const KEYS: [&str; 14] = [
     keys::theme::NOCTALIA_PURE_BLACK,
     keys::matugen::SCHEME_TYPE,
     keys::matugen::COLOR_INDEX,
+    keys::theme::STUDIO_METHOD,
+    keys::theme::STUDIO_MODE,
+    keys::theme::STUDIO_WARMTH,
+    keys::theme::STUDIO_COLOUR,
+    keys::theme::STUDIO_CONTRAST,
+    keys::theme::STUDIO_SHADES,
+    keys::theme::STUDIO_AREA,
+    keys::theme::STUDIO_AREA_IMAGE,
 ];
 
 pub fn snapshot(root: &Value) -> Map<String, Value> {
@@ -32,7 +40,7 @@ pub fn snapshot(root: &Value) -> Map<String, Value> {
                         schema::normalize_value(path, &json!(schema::read_number(root, path)?))?
                     }
                     schema::ValueKind::Text => json!(schema::read_text(root, path)?),
-                    _ => return None,
+                    schema::ValueKind::Array => json!(crate::arr_ref(root, path)),
                 },
             };
             Some((path.to_string(), value))

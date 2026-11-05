@@ -1,6 +1,8 @@
 #[derive(Clone, Copy)]
 pub struct ApplyStaticRequest<'a> {
     pub output: &'a str,
+    pub targets: &'a [String],
+    pub previous_static: Option<&'a std::collections::HashMap<String, String>>,
     pub path: &'a str,
     pub fill_mode: &'a str,
     pub from: Option<&'a str>,
@@ -34,8 +36,14 @@ pub struct ApplyOutputRequest<'a> {
     pub fill_mode: &'a str,
     pub mute: bool,
     pub volume: u32,
-    pub frame_rate: Option<&'a str>,
     pub transition: Option<OutputTransitionRequest<'a>>,
+    pub fanout: Option<ApplyFanout<'a>>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ApplyFanout<'a> {
+    pub targets: &'a [String],
+    pub previous_static: Option<&'a std::collections::HashMap<String, String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -68,6 +76,5 @@ pub trait WallpaperApplication: Send + Sync {
         we_id: &str,
         transition: Option<OutputTransitionRequest<'_>>,
     ) -> anyhow::Result<Option<String>>;
-    fn video_engine_is_vk(&self) -> bool;
     fn reload_we(&self) -> anyhow::Result<()>;
 }

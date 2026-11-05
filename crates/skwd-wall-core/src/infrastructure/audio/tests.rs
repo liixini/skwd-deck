@@ -304,6 +304,13 @@ fn entry_clamps_volume() {
 }
 
 #[test]
+fn thumb_only_when_captured() {
+    assert!(entry("static", "/w/a.png", "", false, 50).get("thumb").is_none());
+    assert!(entry("we", "", "../escape", false, 50).get("thumb").is_none());
+    assert!(entry("we", "", "no-such-capture-0", false, 50).get("thumb").is_none());
+}
+
+#[test]
 fn state_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let cd = dir.path().to_str().unwrap();

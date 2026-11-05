@@ -13,9 +13,19 @@ fn missing_and_corrupt_previews_keep_valid_thumbnail_artifacts() {
         if corrupt {
             std::fs::write(item.join("thumbnail.png"), b"invalid").unwrap();
         }
-        let result = generate_thumbnails(&item, "42", None, &thumb, &small).unwrap();
+        let result = generate_thumbnails(
+            &item,
+            "42",
+            None,
+            crate::media::Thumbs {
+                full: &thumb,
+                small: &small,
+                encoder: &crate::blocks::Encoder::default(),
+            },
+        )
+        .unwrap();
         assert_eq!((result.width, result.height), (0, 0));
-        assert!(artifacts_ready(&thumb));
+        assert!(artifacts_ready(&thumb, &small));
         assert!(small.is_file());
         assert!(we_sources_unchanged(&item, None, &thumb));
     }
@@ -28,6 +38,16 @@ fn missing_and_corrupt_previews_keep_valid_thumbnail_artifacts() {
         .set_times(std::fs::FileTimes::new().set_modified(later))
         .unwrap();
     assert!(!we_sources_unchanged(&item, None, &thumb));
-    let result = generate_thumbnails(&item, "42", None, &thumb, &small).unwrap();
+    let result = generate_thumbnails(
+        &item,
+        "42",
+        None,
+        crate::media::Thumbs {
+            full: &thumb,
+            small: &small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
     assert_eq!((result.width, result.height), (8, 8));
 }

@@ -9,6 +9,20 @@ use crate::state::WallState;
 
 static REQUESTS: Mutex<BTreeMap<String, u64>> = Mutex::new(BTreeMap::new());
 const THUMBNAIL_SETTLE: Duration = Duration::from_millis(1200);
+const DRAWING_INVALID_ID: &str = "invalid Wallpaper Engine id";
+
+pub fn drawing_signature(state: &WallState, we_id: &str) -> anyhow::Result<serde_json::Value> {
+    anyhow::ensure!(super::valid_we_id(we_id), DRAWING_INVALID_ID);
+    let source = state.config().we_dir().join(we_id);
+    Ok(signature(&source, &super::scene_overrides(state, we_id))?)
+}
+
+pub fn drawing_properties(
+    state: &WallState,
+    we_id: &str,
+) -> serde_json::Map<String, serde_json::Value> {
+    super::scene_overrides(state, we_id)
+}
 
 pub struct ThumbnailCapture {
     _guard: std::fs::File,
@@ -100,7 +114,7 @@ pub(super) fn schedule(
     let database = state.database();
     let source = state.config().we_dir().join(we_id);
     let directory = crate::paths::cache_dir().join("scene-thumbnails");
-    let scanner = crate::paths::sibling_bin("skwd-wall-scan");
+    let scanner = crate::paths::sibling_bin(crate::paths::SCAN_BIN);
     let properties = properties.clone();
     let generation = {
         let mut requests = crate::lock(&REQUESTS);
@@ -236,7 +250,7 @@ fn file_stamp(path: &Path) -> std::io::Result<serde_json::Value> {
     ]))
 }
 
-fn signature(
+pub(crate) fn signature(
     source: &Path,
     properties: &serde_json::Map<String, serde_json::Value>,
 ) -> std::io::Result<serde_json::Value> {

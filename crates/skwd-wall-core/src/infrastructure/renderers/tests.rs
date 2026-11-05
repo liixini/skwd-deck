@@ -340,7 +340,7 @@ fn video_swap_line() {
 }
 
 #[test]
-fn grouped_scene_freeze_targets_served_output() {
+fn grouped_scene_snapshots() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("scene.stdin");
     let st = state();
@@ -348,11 +348,12 @@ fn grouped_scene_freeze_targets_served_output() {
     st.set_video_paper("DP-1,DP-2", child, stdin);
     st.mark_scene_paper("DP-1,DP-2", true);
 
-    let handle =
-        st.freeze_scene("DP-2", "/cache/live-scene.ppm").expect("grouped scene serves DP-2");
+    let handle = st
+        .capture_renderer_frame("DP-2", "/cache/live-scene.ppm", true)
+        .expect("grouped scene serves DP-2");
     assert_eq!(handle.key, "DP-1,DP-2");
-    st.finish_scene_freeze(&handle);
-    assert!(st.freeze_scene("DP-3", "/cache/wrong.ppm").is_none());
+    st.finish_renderer_capture(&handle);
+    assert!(st.capture_renderer_frame("DP-3", "/cache/wrong.ppm", true).is_none());
 
     for (mut child, stdin) in st.take_all_video_papers() {
         drop(stdin);
@@ -361,10 +362,42 @@ fn grouped_scene_freeze_targets_served_output() {
     assert_eq!(
         json_lines(&out),
         vec![
-            serde_json::json!({"to": "", "freeze": "/cache/live-scene.ppm"}),
-            serde_json::json!({"to": "", "pause": false}),
+            serde_json::json!({"to": "", "snapshot": {"path": "/cache/live-scene.ppm", "output": "DP-2"}}),
         ]
     );
+}
+
+#[test]
+fn video_freeze_reaches_renderer() {
+    for (presented, expected) in [
+        (false, serde_json::json!({"to":"","freeze":"/cache/live-video.ppm"})),
+        (
+            true,
+            serde_json::json!({"to":"","pause":true,"freeze":"/cache/live-video.ppm","snapshot":{"path":"/cache/live-video.ppm","output":"DP-1"}}),
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("video.stdin");
+        let st = state();
+        st.set_output_paused("DP-1", true).unwrap();
+        let (child, stdin) = capture_child(&input);
+        st.set_video_paper("DP-1", child, stdin);
+        assert!(!st.is_scene_paper("DP-1"));
+        let handle = st.capture_renderer_frame("DP-1", "/cache/live-video.ppm", presented).unwrap();
+        st.finish_renderer_capture(&handle);
+        for (mut child, stdin) in st.take_all_video_papers() {
+            drop(stdin);
+            let _ = child.wait();
+        }
+        assert_eq!(
+            json_lines(&input),
+            [
+                serde_json::json!({"to":"","pause":true}),
+                expected,
+                serde_json::json!({"to":"","pause":true}),
+            ]
+        );
+    }
 }
 
 #[test]
@@ -375,14 +408,14 @@ fn scene_freeze_liveness_tracks_exit_and_replacement() {
     let (live, stdin) = capture_child(&original_input);
     st.set_video_paper("DP-1", live, stdin);
     st.mark_scene_paper("DP-1", true);
-    let handle = st.freeze_scene("DP-1", "/cache/live.ppm").expect("freeze handle");
-    assert!(st.scene_freeze_alive(&handle));
+    let handle = st.capture_renderer_frame("DP-1", "/cache/live.ppm", true).expect("freeze handle");
+    assert!(st.renderer_capture_alive(&handle));
 
     let replacement_input = directory.path().join("replacement.stdin");
     let (replacement, stdin) = capture_child(&replacement_input);
     st.set_video_paper("DP-1", replacement, stdin);
-    assert!(!st.scene_freeze_alive(&handle));
-    st.finish_scene_freeze(&handle);
+    assert!(!st.renderer_capture_alive(&handle));
+    st.finish_renderer_capture(&handle);
     std::thread::sleep(Duration::from_millis(10));
     assert!(std::fs::read_to_string(replacement_input).unwrap_or_default().is_empty());
     for renderer in st.take_all_video_papers() {
@@ -533,6 +566,66 @@ fn multi_audio_routed_by_output() {
 }
 
 #[test]
+fn shared_video_retains() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("multi");
+    let st = state();
+    let (child, stdin) = capture_child(&file);
+    let pid = child.id();
+    st.set_video_paper("multi", child, stdin);
+    st.set_assignment("multi", "DP-1=/v/a.mp4;DP-2=/v/b.mp4;DP-3=/v/c.mp4");
+
+    st.retire_shared_outputs(&["DP-1".to_string(), "DP-3".to_string()]).unwrap();
+
+    assert_eq!(st.video_paper_pid("multi"), Some(pid));
+    assert_eq!(st.assignments().get("multi").map(String::as_str), Some("DP-2=/v/b.mp4"));
+    let (mut child, stdin) = st.take_video_paper("multi").unwrap();
+    drop(stdin);
+    child.wait().unwrap();
+    assert_eq!(json_lines(&file), vec![serde_json::json!({"to": "", "outputs": ["DP-2"]})]);
+}
+
+#[test]
+fn shared_video_retires() {
+    let dir = tempfile::tempdir().unwrap();
+    let st = state();
+    let (child, stdin) = capture_child(&dir.path().join("multi"));
+    st.set_video_paper("multi", child, stdin);
+    st.set_assignment("multi", "DP-1=/v/a.mp4");
+
+    st.retire_shared_outputs(&["DP-1".to_string()]).unwrap();
+
+    assert!(!st.has_video_paper("multi"));
+    assert!(!st.assignments().contains_key("multi"));
+}
+
+#[test]
+fn shared_video_snapshots() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("multi");
+    let st = state();
+    let (child, stdin) = capture_child(&file);
+    st.set_video_paper("multi", child, stdin);
+    st.set_assignment("multi", "DP-1=/v/a.mp4;DP-2=/v/b.mp4");
+
+    let handle = st.capture_renderer_frame("DP-2", "/cache/live.ppm", true).unwrap();
+    st.finish_renderer_capture(&handle);
+
+    assert_eq!(handle.key, "multi");
+    assert!(!handle.restores_pause);
+    assert!(st.capture_renderer_frame("DP-3", "/cache/other.ppm", true).is_none());
+    let (mut child, stdin) = st.take_video_paper("multi").unwrap();
+    drop(stdin);
+    child.wait().unwrap();
+    assert_eq!(
+        json_lines(&file),
+        vec![serde_json::json!({
+            "to": "", "snapshot": {"path": "/cache/live.ppm", "output": "DP-2"}
+        })]
+    );
+}
+
+#[test]
 fn render_pause_broadcast() {
     let dir = tempfile::tempdir().unwrap();
     let paper_out = dir.path().join("paper.stdin");
@@ -543,8 +636,8 @@ fn render_pause_broadcast() {
     st.swap_paper(child);
     let (child, stdin) = capture_child(&vid_out);
     st.set_video_paper("DP-1", child, stdin);
-    st.set_paused(true);
-    st.set_paused(false);
+    st.set_paused(true).unwrap();
+    st.set_paused(false).unwrap();
     for (mut child, stdin) in st.take_all_video_papers() {
         drop(stdin);
         let _ = child.wait();
@@ -567,10 +660,10 @@ fn pause_sessions_compose() {
     st.set_paper_stdin(stdin);
     st.swap_paper(child);
     st.set_session_paused(11, true);
-    st.set_paused(true);
+    st.set_paused(true).unwrap();
     st.set_session_paused(22, true);
     st.set_session_paused(11, false);
-    st.set_paused(false);
+    st.set_paused(false).unwrap();
     st.set_session_paused(22, false);
     drop(st.take_paper_stdin());
     let (mut child, stdin) = st.take_paper().unwrap();
@@ -672,8 +765,8 @@ fn manual_pause_beats_exemption() {
     st.restore_paper((child, stdin));
     st.allow_session_rendering_for(pid, Duration::from_secs(1));
     st.end_apply();
-    st.set_paused(true);
-    st.set_paused(false);
+    st.set_paused(true).unwrap();
+    st.set_paused(false).unwrap();
     st.set_session_paused(11, false);
     let (mut child, stdin) = st.take_paper().unwrap();
     drop(stdin);
@@ -890,4 +983,131 @@ fn surface_effects_reach_healthy_outputs_after_a_broken_pipe() {
     assert_eq!(json_lines(&still)[0]["surface"]["blur"], 11);
     drop(st.take_paper_stdin());
     drop(st.take_paper());
+}
+
+#[test]
+fn shared_scene_retains() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("scene");
+    let st = state();
+    let (child, stdin) = capture_child(&file);
+    let pid = child.id();
+    st.set_video_paper("DP-1,DP-3", child, stdin);
+    st.mark_scene_paper("DP-1,DP-3", true);
+    st.set_policy("scene-fps:DP-1,DP-3", "30");
+    st.set_we_render(
+        std::collections::BTreeMap::from([("cat".into(), vec!["DP-1".into(), "DP-3".into()])]),
+        std::collections::BTreeMap::from([("cat".into(), (true, 100))]),
+    );
+
+    st.retire_shared_outputs(&["DP-1".into()]).unwrap();
+
+    assert_eq!(st.video_paper_pid("DP-3"), Some(pid));
+    assert!(!st.has_video_paper("DP-1,DP-3"));
+    assert_eq!(st.scene_paper_key_for("DP-3").as_deref(), Some("DP-3"));
+    assert!(st.scene_paper_key_for("DP-1").is_none());
+    assert_eq!(st.policy("scene-fps:DP-3").as_deref(), Some("30"));
+    assert!(st.we_render_groups_match(&std::collections::BTreeMap::from([(
+        "cat".into(),
+        vec!["DP-3".into()]
+    ),])));
+    let (mut child, stdin) = st.take_video_paper("DP-3").unwrap();
+    drop(stdin);
+    child.wait().unwrap();
+    assert_eq!(json_lines(&file), vec![serde_json::json!({"to": "", "outputs": ["DP-3"]})]);
+}
+
+#[test]
+fn failed_scene_retirement() {
+    let st = state();
+    let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+    let pid = child.id();
+    st.set_video_paper("DP-1,DP-3", child, None);
+    st.mark_scene_paper("DP-1,DP-3", true);
+    assert!(st.retire_shared_outputs(&["DP-1".into()]).is_err());
+    assert_eq!(st.video_paper_pid("DP-1,DP-3"), Some(pid));
+    assert!(st.is_scene_paper("DP-1,DP-3"));
+    st.kill_video_paper("DP-1,DP-3");
+}
+
+#[test]
+fn still_snapshot_ownership() {
+    for global in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("still.stdin");
+        let st = state();
+        let (child, stdin) = capture_child(&input);
+        if global {
+            st.set_base_still(child, stdin);
+        } else {
+            st.set_output_still("DP-2", child, stdin);
+            assert!(st.capture_renderer_frame("DP-1", "/cache/wrong.ppm", true).is_none());
+        }
+        let handle = st.capture_renderer_frame("DP-2", "/cache/still.ppm", true).unwrap();
+        assert!(st.renderer_capture_alive(&handle));
+        st.finish_renderer_capture(&handle);
+        let (mut child, stdin) = if global {
+            st.take_base_still().unwrap()
+        } else {
+            st.take_output_still("DP-2").unwrap()
+        };
+        drop(stdin);
+        child.wait().unwrap();
+        assert!(!st.renderer_capture_alive(&handle));
+        assert_eq!(
+            json_lines(&input),
+            [serde_json::json!({
+                "path":"", "snapshot":{"path":"/cache/still.ppm","output":"DP-2"}
+            })]
+        );
+    }
+}
+
+#[test]
+fn legacy_paper_pause() {
+    use std::io::{BufRead, BufReader, Write};
+
+    const CASE: &str = "SKWD_LEGACY_PAPER_CASE";
+    if std::env::var_os(CASE).is_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "infrastructure::renderers::tests::legacy_paper_pause"])
+            .env(CASE, "1")
+            .env("SKWD_PAPER_V2_SOCKET", temp.path().join("paper.sock"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let listener =
+        std::os::unix::net::UnixListener::bind(crate::infrastructure::paper::paper_socket_path())
+            .unwrap();
+    let server = std::thread::spawn(move || {
+        let mut methods = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+            let request: paper_control::Request = paper_control::decode_ndjson(&line).unwrap();
+            let result = match &request.params {
+                paper_control::RequestParams::Capabilities(_) => {
+                    let mut capabilities = paper_control::CapabilitiesResult::current();
+                    capabilities.controls.playback.clear();
+                    serde_json::json!(capabilities)
+                }
+                paper_control::RequestParams::Pause(pause) => {
+                    assert!(pause.outputs.is_empty() && pause.paused);
+                    serde_json::json!({"paused": pause.paused})
+                }
+                _ => panic!("unexpected Paper request"),
+            };
+            methods.push(serde_json::to_value(&request).unwrap()["method"].clone());
+            writeln!(stream, "{}", serde_json::json!({"id": request.id, "result": result}))
+                .unwrap();
+        }
+        methods
+    });
+    let supervisor = RendererSupervisor::default();
+    supervisor.set_paused(true).unwrap();
+    assert_eq!(server.join().unwrap(), ["paper.capabilities", "paper.pause"]);
 }

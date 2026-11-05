@@ -41,10 +41,6 @@ impl WallpaperApplication for FailingApplication {
         anyhow::bail!("injected WE failure")
     }
 
-    fn video_engine_is_vk(&self) -> bool {
-        true
-    }
-
     fn reload_we(&self) -> anyhow::Result<()> {
         anyhow::bail!("injected reload failure")
     }
@@ -58,15 +54,42 @@ impl SupersedingApplication {
     }
 }
 
-struct FlakyApplication(std::sync::atomic::AtomicBool);
+struct StaticCall {
+    targets: Vec<String>,
+    previous: Option<std::collections::HashMap<String, String>>,
+}
+
+struct MediaCall {
+    kind: String,
+    targets: Vec<String>,
+    previous: Option<std::collections::HashMap<String, String>>,
+}
+
+struct FlakyApplication {
+    attempted: std::sync::atomic::AtomicBool,
+    static_calls: std::sync::Mutex<Vec<StaticCall>>,
+    media_calls: std::sync::Mutex<Vec<MediaCall>>,
+}
 
 impl FlakyApplication {
     fn new() -> Self {
-        Self(std::sync::atomic::AtomicBool::new(false))
+        Self {
+            attempted: std::sync::atomic::AtomicBool::new(false),
+            static_calls: std::sync::Mutex::new(Vec::new()),
+            media_calls: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn ready() -> Self {
+        Self {
+            attempted: std::sync::atomic::AtomicBool::new(true),
+            static_calls: std::sync::Mutex::new(Vec::new()),
+            media_calls: std::sync::Mutex::new(Vec::new()),
+        }
     }
 
     fn attempt(&self) -> anyhow::Result<()> {
-        if self.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if self.attempted.swap(true, std::sync::atomic::Ordering::SeqCst) {
             Ok(())
         } else {
             anyhow::bail!("retryable injected failure")
@@ -79,7 +102,11 @@ impl WallpaperApplication for FlakyApplication {
         anyhow::bail!("injected release failure")
     }
 
-    fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
+    fn apply_static(&self, request: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
+        self.static_calls.lock().unwrap().push(StaticCall {
+            targets: request.targets.to_vec(),
+            previous: request.previous_static.cloned(),
+        });
         self.attempt()
     }
     fn apply_static_smart(&self, _: StaticSmartRequest<'_>) -> anyhow::Result<()> {
@@ -88,7 +115,14 @@ impl WallpaperApplication for FlakyApplication {
     fn apply_video(&self, _: ApplyVideoRequest<'_>) -> anyhow::Result<()> {
         self.attempt()
     }
-    fn apply_output(&self, _: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+    fn apply_output(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+        if let Some(fanout) = request.fanout {
+            self.media_calls.lock().unwrap().push(MediaCall {
+                kind: request.kind.to_string(),
+                targets: fanout.targets.to_vec(),
+                previous: fanout.previous_static.cloned(),
+            });
+        }
         self.attempt()
     }
     fn apply_video_transition(&self, _: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
@@ -101,9 +135,6 @@ impl WallpaperApplication for FlakyApplication {
     ) -> anyhow::Result<Option<String>> {
         self.attempt()?;
         Ok(None)
-    }
-    fn video_engine_is_vk(&self) -> bool {
-        true
     }
     fn reload_we(&self) -> anyhow::Result<()> {
         Ok(())
@@ -147,10 +178,6 @@ impl WallpaperApplication for SupersedingApplication {
     ) -> anyhow::Result<Option<String>> {
         self.supersede();
         Ok(None)
-    }
-
-    fn video_engine_is_vk(&self) -> bool {
-        true
     }
 
     fn reload_we(&self) -> anyhow::Result<()> {
@@ -394,6 +421,7 @@ struct OneShotSupersedingApplication {
     state: std::sync::Arc<skwd_wall_core::WallState>,
     cache: String,
     fired: std::sync::atomic::AtomicBool,
+    outputs: std::sync::Mutex<Vec<String>>,
 }
 
 impl WallpaperApplication for OneShotSupersedingApplication {
@@ -420,13 +448,11 @@ impl WallpaperApplication for OneShotSupersedingApplication {
     ) -> anyhow::Result<Option<String>> {
         unreachable!()
     }
-    fn video_engine_is_vk(&self) -> bool {
-        true
-    }
     fn reload_we(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    fn apply_output(&self, _: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+    fn apply_output(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
+        self.outputs.lock().unwrap().push(request.output.to_string());
         let desired = skwd_wall_core::audio::read_state(&self.cache);
         let assignments = desired
             .as_object()
@@ -453,14 +479,20 @@ fn newer_generation_deterministically_beats_the_entire_locked_fanout() {
     let history =
         crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
     let baseline = serde_json::json!({
-        "*": skwd_wall_core::audio::entry("video", "/old.mp4", "", true, 0),
+        "*": skwd_wall_core::audio::entry("video", "/old-unlocked.mp4", "", true, 0),
+        "DP-2": skwd_wall_core::audio::entry("video", "/locked.mp4", "", true, 0),
     });
     skwd_wall_core::audio::write_state(&state.config().cache_dir(), &baseline);
-    state.renderers().set_assignment("*", "/old.mp4");
+    let assignments = std::collections::HashMap::from([
+        ("*".to_string(), "/old-unlocked.mp4".to_string()),
+        ("DP-2".to_string(), "/locked.mp4".to_string()),
+    ]);
+    state.renderers().replace_assignments(assignments.clone());
     let app = OneShotSupersedingApplication {
         state: std::sync::Arc::clone(&state),
         cache: state.config().cache_dir(),
         fired: std::sync::atomic::AtomicBool::new(false),
+        outputs: std::sync::Mutex::new(Vec::new()),
     };
     let before = state.apply().generation();
     let error = apply_locked_fanout(
@@ -475,8 +507,8 @@ fn newer_generation_deterministically_beats_the_entire_locked_fanout() {
         true,
         0,
         ApplySource::User,
-        &["DP-1".into(), "DP-2".into()],
-        &["LOCKED".into()],
+        &["DP-1".into(), "DP-3".into()],
+        &["DP-2".into()],
         false,
         false,
         None,
@@ -486,13 +518,15 @@ fn newer_generation_deterministically_beats_the_entire_locked_fanout() {
     assert!(error.downcast_ref::<SupersededApply>().is_some());
     assert_eq!(state.apply().generation(), before + 2, "one fanout claim plus one newer request");
     assert_eq!(skwd_wall_core::audio::read_state(&state.config().cache_dir()), baseline);
-    assert_eq!(
-        state.renderers().assignments(),
-        std::collections::HashMap::from([("*".to_string(), "/old.mp4".to_string())])
-    );
+    assert_eq!(state.renderers().assignments(), assignments);
+    assert_eq!(*app.outputs.lock().unwrap(), ["DP-1", "DP-1", "DP-3"]);
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "locked fanout publishes one renderer and state transaction"
+)]
 fn successful_locked_fanout_publishes_each_committed_output_in_production_path() {
     let (_guard, root) = testenv::lock();
     testenv::write_config(serde_json::json!({
@@ -530,10 +564,12 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
     for name in ["last-wallpaper.json", "history.json", "last-applied.json", "outputs.json"] {
         let _ = std::fs::remove_file(std::path::Path::new(&cache).join(name));
     }
-    skwd_wall_core::audio::set_entry(&cache, "LOCKED", "static", "/keep.png", "", true, 0);
+    skwd_wall_core::audio::set_entry(&cache, "DP-1", "static", "/old-first.png", "", true, 0);
+    skwd_wall_core::audio::set_entry(&cache, "DP-2", "video", "/keep.mp4", "", true, 0);
+    skwd_wall_core::audio::set_entry(&cache, "DP-3", "static", "/old-last.png", "", true, 0);
     let mut events = testenv::subscribe(&publisher);
-    let outputs = vec!["DP-1".to_string(), "DP-2".to_string(), "DP-3".to_string()];
-    let application = FlakyApplication(std::sync::atomic::AtomicBool::new(true));
+    let outputs = vec!["DP-1".to_string(), "DP-3".to_string()];
+    let application = FlakyApplication::ready();
 
     let result = apply_locked_fanout(
         &state,
@@ -548,7 +584,7 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
         0,
         ApplySource::User,
         &outputs,
-        &["LOCKED".into()],
+        &["DP-2".into()],
         false,
         false,
         None,
@@ -561,17 +597,27 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
     for output in &outputs {
         assert_eq!(desired[output]["path"], path);
     }
-    assert_eq!(desired["LOCKED"]["path"], "/keep.png");
+    assert_eq!(desired["DP-2"]["path"], "/keep.mp4");
+    let calls = application.static_calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].targets, outputs);
+    assert_eq!(
+        calls[0].previous,
+        Some(std::collections::HashMap::from([
+            ("DP-1".to_string(), "/old-first.png".to_string()),
+            ("DP-3".to_string(), "/old-last.png".to_string()),
+        ]))
+    );
     let applied: Vec<_> = testenv::events(&mut events)
         .into_iter()
         .filter(|event| event.event == wall_proto::ev::APPLIED)
         .collect();
-    assert_eq!(applied.len(), 3);
+    assert_eq!(applied.len(), 2);
     let mut event_outputs: Vec<_> =
         applied.iter().filter_map(|event| event.data["output"].as_str()).collect();
     event_outputs.sort_unstable();
-    assert_eq!(event_outputs, ["DP-1", "DP-2", "DP-3"]);
-    assert_eq!(stats.counters_json()["applies"], 3);
+    assert_eq!(event_outputs, ["DP-1", "DP-3"]);
+    assert_eq!(stats.counters_json()["applies"], 2);
     let last: serde_json::Value = serde_json::from_slice(
         &std::fs::read(std::path::Path::new(&cache).join("last-wallpaper.json")).unwrap(),
     )
@@ -582,7 +628,7 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
     let rows = state.with_db(|db| skwd_wall_core::db::list_wallpapers(db, false)).unwrap();
     assert_eq!(
         rows.iter().find(|row| row["key"] == "static:fanout.png").unwrap()["apply_count"],
-        3
+        2
     );
     let history_json: serde_json::Value = serde_json::from_slice(
         &std::fs::read(std::path::Path::new(&cache).join("history.json")).unwrap(),
@@ -593,7 +639,67 @@ fn successful_locked_fanout_publishes_each_committed_output_in_production_path()
     }
 }
 
-struct ExpectedWeTransition {
+#[test]
+fn media_fanout_preserves_sources() {
+    let (_guard, root) = testenv::lock();
+    let we = root.join("we/42");
+    std::fs::create_dir_all(&we).unwrap();
+    std::fs::write(we.join("project.json"), br#"{"type":"scene"}"#).unwrap();
+    std::fs::write(we.join("scene.pkg"), b"scene").unwrap();
+    testenv::write_config(serde_json::json!({
+        "paths":{"steamWorkshop":root.join("we")},
+        "features":{"steam":true},
+        "pickOnlyMode":false,
+        "display":{"outputLocks":{"DP-2":true}}
+    }));
+    let (state, publisher, stats) = testenv::harness();
+    let history =
+        crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
+    let targets = ["DP-1".to_string(), "DP-3".to_string()];
+    let previous = std::collections::HashMap::from([
+        ("DP-1".to_string(), "/old-first.png".to_string()),
+        ("DP-3".to_string(), "/old-last.png".to_string()),
+    ]);
+    for (kind, path, we_id) in [("video", "/wall/next.mp4", ""), ("we", "", "42")] {
+        let cache = state.config().cache_dir();
+        for (output, path) in &previous {
+            skwd_wall_core::audio::set_entry(&cache, output, "static", path, "", true, 0);
+        }
+        skwd_wall_core::audio::set_entry(&cache, "DP-2", "video", "/keep.mp4", "", true, 0);
+        let application = FlakyApplication::ready();
+        let result = apply_locked_fanout(
+            &state,
+            &application,
+            &history,
+            publisher.as_ref(),
+            &stats,
+            kind,
+            path,
+            we_id,
+            true,
+            0,
+            ApplySource::User,
+            &targets,
+            &["DP-2".into()],
+            false,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result["applied"], serde_json::json!(targets));
+        let calls = application.media_calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].kind, kind);
+        assert_eq!(calls[0].targets, targets);
+        for (output, path) in &previous {
+            assert_eq!(calls[0].previous.as_ref().unwrap().get(output), Some(path));
+        }
+        assert_eq!(skwd_wall_core::audio::read_state(&cache)["DP-2"]["path"], "/keep.mp4");
+    }
+}
+
+struct ExpectedTransition {
     output: &'static str,
     kind: &'static str,
     enabled: bool,
@@ -602,12 +708,12 @@ struct ExpectedWeTransition {
     calls: std::sync::atomic::AtomicUsize,
 }
 
-impl ExpectedWeTransition {
+impl ExpectedTransition {
     fn check(
         &self,
         transition: Option<skwd_wall_core::backend::wallpaper::OutputTransitionRequest<'_>>,
     ) {
-        let transition = transition.expect("resolved Wallpaper Engine transition policy");
+        let transition = transition.expect("resolved transition policy");
         assert_eq!(transition.enabled, self.enabled);
         assert_eq!(transition.shader, self.shader);
         assert_eq!(transition.duration_ms, self.duration_ms);
@@ -615,13 +721,17 @@ impl ExpectedWeTransition {
     }
 }
 
-impl WallpaperApplication for ExpectedWeTransition {
+impl WallpaperApplication for ExpectedTransition {
     fn release_outputs(&self, _: &[String]) -> anyhow::Result<()> {
         anyhow::bail!("injected release failure")
     }
 
-    fn apply_static(&self, _: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
-        unreachable!()
+    fn apply_static(&self, request: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
+        assert_eq!(request.output, self.output);
+        assert_eq!(request.shader, self.shader);
+        assert_eq!(request.duration_ms, self.duration_ms);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        anyhow::bail!("captured transition request")
     }
     fn apply_static_smart(&self, _: StaticSmartRequest<'_>) -> anyhow::Result<()> {
         unreachable!()
@@ -647,9 +757,6 @@ impl WallpaperApplication for ExpectedWeTransition {
         assert!(matches!(we_id, "42" | "43"));
         self.check(transition);
         anyhow::bail!("captured transition request")
-    }
-    fn video_engine_is_vk(&self) -> bool {
-        true
     }
     fn reload_we(&self) -> anyhow::Result<()> {
         unreachable!()
@@ -681,46 +788,106 @@ fn wallpaper_engine_resolves_request_transition_for_scene_and_video_outputs() {
         for (id, kind) in [("42", "we"), ("43", "video")] {
             for output in ["*", "DP-1"] {
                 for (enabled, suppressed) in [(true, false), (false, false), (true, true)] {
-                    let application = ExpectedWeTransition {
-                        output,
-                        kind,
-                        enabled: enabled && !suppressed,
-                        shader: "crossfade",
-                        duration_ms: 430,
-                        calls: std::sync::atomic::AtomicUsize::new(0),
-                    };
-                    let request = super::TransitionOverride {
-                        enabled: Some(enabled),
-                        shader: Some("crossfade".into()),
-                        duration_ms: Some(430),
-                    };
-                    let error = apply_core(
-                        &state,
-                        &application,
-                        &history,
-                        publisher.as_ref(),
-                        &stats,
-                        "we",
-                        "",
-                        id,
-                        true,
-                        0,
-                        ApplySource::User,
-                        output,
-                        false,
-                        suppressed,
-                        Some(&request),
-                        None,
-                    )
-                    .unwrap_err();
-                    assert!(error.to_string().contains("captured transition request"));
-                    assert_eq!(application.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-                    assert!(!state.apply().no_transition());
-                    assert_eq!(state.config().transition().active(), configured);
-                    assert_eq!(state.config().transition().shader(), "sand-globe");
-                    assert_eq!(state.config().transition().duration_ms(), 725);
+                    for (shader, requested_ms, expected_ms) in [
+                        ("crossfade", Some(430), 430),
+                        (paper_control::transitions::PAPER_HEART, None, 3900),
+                        (paper_control::transitions::PAPER_HEART, Some(430), 430),
+                    ] {
+                        let application = ExpectedTransition {
+                            output,
+                            kind,
+                            enabled: enabled && !suppressed,
+                            shader,
+                            duration_ms: expected_ms,
+                            calls: std::sync::atomic::AtomicUsize::new(0),
+                        };
+                        let request = super::TransitionOverride {
+                            enabled: Some(enabled),
+                            shader: Some(shader.into()),
+                            duration_ms: requested_ms,
+                        };
+                        let error = apply_core(
+                            &state,
+                            &application,
+                            &history,
+                            publisher.as_ref(),
+                            &stats,
+                            "we",
+                            "",
+                            id,
+                            true,
+                            0,
+                            ApplySource::User,
+                            output,
+                            false,
+                            suppressed,
+                            Some(&request),
+                            None,
+                        )
+                        .unwrap_err();
+                        assert!(error.to_string().contains("captured transition request"));
+                        assert_eq!(application.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+                        assert!(!state.apply().no_transition());
+                        assert_eq!(state.config().transition().active(), configured);
+                        assert_eq!(state.config().transition().shader(), "sand-globe");
+                        assert_eq!(state.config().transition().duration_ms(), 725);
+                    }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn preset_timing_reaches_media() {
+    let (_guard, root) = testenv::lock();
+    let image = root.join("preset.png");
+    std::fs::write(&image, "fixture").unwrap();
+    testenv::write_config(serde_json::json!({"transition": {
+        "shader": "crossfade", "durationMs": 4000
+    }}));
+    let (state, publisher, stats) = testenv::harness();
+    let history =
+        crate::infrastructure::history::FileHistoryRepository::new(state.config().cache_dir());
+    for (kind, path) in [
+        (wall_proto::kind::STATIC, image.to_str().unwrap()),
+        (wall_proto::kind::VIDEO, "/wall/preset.mp4"),
+    ] {
+        for (requested_ms, expected_ms) in [(None, 3900), (Some(430), 430)] {
+            let application = ExpectedTransition {
+                output: "DP-1",
+                kind,
+                enabled: true,
+                shader: paper_control::transitions::PAPER_HEART,
+                duration_ms: expected_ms,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            };
+            let transition_override = super::TransitionOverride {
+                enabled: None,
+                shader: Some(paper_control::transitions::PAPER_HEART.into()),
+                duration_ms: requested_ms,
+            };
+            let error = apply_core(
+                &state,
+                &application,
+                &history,
+                publisher.as_ref(),
+                &stats,
+                kind,
+                path,
+                "",
+                true,
+                0,
+                ApplySource::User,
+                "DP-1",
+                false,
+                false,
+                Some(&transition_override),
+                None,
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("captured transition request"));
+            assert_eq!(application.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         }
     }
 }
@@ -843,8 +1010,7 @@ fn manual_cancels_queued_weather() {
     };
     assert!(attempt(ApplySource::User, &FailingApplication).is_err());
     assert!(weather::allows(&state, "DP-1", Some(id), 1, "static:weather-manual.png"));
-    attempt(ApplySource::User, &FlakyApplication(std::sync::atomic::AtomicBool::new(true)))
-        .unwrap();
+    attempt(ApplySource::User, &FlakyApplication::ready()).unwrap();
     assert!(!weather::allows(&state, "DP-1", Some(id), 1, "static:weather-manual.png"));
     let error = attempt(ApplySource::Weather { playlist_id: id, revision: 1 }, &FailingApplication)
         .unwrap_err();

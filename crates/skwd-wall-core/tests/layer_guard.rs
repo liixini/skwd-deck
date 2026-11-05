@@ -302,7 +302,7 @@ fn config_feature_facades_are_bounded_and_canonical() {
         ("value/renderer.rs", "pub struct RendererConfig", 160),
         ("value/renderer/binaries.rs", "impl RendererConfig", 100),
         ("value/theme.rs", "pub struct ThemeConfig", 241),
-        ("value/transition.rs", "pub struct TransitionConfig", 90),
+        ("value/transition.rs", "pub struct TransitionConfig", 100),
     ] {
         let source = std::fs::read_to_string(config.join(owner)).expect("read config owner");
         assert!(source.contains(marker), "{owner} lost {marker}");
@@ -384,6 +384,7 @@ fn wallpaper_apply_owners_are_explicit() {
         ("launch.rs", "struct RendererTransaction"),
         ("reconcile.rs", "struct PreparedBatch"),
         ("refresh.rs", "fn refresh_renderer_policy"),
+        ("service.rs", "fn scenes_match("),
     ];
     let production: Vec<(PathBuf, String)> = production_rust_files(&root)
         .into_iter()
@@ -433,6 +434,7 @@ fn wallpaper_apply_owners_are_explicit() {
         ("transition.rs", 320),
         ("reconcile.rs", 380),
         ("refresh.rs", 80),
+        ("service.rs", 180),
     ] {
         let lines = std::fs::read_to_string(root.join(owner))
             .expect("read bounded apply owner")

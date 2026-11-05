@@ -6,6 +6,7 @@ license.workspace = true
 description = "Transient Steam Workshop downloader for Skwd Deck"
 
 [dependencies]
+wall-proto = { path = "../wall-proto" }
 steamworks = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }

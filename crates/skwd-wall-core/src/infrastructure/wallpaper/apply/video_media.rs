@@ -39,6 +39,8 @@ pub fn apply_video_transition(
             state,
             "*",
             Some(crate::infrastructure::paper::TransitionPolicy {
+                drawing: None,
+                drawing_source: None,
                 fps: None,
                 from: Some(from.to_string()),
                 effect: Some(shader.to_string()),
@@ -334,8 +336,10 @@ pub(super) fn reconcile_video_multi<'a>(
         let path = entry.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
         if path.is_empty()
             || !is_safe_positional(path)
+            || path.contains(';')
             || output.contains(',')
             || output.contains('=')
+            || output.contains(';')
         {
             return false;
         }

@@ -81,7 +81,7 @@ fn media_source(config: &Config, source: &str) -> Result<Source> {
     if path.is_dir() {
         Ok(Source::wallpaper_engine(text))
     } else if skwd_wall_core::paths::is_video_path(&path) {
-        Ok(Source::video(text, None))
+        Ok(Source::video(text))
     } else {
         Ok(Source::static_file(text))
     }
@@ -120,7 +120,11 @@ fn pause(backdrop: &mut Backdrop) -> Result<()> {
     if backdrop.paused != Some(paused)
         && let Some(client) = &backdrop.client
     {
-        client.set_paused(paused)?;
+        client.set_paused(skwd_wall_core::infrastructure::paper::PauseRequest {
+            overrides: std::collections::BTreeMap::new(),
+            paused,
+            outputs: Vec::new(),
+        })?;
         backdrop.paused = Some(paused);
     }
     Ok(())
@@ -140,9 +144,7 @@ pub fn set_overview(open: Option<bool>) {
         let _apply = state.apply().lock();
         let config = state.config().clone();
         if skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config)
-            && let Err(error) = state.renderers().set_surface(|kind| {
-                skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
-            })
+            && let Err(error) = set_surface(&state, &config)
         {
             RETRY_SURFACE.store(true, Ordering::Release);
             log::warn!("overview-wallpaper: {error}");
@@ -200,22 +202,29 @@ pub fn refresh_from_disk(state: &Arc<skwd_wall_core::state::WallState>) -> Resul
         Some(Arc::downgrade(state));
     let active = skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config);
     if active != STATIONARY_ACTIVE.load(Ordering::Acquire) {
-        let tinier = !active && skwd_wall_core::infrastructure::paper::restore_tinier(state)?;
-        if !tinier {
-            skwd_wall_core::apply::refresh_renderer_policy_locked(state)?;
+        if let Some(client) = PaperClient::existing()? {
+            client.set_surface_overrides(paper_control::SurfaceOverridesRequest {
+                surfaces: std::collections::BTreeMap::new(),
+            })?;
         }
-        let socket = skwd_wall_core::infrastructure::paper::paper_socket_path();
-        if !tinier && socket.exists() {
-            PaperClient::configured(&config).stop(Vec::new())?;
-        }
+        skwd_wall_core::apply::refresh_renderer_policy_locked(state)?;
         STATIONARY_ACTIVE.store(active, Ordering::Release);
     }
     if active {
-        state.renderers().set_surface(|kind| {
-            skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
-        })?;
+        set_surface(state, &config)?;
     }
     refresh_backdrop(&config)
+}
+
+fn set_surface(state: &skwd_wall_core::state::WallState, config: &Config) -> Result<()> {
+    let surface = |kind| skwd_wall_core::infrastructure::paper::stationary_surface(config, kind);
+    let local = state.renderers().set_surface(surface);
+    if let Some(client) = PaperClient::existing()? {
+        client.set_surface_overrides(
+            skwd_wall_core::infrastructure::paper::stationary_surfaces(config),
+        )?;
+    }
+    local
 }
 
 fn refresh_backdrop(config: &Config) -> Result<()> {
@@ -248,10 +257,18 @@ fn refresh_backdrop(config: &Config) -> Result<()> {
     }));
     let mut assignment = Assignment::new(vec!["*".into()], source);
     assignment.layer = Layer::Background;
-    if !client.capabilities()?.renderer_policy.surface {
+    if !client
+        .capabilities(skwd_wall_core::infrastructure::paper::Startup::Allowed)?
+        .renderer_policy
+        .surface
+    {
         bail!("Paper does not support overview surfaces; update the Paper renderer");
     }
-    client.set_paused(false)?;
+    client.set_paused(skwd_wall_core::infrastructure::paper::PauseRequest {
+        overrides: std::collections::BTreeMap::new(),
+        paused: false,
+        outputs: Vec::new(),
+    })?;
     let applied = client.apply(ApplyRequest {
         assignments: vec![assignment],
         replace_all: true,
@@ -287,9 +304,7 @@ pub fn on_apply(state: &Arc<skwd_wall_core::state::WallState>) {
     *STATIONARY.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
         Some(Arc::downgrade(state));
     if skwd_wall_core::infrastructure::paper::stationary_wallpaper(&config) {
-        if let Err(error) = state.renderers().set_surface(|kind| {
-            skwd_wall_core::infrastructure::paper::stationary_surface(&config, kind)
-        }) {
+        if let Err(error) = set_surface(state, &config) {
             RETRY_SURFACE.store(true, Ordering::Release);
             log::warn!("overview-wallpaper: {error}");
         }

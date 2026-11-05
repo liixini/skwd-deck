@@ -215,10 +215,31 @@ pub mod setting {
     pub mod filter_bar {
         use super::{Setting, keys};
 
+        pub const BUTTON_ORDER: Setting<String> = Setting::text(keys::filter_bar::BUTTON_ORDER, "");
+        pub const HIDDEN_BUTTONS: Setting<String> =
+            Setting::text(keys::filter_bar::HIDDEN_BUTTONS, "");
         pub const DEFAULT_FOLDER: Setting<String> =
             Setting::text(keys::filter_bar::DEFAULT_FOLDER, "*");
         pub const OFFSET_X: Setting<f64> = Setting::number(keys::filter_bar::OFFSET_X, 0.0);
         pub const OFFSET_Y: Setting<f64> = Setting::number(keys::filter_bar::OFFSET_Y, 0.0);
+        pub const POSITION_ENABLED: Setting<bool> =
+            Setting::boolean(keys::filter_bar::POSITION_ENABLED, false);
+        pub const POSITION_X: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::POSITION_X, 0.0, 0.0, 100.0);
+        pub const POSITION_Y: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::POSITION_Y, 0.0, 0.0, 100.0);
+        pub const ARRANGE_POSITION_ENABLED: Setting<bool> =
+            Setting::boolean(keys::filter_bar::ARRANGE_POSITION_ENABLED, false);
+        pub const ARRANGE_POSITION_X: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::ARRANGE_POSITION_X, 0.0, 0.0, 100.0);
+        pub const ARRANGE_POSITION_Y: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::ARRANGE_POSITION_Y, 0.0, 0.0, 100.0);
+        pub const SWATCH_POSITION_ENABLED: Setting<bool> =
+            Setting::boolean(keys::filter_bar::SWATCH_POSITION_ENABLED, false);
+        pub const SWATCH_POSITION_X: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::SWATCH_POSITION_X, 0.0, 0.0, 100.0);
+        pub const SWATCH_POSITION_Y: Setting<f64> =
+            Setting::bounded_number(keys::filter_bar::SWATCH_POSITION_Y, 0.0, 0.0, 100.0);
         pub const ORIENTATION: Setting<String> =
             Setting::text(keys::filter_bar::ORIENTATION, "horizontal");
         pub const LAST_SHOW_HIDDEN_FOLDERS: Setting<bool> =
@@ -254,6 +275,7 @@ pub mod setting {
     pub mod motion {
         use super::{Setting, keys};
 
+        pub const REDUCED: Setting<bool> = Setting::boolean(keys::motion::REDUCED, false);
         pub const FAST_MS: Setting<f64> =
             Setting::bounded_number(keys::motion::FAST_MS, 180.0, 35.0, 2_000.0);
         pub const STANDARD_MS: Setting<f64> =
@@ -263,6 +285,23 @@ pub mod setting {
     }
 
     pub mod selector {
+        pub const AVOID_AREAS: Setting<String> = Setting::text(keys::selector::AVOID_AREAS, "");
+        pub const FRAME_ENABLED: Setting<bool> =
+            Setting::boolean(keys::selector::FRAME_ENABLED, false);
+        pub const FRAME_X: Setting<f64> =
+            Setting::bounded_number(keys::selector::FRAME_X, 10.0, 0.0, 100.0);
+        pub const FRAME_Y: Setting<f64> =
+            Setting::bounded_number(keys::selector::FRAME_Y, 10.0, 0.0, 100.0);
+        pub const FRAME_WIDTH: Setting<f64> =
+            Setting::bounded_number(keys::selector::FRAME_WIDTH, 80.0, 5.0, 100.0);
+        pub const FRAME_HEIGHT: Setting<f64> =
+            Setting::bounded_number(keys::selector::FRAME_HEIGHT, 80.0, 5.0, 100.0);
+        pub const TAG_CLOUD_POSITION_ENABLED: Setting<bool> =
+            Setting::boolean(keys::selector::TAG_CLOUD_POSITION_ENABLED, false);
+        pub const TAG_CLOUD_POSITION_X: Setting<f64> =
+            Setting::bounded_number(keys::selector::TAG_CLOUD_POSITION_X, 0.0, 0.0, 100.0);
+        pub const TAG_CLOUD_POSITION_Y: Setting<f64> =
+            Setting::bounded_number(keys::selector::TAG_CLOUD_POSITION_Y, 0.0, 0.0, 100.0);
         pub const DEPTH_SHADOWS: Setting<bool> =
             Setting::boolean(keys::selector::DEPTH_SHADOWS, false);
         pub const SLICE_SHADOWS: Setting<bool> =
@@ -297,6 +336,93 @@ pub mod setting {
             Setting::bounded_number(keys::selector::COLLECTION_CORNERS, 2.0, 0.0, 100.0);
         pub const COLLECTION_SPEED: Setting<f64> =
             Setting::bounded_number(keys::selector::COLLECTION_SPEED, 100.0, 25.0, 300.0);
+        pub const CORNER_SIZE_MAX: f64 = 64.0;
+        pub const ROUND_CORNERS: Setting<bool> =
+            Setting::boolean(keys::selector::ROUND_CORNERS, false);
+        pub const HAND_CORNER_RADIUS: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_RADIUS, 0.0, 0.0, 200.0);
+        pub const CORNER_STYLE: Setting<String> =
+            Setting::text(keys::selector::CORNER_STYLE, crate::corners::STRAIGHT);
+        pub const CORNERS_SAME: Setting<bool> =
+            Setting::boolean(keys::selector::CORNERS_SAME, true);
+        pub const CORNER_ALL: Setting<f64> =
+            Setting::bounded_number(keys::selector::CORNER_ALL, 16.0, 0.0, CORNER_SIZE_MAX);
+        pub const GRID_CORNER_STYLE: Setting<String> =
+            Setting::text(keys::selector::GRID_CORNER_STYLE, crate::corners::ROUND);
+        pub const GRID_CORNERS_SAME: Setting<bool> =
+            Setting::boolean(keys::selector::GRID_CORNERS_SAME, true);
+        pub const GRID_CORNER_ALL: Setting<f64> =
+            Setting::bounded_number(keys::selector::GRID_CORNER_ALL, 6.0, 0.0, CORNER_SIZE_MAX);
+        pub const GRID_CORNER_TL: Setting<f64> =
+            Setting::bounded_number(keys::selector::GRID_CORNER_TL, 6.0, 0.0, CORNER_SIZE_MAX);
+        pub const GRID_CORNER_TR: Setting<f64> =
+            Setting::bounded_number(keys::selector::GRID_CORNER_TR, 6.0, 0.0, CORNER_SIZE_MAX);
+        pub const GRID_CORNER_BR: Setting<f64> =
+            Setting::bounded_number(keys::selector::GRID_CORNER_BR, 6.0, 0.0, CORNER_SIZE_MAX);
+        pub const GRID_CORNER_BL: Setting<f64> =
+            Setting::bounded_number(keys::selector::GRID_CORNER_BL, 6.0, 0.0, CORNER_SIZE_MAX);
+        pub const HAND_CORNER_STYLE: Setting<String> =
+            Setting::text(keys::selector::HAND_CORNER_STYLE, crate::corners::STRAIGHT);
+        pub const HAND_CORNERS_SAME: Setting<bool> =
+            Setting::boolean(keys::selector::HAND_CORNERS_SAME, true);
+        pub const HAND_CORNER_ALL: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_ALL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const HAND_CORNER_TL: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_TL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const HAND_CORNER_TR: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_TR, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const HAND_CORNER_BR: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_BR, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const HAND_CORNER_BL: Setting<f64> =
+            Setting::bounded_number(keys::selector::HAND_CORNER_BL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const DEPTH_CORNER_STYLE: Setting<String> =
+            Setting::text(keys::selector::DEPTH_CORNER_STYLE, crate::corners::STRAIGHT);
+        pub const DEPTH_CORNERS_SAME: Setting<bool> =
+            Setting::boolean(keys::selector::DEPTH_CORNERS_SAME, true);
+        pub const DEPTH_CORNER_ALL: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNER_ALL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const DEPTH_CORNER_TL: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNER_TL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const DEPTH_CORNER_TR: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNER_TR, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const DEPTH_CORNER_BR: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNER_BR, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const DEPTH_CORNER_BL: Setting<f64> =
+            Setting::bounded_number(keys::selector::DEPTH_CORNER_BL, 0.0, 0.0, CORNER_SIZE_MAX);
+        pub const COLLECTION_CORNER_STYLE: Setting<String> =
+            Setting::text(keys::selector::COLLECTION_CORNER_STYLE, crate::corners::ROUND);
+        pub const COLLECTION_CORNERS_SAME: Setting<bool> =
+            Setting::boolean(keys::selector::COLLECTION_CORNERS_SAME, true);
+        pub const COLLECTION_CORNER_ALL: Setting<f64> = Setting::bounded_number(
+            keys::selector::COLLECTION_CORNER_ALL,
+            2.0,
+            0.0,
+            CORNER_SIZE_MAX,
+        );
+        pub const COLLECTION_CORNER_TL: Setting<f64> = Setting::bounded_number(
+            keys::selector::COLLECTION_CORNER_TL,
+            2.0,
+            0.0,
+            CORNER_SIZE_MAX,
+        );
+        pub const COLLECTION_CORNER_TR: Setting<f64> = Setting::bounded_number(
+            keys::selector::COLLECTION_CORNER_TR,
+            2.0,
+            0.0,
+            CORNER_SIZE_MAX,
+        );
+        pub const COLLECTION_CORNER_BR: Setting<f64> = Setting::bounded_number(
+            keys::selector::COLLECTION_CORNER_BR,
+            2.0,
+            0.0,
+            CORNER_SIZE_MAX,
+        );
+        pub const COLLECTION_CORNER_BL: Setting<f64> = Setting::bounded_number(
+            keys::selector::COLLECTION_CORNER_BL,
+            2.0,
+            0.0,
+            CORNER_SIZE_MAX,
+        );
         use super::{Setting, keys};
 
         pub const DISPLAY_MODE: Setting<String> =
@@ -438,6 +564,8 @@ pub mod setting {
 
         pub const DURATION_MS: Setting<f64> =
             Setting::bounded_number(keys::transition::DURATION_MS, 600.0, 50.0, 10_000.0);
+        pub const PRESET_TIMING: Setting<bool> =
+            Setting::boolean(keys::transition::PRESET_TIMING, true);
         pub const FPS: Setting<f64> =
             Setting::bounded_number(keys::transition::FPS, 0.0, 0.0, 1_000.0);
         pub const ENABLED: Setting<bool> = Setting::boolean(keys::transition::ENABLED, true);
@@ -448,9 +576,45 @@ pub mod setting {
 }
 
 const STATIC_SPECS: &[SettingSpec] = &[
+    SettingSpec::boolean(crate::keys::drawing::ENABLED, false),
+    SettingSpec::text(crate::keys::drawing::SCOPE, crate::keys::drawing::SCOPE_SELECTED),
+    SettingSpec::text(crate::keys::drawing::PACK, ""),
+    SettingSpec::boolean(crate::keys::drawing::ON_BATTERY, false),
+    SettingSpec::bounded_number(crate::keys::drawing::DURATION_MS, 6_500.0, 1_500.0, 20_000.0),
+    SettingSpec::text(crate::keys::drawing::PAPER_COLOR, "f1eee5"),
+    SettingSpec::text(crate::keys::drawing::INK_COLOR, "000000"),
+    SettingSpec::text(crate::keys::drawing::INK, crate::keys::drawing::INK_PLAIN),
+    SettingSpec::boolean(crate::keys::drawing::AUTO_PREPARE, false),
+    SettingSpec::text(crate::keys::drawing::DEVICE, wall_proto::drawing::Device::Auto.label()),
+    SettingSpec::text(
+        crate::keys::drawing::MEMORY_LIMIT_MIB,
+        crate::keys::drawing::MEMORY_LIMIT_AUTO,
+    ),
+    SettingSpec::array(crate::keys::widgets::ITEMS),
+    setting::selector::AVOID_AREAS.spec(),
+    setting::filter_bar::BUTTON_ORDER.spec(),
+    setting::filter_bar::HIDDEN_BUTTONS.spec(),
+    setting::filter_bar::POSITION_ENABLED.spec(),
+    setting::filter_bar::POSITION_X.spec(),
+    setting::filter_bar::POSITION_Y.spec(),
+    setting::filter_bar::ARRANGE_POSITION_ENABLED.spec(),
+    setting::filter_bar::ARRANGE_POSITION_X.spec(),
+    setting::filter_bar::ARRANGE_POSITION_Y.spec(),
+    setting::filter_bar::SWATCH_POSITION_ENABLED.spec(),
+    setting::filter_bar::SWATCH_POSITION_X.spec(),
+    setting::filter_bar::SWATCH_POSITION_Y.spec(),
+    setting::selector::FRAME_ENABLED.spec(),
+    setting::selector::FRAME_X.spec(),
+    setting::selector::FRAME_Y.spec(),
+    setting::selector::FRAME_WIDTH.spec(),
+    setting::selector::FRAME_HEIGHT.spec(),
+    setting::selector::TAG_CLOUD_POSITION_ENABLED.spec(),
+    setting::selector::TAG_CLOUD_POSITION_X.spec(),
+    setting::selector::TAG_CLOUD_POSITION_Y.spec(),
     SettingSpec::bounded_number(crate::keys::paper::LOAD_TIMEOUT_SECONDS, 3.0, 3.0, 60.0),
     SettingSpec::text(crate::keys::selector::START_POSITION, "beginning"),
     SettingSpec::text(crate::keys::selector::LAST_APPLIED_KEY, ""),
+    SettingSpec::boolean(crate::keys::selector::LOOP_AROUND, false),
     setting::filter_bar::DEFAULT_FOLDER.spec(),
     setting::filter_bar::OFFSET_X.spec(),
     setting::filter_bar::OFFSET_Y.spec(),
@@ -467,6 +631,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::general::RANDOM_INTERVAL.spec(),
     setting::general::SETTINGS_STYLE.spec(),
     setting::general::UI_SCALE.spec(),
+    setting::motion::REDUCED.spec(),
     setting::motion::FAST_MS.spec(),
     setting::motion::STANDARD_MS.spec(),
     setting::motion::SLOW_MS.spec(),
@@ -487,6 +652,37 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::selector::COLLECTION_TILT.spec(),
     setting::selector::COLLECTION_CORNERS.spec(),
     setting::selector::COLLECTION_SPEED.spec(),
+    setting::selector::CORNER_STYLE.spec(),
+    setting::selector::CORNERS_SAME.spec(),
+    setting::selector::CORNER_ALL.spec(),
+    setting::selector::GRID_CORNER_STYLE.spec(),
+    setting::selector::GRID_CORNERS_SAME.spec(),
+    setting::selector::GRID_CORNER_ALL.spec(),
+    setting::selector::GRID_CORNER_TL.spec(),
+    setting::selector::GRID_CORNER_TR.spec(),
+    setting::selector::GRID_CORNER_BR.spec(),
+    setting::selector::GRID_CORNER_BL.spec(),
+    setting::selector::HAND_CORNER_STYLE.spec(),
+    setting::selector::HAND_CORNERS_SAME.spec(),
+    setting::selector::HAND_CORNER_ALL.spec(),
+    setting::selector::HAND_CORNER_TL.spec(),
+    setting::selector::HAND_CORNER_TR.spec(),
+    setting::selector::HAND_CORNER_BR.spec(),
+    setting::selector::HAND_CORNER_BL.spec(),
+    setting::selector::DEPTH_CORNER_STYLE.spec(),
+    setting::selector::DEPTH_CORNERS_SAME.spec(),
+    setting::selector::DEPTH_CORNER_ALL.spec(),
+    setting::selector::DEPTH_CORNER_TL.spec(),
+    setting::selector::DEPTH_CORNER_TR.spec(),
+    setting::selector::DEPTH_CORNER_BR.spec(),
+    setting::selector::DEPTH_CORNER_BL.spec(),
+    setting::selector::COLLECTION_CORNER_STYLE.spec(),
+    setting::selector::COLLECTION_CORNERS_SAME.spec(),
+    setting::selector::COLLECTION_CORNER_ALL.spec(),
+    setting::selector::COLLECTION_CORNER_TL.spec(),
+    setting::selector::COLLECTION_CORNER_TR.spec(),
+    setting::selector::COLLECTION_CORNER_BR.spec(),
+    setting::selector::COLLECTION_CORNER_BL.spec(),
     setting::selector::DISPLAY_MODE.spec(),
     setting::selector::FLIP_DURATION_MS.spec(),
     setting::selector::GRID_BORDER_WIDTH.spec(),
@@ -555,6 +751,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::selector::SLICE_STAGE_X.spec(),
     setting::selector::SLICE_STAGE_Y.spec(),
     setting::transition::DURATION_MS.spec(),
+    setting::transition::PRESET_TIMING.spec(),
     setting::transition::FPS.spec(),
     setting::transition::ENABLED.spec(),
     setting::transition::PREVIEW_FPS.spec(),
@@ -562,6 +759,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::selector::LIVE_PREVIEW, true),
     SettingSpec::boolean(crate::keys::selector::SHOW_TYPE_BADGES, true),
     SettingSpec::boolean(crate::keys::selector::HEX_ARC, true),
+    SettingSpec::boolean(crate::keys::filter_bar::SHOW_ARRANGE, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_COLORS, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_FAVOURITES, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_FOLDER, true),
@@ -570,6 +768,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_PLAYLISTS, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_RANDOM, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_RESOLUTION, true),
+    SettingSpec::boolean(crate::keys::filter_bar::SHOW_SWATCH, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_TAG_CLOUD, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_TAGGING, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_THEME, true),
@@ -646,7 +845,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::weather::STORMY, ""),
     SettingSpec::text(crate::keys::weather::FOGGY, ""),
     SettingSpec::text(crate::keys::weather::WINDY, ""),
-    SettingSpec::boolean(crate::keys::selector::ROUND_CORNERS, false),
+    setting::selector::ROUND_CORNERS.spec(),
     SettingSpec::boolean(crate::keys::selector::SLICE_WOBBLE, false),
     SettingSpec::boolean(crate::keys::selector::SLICE_PARALLAX, false),
     SettingSpec::boolean(crate::keys::selector::HEX_PARALLAX, false),
@@ -671,6 +870,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::we_render::DISABLE_PARTICLES, false),
     SettingSpec::boolean(crate::keys::workspace::ENABLED, false),
     SettingSpec::boolean(crate::keys::niri::BACKDROP_AUTO_THEME, false),
+    SettingSpec::boolean(crate::keys::caelestia::WALLPAPER_SYNC, false),
     SettingSpec::boolean(crate::keys::niri::OVERVIEW_BACKDROP, false),
     SettingSpec::text(crate::keys::niri::OVERVIEW_MODE, "separate"),
     SettingSpec::boolean(crate::keys::selector::SANDY_OUTGOING_LIVE, true),
@@ -707,7 +907,6 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::motion::FILTER_SWAP_SPEED, "slow"),
     SettingSpec::text(crate::keys::motion::LAUNCH_SPEED, "standard"),
     SettingSpec::text(crate::keys::selector::FLIP_EFFECT, "Ignite"),
-    SettingSpec::text(crate::keys::paper::VIDEO_ENGINE, "vulkan"),
     SettingSpec::text(crate::keys::tagging::DEFAULT_SEARCH_MODE, "tags"),
     SettingSpec::boolean(crate::keys::semantic::ENABLED, true),
     SettingSpec::text(crate::keys::semantic::INDEX_PROFILE, "full"),
@@ -719,6 +918,12 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::theme::MODE, "dark"),
     SettingSpec::text(crate::keys::theme::SCHEME, "tonal-spot"),
     SettingSpec::text(crate::keys::theme::STYLE, "natural"),
+    SettingSpec::text(crate::keys::theme::STUDIO_METHOD, "tonal"),
+    SettingSpec::text(crate::keys::theme::STUDIO_MODE, ""),
+    SettingSpec::text(crate::keys::theme::STUDIO_AREA_IMAGE, ""),
+    SettingSpec::bounded_number(crate::keys::theme::STUDIO_WARMTH, 0.0, -1.0, 1.0),
+    SettingSpec::bounded_number(crate::keys::theme::STUDIO_COLOUR, 1.0, 0.4, 1.6),
+    SettingSpec::bounded_number(crate::keys::theme::STUDIO_CONTRAST, 0.0, -1.0, 1.0),
     SettingSpec::text(crate::keys::transition::FAMILY, "random"),
     SettingSpec::boolean(crate::keys::sources::WALLHAVEN_SHOW_APPLY_BUTTON, false),
     SettingSpec::boolean(crate::keys::sources::STEAM_SHOW_APPLY_BUTTON, false),
@@ -816,6 +1021,8 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::keybind::SCENE_PROPERTIES, ""),
     SettingSpec::text(crate::keys::keybind::SELECT, ""),
     SettingSpec::text(crate::keys::keybind::STUDIO, ""),
+    SettingSpec::text(crate::keys::keybind::COLOUR_STUDIO, ""),
+    SettingSpec::text(crate::keys::keybind::WIDGETS, ""),
     SettingSpec::text(crate::keys::keybind::SETTINGS, ""),
     SettingSpec::text(crate::keys::keybind::TAG_CLOUD, ""),
     SettingSpec::text(crate::keys::keybind::TAG_MODE, ""),
@@ -896,7 +1103,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::bounded_number(crate::keys::selector::HAND_FAN_ANGLE, 12.0, -60.0, 60.0),
     SettingSpec::bounded_number(crate::keys::selector::HAND_FAN_ROLL, 8.5, -45.0, 45.0),
     SettingSpec::bounded_number(crate::keys::selector::HAND_ARCH, 20.0, -200.0, 200.0),
-    SettingSpec::bounded_number(crate::keys::selector::HAND_CORNER_RADIUS, 0.0, 0.0, 200.0),
+    setting::selector::HAND_CORNER_RADIUS.spec(),
     SettingSpec::bounded_number(crate::keys::selector::HAND_SKEW, 0.0, -200.0, 200.0),
     SettingSpec::bounded_number(crate::keys::selector::HAND_BACKDROP_BLUR, 100.0, 0.0, 400.0),
     SettingSpec::number(crate::keys::selector::HAND_CARD_WIDTH, 168.0),
@@ -936,6 +1143,7 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::text(crate::keys::playback::PROCESSES, ""),
     SettingSpec::boolean(crate::keys::playback::FULLSCREEN, false),
     SettingSpec::boolean(crate::keys::playback::MAXIMIZED, false),
+    SettingSpec::boolean(crate::keys::playback::FOCUSED, false),
     SettingSpec::text(crate::keys::playback::FULLSCREEN_SCOPE, "all"),
     SettingSpec::number(crate::keys::playback::RESUME_DELAY, 1.0),
     SettingSpec::boolean(crate::keys::playback::MUTE_ON_OTHER_AUDIO, false),
@@ -956,6 +1164,9 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::array(crate::keys::post_processing::LIST),
     SettingSpec::array(crate::keys::semantic::MODELS),
     SettingSpec::array(crate::keys::theme::TARGETS),
+    SettingSpec::array(crate::keys::theme::STUDIO_SHADES),
+    SettingSpec::array(crate::keys::theme::STUDIO_AREA),
+    SettingSpec::array(crate::keys::theme::STUDIO_SAVED),
     SettingSpec::array(crate::keys::workspace::WALLPAPERS),
     SettingSpec::text(crate::keys::selector::PRESET_DRAFT_NAME, ""),
 ];

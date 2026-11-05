@@ -2,7 +2,7 @@ use skwd_wall_core::{WallState, config::Config, paths};
 
 use crate::cli::{self, Command};
 use crate::reporter::Reporter;
-use crate::{media_jobs, process, remote_thumbs, sandbox, scan_jobs, theme};
+use crate::{gpu, media_jobs, process, remote_thumbs, sandbox, scan_jobs, theme};
 
 pub(crate) fn run() -> anyhow::Result<()> {
     let arguments: Vec<String> = std::env::args().collect();
@@ -13,6 +13,9 @@ pub(crate) fn run() -> anyhow::Result<()> {
         return Ok(());
     }
     process::initialize(&arguments);
+    if let Command::GpuWorker { cache } = &command {
+        return gpu::run(std::path::Path::new(cache));
+    }
     process::arm_deadline(command_deadline(&command))?;
     if let Command::SceneProbe { dir } = &command {
         sandbox::restrict_decode(&sandbox::Policy::new().read(dir))?;
@@ -38,7 +41,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
         println!(
             "{}",
             serde_json::json!({
-                "full_fidelity": compatibility.full_fidelity(),
+                "full_fidelity": compatibility.has_no_known_gaps(),
                 "reasons": reasons,
             })
         );
@@ -66,6 +69,11 @@ pub(crate) fn run() -> anyhow::Result<()> {
             theme::print_preview(&image, dark);
             return Ok(());
         }
+        Command::Studio { image, area } => {
+            sandbox::restrict_decode(&sandbox::Policy::new().read(&image))?;
+            theme::print_studio(&image, area);
+            return Ok(());
+        }
         Command::Stream { video } => {
             sandbox::restrict_decode(&sandbox::Policy::new().read(&video).hardware())?;
             media_jobs::stream_video(&video);
@@ -86,6 +94,13 @@ pub(crate) fn run() -> anyhow::Result<()> {
         _ => {}
     }
 
+    let encoder = gpu::Session::start(matches!(
+        command,
+        Command::FullScan { .. }
+            | Command::Paths { .. }
+            | Command::SceneThumbnail { .. }
+            | Command::SceneThumbnailStream
+    ));
     let state = WallState::open()?;
     match command {
         Command::SceneAudit { dir } => {
@@ -103,11 +118,15 @@ pub(crate) fn run() -> anyhow::Result<()> {
         command => tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
-            .block_on(report_jobs(state, command)),
+            .block_on(report_jobs(state, command, encoder)),
     }
 }
 
-async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
+async fn report_jobs(
+    state: WallState,
+    command: Command,
+    encoder: gpu::Session,
+) -> anyhow::Result<()> {
     let reporter = Reporter::connect().await;
     match command {
         Command::Recolor => {
@@ -118,14 +137,16 @@ async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
         Command::SceneThumbnailStream => {
             sandbox::restrict_decode(&storage_policy(&state.config()).cpu_seconds(30 * 60))?;
             let worker = reporter.clone();
-            tokio::task::spawn_blocking(move || scan_jobs::scene_thumbnail_stream(&state, &worker))
-                .await??;
+            tokio::task::spawn_blocking(move || {
+                scan_jobs::scene_thumbnail_stream(&state, &worker, &encoder.encoder)
+            })
+            .await??;
         }
         Command::SceneThumbnail { id, image } => {
             sandbox::restrict_decode(&storage_policy(&state.config()).read(&image))?;
             let worker = reporter.clone();
             tokio::task::spawn_blocking(move || {
-                scan_jobs::scene_thumbnail(&state, &id, &image, &worker)
+                scan_jobs::scene_thumbnail(&state, &id, &image, &worker, &encoder.encoder)
             })
             .await??;
         }
@@ -146,7 +167,13 @@ async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
             sandbox::restrict_decode(&scan_policy(&state.config()))?;
             let worker = reporter.clone();
             tokio::task::spawn_blocking(move || {
-                scan_jobs::changed_paths(&state, &worker, &changed, request_id.as_deref());
+                scan_jobs::changed_paths(
+                    &state,
+                    &worker,
+                    &changed,
+                    request_id.as_deref(),
+                    &encoder.encoder,
+                );
             })
             .await?;
         }
@@ -154,15 +181,17 @@ async fn report_jobs(state: WallState, command: Command) -> anyhow::Result<()> {
             sandbox::restrict_decode(&scan_policy(&state.config()))?;
             let worker = reporter.clone();
             tokio::task::spawn_blocking(move || {
-                scan_jobs::full_scan(&state, &worker, request_id.as_deref());
+                scan_jobs::full_scan(&state, &worker, request_id.as_deref(), &encoder.encoder);
             })
             .await?;
         }
-        Command::Version
+        Command::GpuWorker { .. }
+        | Command::Version
         | Command::Ansi16 { .. }
         | Command::Tone { .. }
         | Command::Semantic { .. }
         | Command::ThemePreview { .. }
+        | Command::Studio { .. }
         | Command::RemoteThumb { .. }
         | Command::SceneProbe { .. }
         | Command::SceneAudit { .. }
@@ -253,6 +282,7 @@ fn command_deadline(command: &Command) -> std::time::Duration {
         | Command::Tone { .. }
         | Command::Semantic { .. }
         | Command::ThemePreview { .. }
+        | Command::Studio { .. }
         | Command::SceneProbe { .. } => 2 * 60,
         Command::RemoteThumb { .. } => 10 * 60,
         Command::SceneThumbnailStream
@@ -260,7 +290,7 @@ fn command_deadline(command: &Command) -> std::time::Duration {
         | Command::Paths { .. }
         | Command::SceneAudit { .. }
         | Command::FullScan { .. } => 30 * 60,
-        Command::Version => 1,
+        Command::Version | Command::GpuWorker { .. } => 1,
     };
     std::time::Duration::from_secs(seconds)
 }

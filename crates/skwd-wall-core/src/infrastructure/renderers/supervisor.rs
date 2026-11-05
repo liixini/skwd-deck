@@ -19,8 +19,13 @@ pub struct RendererSupervisor {
     pub(super) policies: Mutex<HashMap<String, String>>,
     pub(super) pause: Mutex<PauseState>,
     pub(super) audio_ducked: Mutex<bool>,
+    pub(super) paper_controls: Mutex<()>,
+    pub(super) paper_pending: std::sync::atomic::AtomicBool,
     pub(super) we_render: Mutex<WeRender>,
     pub(super) ready: ReadinessRegistry,
+    pub(super) widgets: Mutex<Option<std::sync::Arc<dyn super::WidgetSource>>>,
+    pub(super) widget_sync: Mutex<Option<paper_control::WidgetScene>>,
+    pub(super) widget_editors: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Default)]
@@ -42,20 +47,16 @@ impl PauseState {
     }
 
     pub fn policy(&self) -> PausePolicy {
+        if self.applying == 0 { self.playback_policy() } else { PausePolicy::default() }
+    }
+
+    pub fn playback_policy(&self) -> PausePolicy {
         PausePolicy {
-            automatic: self.applying == 0 && self.automatic,
-            automatic_outputs: if self.applying == 0 {
-                self.automatic_outputs.clone()
-            } else {
-                HashSet::new()
-            },
-            manual: self.applying == 0 && self.manual,
-            manual_outputs: if self.applying == 0 {
-                self.manual_outputs.clone()
-            } else {
-                HashMap::new()
-            },
-            session: self.applying == 0 && !self.sessions.is_empty(),
+            automatic: self.automatic,
+            automatic_outputs: self.automatic_outputs.clone(),
+            manual: self.manual,
+            manual_outputs: self.manual_outputs.clone(),
+            session: !self.sessions.is_empty(),
         }
     }
 
@@ -64,7 +65,7 @@ impl PauseState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PausePolicy {
     pub manual_outputs: HashMap<String, bool>,
     pub automatic: bool,
@@ -98,9 +99,10 @@ pub struct WeRender {
 pub type HeldRenderer = (Child, Option<ChildStdin>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SceneFreezeHandle {
+pub(crate) struct RendererCaptureHandle {
     pub(crate) key: String,
     pub(crate) pid: u32,
+    pub(crate) restores_pause: bool,
 }
 
 pub fn kill_held_renderer(held: HeldRenderer) {

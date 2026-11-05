@@ -17,8 +17,8 @@ impl RendererSupervision for RendererSupervisor {
         self.reap_exited_paper();
     }
 
-    fn set_paused(&self, paused: bool) {
-        Self::set_paused(self, paused);
+    fn set_paused(&self, paused: bool) -> anyhow::Result<()> {
+        Self::set_paused(self, paused)
     }
 
     fn set_session_paused(&self, session_id: u64, paused: bool) {

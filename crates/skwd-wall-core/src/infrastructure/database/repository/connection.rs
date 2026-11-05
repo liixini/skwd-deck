@@ -1,6 +1,11 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::paths;
+
+const TINIER_TABLE_LOOKUP: &str =
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tinier_convert'";
+const TINIER_ROWS: &str = "SELECT src, dest FROM tinier_convert";
+const DROP_TINIER_TABLE: &str = "DROP TABLE IF EXISTS tinier_convert;";
 
 pub fn open() -> rusqlite::Result<Connection> {
     let path = paths::db_path();
@@ -131,16 +136,6 @@ pub(super) fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             converted_at INTEGER
         );
 
-        CREATE TABLE IF NOT EXISTS tinier_convert(
-            src TEXT PRIMARY KEY,
-            dest TEXT NOT NULL,
-            frame_rate TEXT NOT NULL,
-            preset TEXT NOT NULL,
-            orig_size INTEGER,
-            new_size INTEGER,
-            converted_at INTEGER
-        );
-
         CREATE TABLE IF NOT EXISTS effect_tags(
             stem TEXT PRIMARY KEY,
             tag TEXT NOT NULL
@@ -223,6 +218,23 @@ pub(super) fn migrate(connection: &Connection) -> rusqlite::Result<()> {
     migrate_tag_ownership(connection)?;
     connection.pragma_update(None, "user_version", 4)?;
     Ok(())
+}
+
+pub fn retiring_tinier_converts(
+    connection: &Connection,
+) -> rusqlite::Result<Option<Vec<(String, String)>>> {
+    let table: Option<String> =
+        connection.query_row(TINIER_TABLE_LOOKUP, [], |row| row.get(0)).optional()?;
+    if table.is_none() {
+        return Ok(None);
+    }
+    let mut statement = connection.prepare(TINIER_ROWS)?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect::<rusqlite::Result<_>>().map(Some)
+}
+
+pub fn drop_tinier_converts(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch(DROP_TINIER_TABLE)
 }
 
 pub(super) const META_COLUMNS: &[(&str, &str)] = &[

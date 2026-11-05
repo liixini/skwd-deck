@@ -31,7 +31,7 @@ fn is_reapable_stale_renderer(
     if name == "ffmpeg" && writes_into(args, owned_dirs) {
         return true;
     }
-    name == "skwd-wall-scan" && args.iter().any(|arg| arg == "--analyze")
+    name == skwd_wall_core::paths::SCAN_BIN && args.iter().any(|arg| arg == "--analyze")
 }
 
 fn writes_into(args: &[String], owned_dirs: &[String]) -> bool {

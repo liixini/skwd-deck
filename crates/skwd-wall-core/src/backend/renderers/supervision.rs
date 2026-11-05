@@ -4,7 +4,7 @@ pub trait RendererSupervision: Send + Sync {
     fn signal_ready(&self, pid: u32);
     fn signal_failed(&self, pid: u32, message: &str);
     fn reap_exited(&self);
-    fn set_paused(&self, paused: bool);
+    fn set_paused(&self, paused: bool) -> anyhow::Result<()>;
     fn set_session_paused(&self, session_id: u64, paused: bool);
     fn paused(&self) -> bool;
     fn assignments(&self) -> HashMap<String, String>;

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[allow(clippy::struct_excessive_bools)]
 pub struct OutputStatus {
     pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub monitor: String,
     #[serde(default)]
     pub target: String,
     #[serde(default = "default_connected")]

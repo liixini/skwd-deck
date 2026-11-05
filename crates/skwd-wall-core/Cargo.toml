@@ -13,15 +13,18 @@ bit-vec = { version = "0.8", features = ["std"] }
 getrandom = { version = "0.3", features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 wall-proto = { path = "../wall-proto" }
 paper-control = { path = "../../../skwd-paper/crates/paper-control" }
 wall-geom = { package = "paper-geom", path = "../../../skwd-paper/crates/paper-geom" }
 skwd-config = { path = "../skwd-config" }
-skwd-log = { path = "../skwd-log", features = ["alloc", "proc"] }
+skwd-log = { path = "../skwd-log", features = ["alloc", "clock", "proc"] }
 skwd-palette = { path = "../skwd-palette", optional = true }
 log = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 libc = "0.2"
 walkdir = { version = "2", optional = true }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "gif", "tiff"], optional = true }
@@ -44,6 +47,7 @@ obs-trace = ["dep:tracing"]
 loom = ["dep:loom"]
 
 [dev-dependencies]
+bcdec_rs = "0.2"
 proptest = "1"
 
 [package.metadata.cargo-machete]

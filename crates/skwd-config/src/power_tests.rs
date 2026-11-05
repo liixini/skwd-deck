@@ -138,3 +138,24 @@ fn manual_gpu_is_a_stable_uuid_or_automatic() {
         );
     }
 }
+
+#[test]
+fn gpu_uuid_bytes() {
+    let mut uuid = [0; GPU_UUID_BYTES];
+    uuid[0] = 0x11;
+    uuid[GPU_UUID_BYTES - 1] = 0x56;
+    for (device, expected) in [
+        ("uuid:110000000000000000000000000000056", None),
+        ("uuid:11000000000000000000000000000056", Some(uuid)),
+        ("uuid:11000000000000000000000000000+56", None),
+        ("11000000000000000000000000000056", None),
+        ("auto", None),
+    ] {
+        assert_eq!(gpu_uuid(device), expected, "{device}");
+    }
+}
+
+#[test]
+fn gpu_env_name() {
+    assert_eq!(GPU_DEVICE_ENV, "SKWD_VK_DEVICE");
+}

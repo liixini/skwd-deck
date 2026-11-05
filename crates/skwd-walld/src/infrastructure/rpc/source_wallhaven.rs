@@ -118,7 +118,8 @@ pub(super) fn wallhaven_preview(
     let destination =
         skwd_wall_core::paths::remote_preview("wallhaven-full", &id, wallhaven::ext_from_url(&url));
     handle_remote_preview(
-        request.id,
+        request,
+        wall_proto::sources::Provider::Wallhaven.key(),
         &id,
         url,
         destination,

@@ -4,8 +4,8 @@ use std::time::Instant;
 use serde_json::json;
 use skwd_wall_core::WallState;
 use skwd_wall_core::backend::wallpaper::{
-    ApplyOutputRequest, ApplyStaticRequest, ApplyVideoRequest, OutputTransitionRequest,
-    VideoTransitionRequest, WallpaperApplication,
+    ApplyFanout, ApplyOutputRequest, ApplyPhase, ApplyStaticRequest, ApplyVideoRequest,
+    OutputTransitionRequest, VideoTransitionRequest, WallpaperApplication,
 };
 use wall_proto::ev;
 
@@ -68,6 +68,27 @@ pub(crate) fn split_locked_outputs(
     outputs.into_iter().partition(|output| !locked.contains(output))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Fanout<'a> {
+    targets: &'a [String],
+    previous: &'a serde_json::Value,
+}
+
+fn static_sources(previous: &serde_json::Value) -> std::collections::HashMap<String, String> {
+    previous
+        .as_object()
+        .into_iter()
+        .flat_map(|entries| entries.iter())
+        .filter_map(|(output, entry)| {
+            if entry.get(wall_proto::apply_fields::TYPE)?.as_str()? != wall_proto::kind::STATIC {
+                return None;
+            }
+            let path = entry.get(wall_proto::apply_fields::PATH)?.as_str()?;
+            Some((output.clone(), path.to_string()))
+        })
+        .collect()
+}
+
 pub(crate) fn stage_unlocked_media_outputs(
     state: &WallState,
     outputs: &[String],
@@ -96,6 +117,13 @@ pub(crate) fn stage_unlocked_media_outputs(
     skwd_wall_core::audio::write_state(&cache, &staged);
 }
 
+fn timed_apply_lock(state: &WallState) -> std::sync::MutexGuard<'_, ()> {
+    let started = Instant::now();
+    let guard = state.apply().lock();
+    state.apply().note_phase(ApplyPhase::Lock, started.elapsed());
+    guard
+}
+
 pub(crate) fn apply_core(
     state: &Arc<WallState>,
     application: &dyn WallpaperApplication,
@@ -112,10 +140,10 @@ pub(crate) fn apply_core(
     notify: bool,
     no_transition: bool,
     transition_override: Option<&TransitionOverride>,
-    expected_generation: Option<ExpectedApply>,
+    expected_intent: Option<skwd_wall_core::backend::wallpaper::ApplyIntent>,
 ) -> anyhow::Result<serde_json::Value> {
     if let Some(id) = output.strip_prefix("@monitor:") {
-        let _apply = state.apply().lock();
+        let _apply = timed_apply_lock(state);
         let connector = crate::infrastructure::restore_policy::remembered_monitor_connector(id)
             .ok_or_else(|| anyhow::anyhow!("remembered monitor is unavailable"))?;
         if source.respects_output_locks()
@@ -148,7 +176,7 @@ pub(crate) fn apply_core(
             let (unlocked, preserved) =
                 split_locked_outputs(skwd_wall_core::outputs::names(), &locked);
             if !preserved.is_empty() {
-                let _apply = state.apply().lock();
+                let _apply = timed_apply_lock(state);
                 let _activity = skwd_wall_core::plasma::activities::sync_current(state)?;
                 return apply_locked_fanout(
                     state,
@@ -167,12 +195,12 @@ pub(crate) fn apply_core(
                     notify,
                     no_transition,
                     transition_override,
-                    expected_generation,
+                    expected_intent,
                 );
             }
         }
     }
-    let _apply = state.apply().lock();
+    let _apply = timed_apply_lock(state);
     let _activity = skwd_wall_core::plasma::activities::sync_current(state)?;
     apply_core_locked(
         state,
@@ -190,7 +218,7 @@ pub(crate) fn apply_core(
         notify,
         no_transition,
         transition_override,
-        GenerationRequest::Claim(expected_generation),
+        GenerationRequest::Claim(expected_intent),
         None,
     )
 }
@@ -213,22 +241,14 @@ fn apply_locked_fanout(
     notify: bool,
     no_transition: bool,
     transition_override: Option<&TransitionOverride>,
-    expected_generation: Option<ExpectedApply>,
+    expected_intent: Option<skwd_wall_core::backend::wallpaper::ApplyIntent>,
 ) -> anyhow::Result<serde_json::Value> {
     if unlocked.is_empty() {
         return Ok(json!({"applied": [], "locked": preserved}));
     }
-    let generation = claim_generation(state, expected_generation)?;
+    let generation = claim_generation(state, expected_intent)?;
     let cache = state.config().cache_dir();
     let previous_desired = skwd_wall_core::audio::read_state(&cache);
-    let staged_path = if kind == wall_proto::kind::VIDEO
-        && state.config().renderer().video_engine() == "tinier"
-    {
-        crate::infrastructure::media_paths::tinier_video(state, path)
-            .map_or_else(|| path.to_string(), |video| video.path)
-    } else {
-        path.to_string()
-    };
     let render_output = &unlocked[0];
     state.apply().set_transition_source(
         skwd_wall_core::backend::wallpaper::ApplyRuntime::source_we_in(
@@ -238,7 +258,7 @@ fn apply_locked_fanout(
             Some(&state.config().we_dir()),
         ),
     );
-    stage_unlocked_media_outputs(state, unlocked, kind, &staged_path, we_id, mute, volume);
+    stage_unlocked_media_outputs(state, unlocked, kind, path, we_id, mute, volume);
     let result = apply_core_locked(
         state,
         application,
@@ -256,14 +276,16 @@ fn apply_locked_fanout(
         no_transition,
         transition_override,
         GenerationRequest::Reserved(generation),
-        Some(unlocked),
+        Some(Fanout { targets: unlocked, previous: &previous_desired }),
     );
     if let Err(error) = result {
         skwd_wall_core::audio::write_state(&cache, &previous_desired);
-        if let Err(rollback) =
-            restore_renderer_snapshot(state, application, render_output, &previous_desired)
-        {
-            log::warn!("apply rollback for {render_output} failed: {rollback:#}");
+        for output in unlocked {
+            if let Err(rollback) =
+                restore_renderer_snapshot(state, application, output, &previous_desired)
+            {
+                log::warn!("apply rollback for {output} failed: {rollback:#}");
+            }
         }
         skwd_wall_core::audio::write_state(&cache, &previous_desired);
         return Err(error);
@@ -278,11 +300,7 @@ fn restore_renderer_snapshot(
     output: &str,
     desired: &serde_json::Value,
 ) -> anyhow::Result<()> {
-    let Some((restore_output, entry)) = desired
-        .get(output)
-        .map(|entry| (output, entry))
-        .or_else(|| desired.get("*").map(|entry| ("*", entry)))
-    else {
+    let Some(entry) = desired.get(output).or_else(|| desired.get("*")) else {
         return Ok(());
     };
     let kind = entry.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
@@ -294,46 +312,31 @@ fn restore_renderer_snapshot(
         return Ok(());
     }
     application.apply_output(ApplyOutputRequest {
-        output: restore_output,
+        output,
         kind,
         path,
         we_id,
         fill_mode: &state.config().display().fill_mode_for(output),
         mute,
         volume,
-        frame_rate: None,
         transition: None,
+        fanout: None,
     })
 }
 
-pub(crate) enum ExpectedApply {
-    Generation(u64),
-    Intent(skwd_wall_core::backend::wallpaper::ApplyIntent),
-}
-
-impl ExpectedApply {
-    pub(crate) fn current(&self, state: &WallState) -> bool {
-        match self {
-            Self::Generation(generation) => state.apply().generation() == *generation,
-            Self::Intent(intent) => state.apply().intent_current(intent),
-        }
-    }
-}
-
 pub(crate) enum GenerationRequest {
-    Claim(Option<ExpectedApply>),
+    Claim(Option<skwd_wall_core::backend::wallpaper::ApplyIntent>),
     Reserved(u64),
 }
 
-fn claim_generation(state: &WallState, expected: Option<ExpectedApply>) -> anyhow::Result<u64> {
+fn claim_generation(
+    state: &WallState,
+    expected: Option<skwd_wall_core::backend::wallpaper::ApplyIntent>,
+) -> anyhow::Result<u64> {
     match expected {
-        Some(ExpectedApply::Intent(intent)) => {
+        Some(intent) => {
             state.apply().claim_intent(&intent).ok_or_else(|| anyhow::Error::new(SupersededApply))
         }
-        Some(ExpectedApply::Generation(expected)) => state
-            .apply()
-            .claim_generation(expected)
-            .ok_or_else(|| anyhow::Error::new(SupersededApply)),
         None => Ok(state.apply().next_generation()),
     }
 }
@@ -355,7 +358,7 @@ pub(crate) fn apply_core_locked(
     no_transition: bool,
     transition_override: Option<&TransitionOverride>,
     generation_request: GenerationRequest,
-    committed_outputs: Option<&[String]>,
+    fanout: Option<Fanout<'_>>,
 ) -> anyhow::Result<serde_json::Value> {
     let library_key = applied_library_key(state, kind, path, we_id);
     if let ApplySource::Weather { playlist_id, revision } = source
@@ -473,8 +476,9 @@ pub(crate) fn apply_core_locked(
         path: path.to_string(),
         we_id: we_id.to_string(),
         output: output.to_string(),
-        committed_outputs: committed_outputs
-            .map_or_else(|| vec![output.to_string()], <[String]>::to_vec),
+        committed_outputs: fanout
+            .map_or_else(|| vec![output.to_string()], |fanout| fanout.targets.to_vec()),
+        previous_static: fanout.map(|fanout| static_sources(fanout.previous)),
         mute,
         volume,
         source,
@@ -547,6 +551,7 @@ fn apply_static_arm(
         transitions_enabled = transition_override.enabled.unwrap_or(transitions_enabled);
         if let Some(value) = transition_override.shader.as_ref() {
             shader.clone_from(value);
+            duration_ms = state.config().transition().duration_for(&shader);
         }
         duration_ms = transition_override.duration_ms.unwrap_or(duration_ms);
     }
@@ -569,6 +574,8 @@ fn apply_static_arm(
         );
         application.apply_static(ApplyStaticRequest {
             output,
+            targets: &decision.committed_outputs,
+            previous_static: decision.previous_static.as_ref(),
             path,
             fill_mode: fill,
             from: from.as_deref(),
@@ -607,16 +614,7 @@ fn apply_video_arm(
     if !pick_only {
         log::info!("apply gen={generation}: video to={path} output={output}");
         let render_started = std::time::Instant::now();
-        video_render(
-            state,
-            application,
-            output,
-            path,
-            fill,
-            decision.mute,
-            decision.volume,
-            transition_override,
-        )?;
+        video_render(state, application, decision, fill, transition_override)?;
         log::info!(
             "apply gen={generation}: video render handoff in {} ms",
             render_started.elapsed().as_millis()
@@ -630,13 +628,14 @@ fn apply_video_arm(
 fn video_render(
     state: &Arc<WallState>,
     application: &dyn WallpaperApplication,
-    output: &str,
-    path: &str,
+    decision: &ApplyDecision,
     fill: &str,
-    mute: bool,
-    volume: u32,
     transition_override: Option<&TransitionOverride>,
 ) -> anyhow::Result<()> {
+    let output = decision.output.as_str();
+    let path = decision.path.as_str();
+    let mute = decision.mute;
+    let volume = decision.volume;
     let (mut transitions_enabled, mut shader, mut duration_ms) = {
         let config = state.config();
         (
@@ -649,6 +648,7 @@ fn video_render(
         transitions_enabled = transition_override.enabled.unwrap_or(transitions_enabled);
         if let Some(value) = transition_override.shader.as_ref() {
             shader.clone_from(value);
+            duration_ms = state.config().transition().duration_for(&shader);
         }
         duration_ms = transition_override.duration_ms.unwrap_or(duration_ms);
     }
@@ -658,58 +658,33 @@ fn video_render(
             "video transition override: output={output} enabled={transitions_enabled} shader={shader} duration_ms={duration_ms}"
         );
     }
-    let tinier = (state.config().renderer().video_engine() == "tinier")
-        .then(|| crate::infrastructure::media_paths::tinier_video(state, path))
-        .flatten();
-    if state.config().renderer().video_engine() == "tinier" && tinier.is_none() {
-        anyhow::bail!("Tinier AV1 preparation is not ready for {path}");
-    }
-    let render_path = tinier.as_ref().map_or_else(|| path.to_string(), |video| video.path.clone());
-    let frame_rate = tinier.as_ref().map(|video| video.frame_rate.as_str());
     if output != "*" || skwd_wall_core::plasma::available() {
         return application.apply_output(ApplyOutputRequest {
             output,
             kind: wall_proto::kind::VIDEO,
-            path: &render_path,
+            path,
             we_id: "",
             fill_mode: fill,
             mute,
             volume,
-            frame_rate,
             transition: Some(OutputTransitionRequest {
                 enabled: transitions_enabled,
                 shader: &shader,
                 duration_ms,
             }),
+            fanout: Some(ApplyFanout {
+                targets: &decision.committed_outputs,
+                previous_static: decision.previous_static.as_ref(),
+            }),
         });
-    }
-    if frame_rate.is_some() {
-        let outputs = skwd_wall_core::outputs::names();
-        if outputs.is_empty() {
-            anyhow::bail!("Tinier requires at least one named output");
-        }
-        for output in outputs {
-            application.apply_output(ApplyOutputRequest {
-                output: &output,
-                kind: wall_proto::kind::VIDEO,
-                path: &render_path,
-                we_id: "",
-                fill_mode: fill,
-                mute,
-                volume,
-                frame_rate,
-                transition: None,
-            })?;
-        }
-        return Ok(());
     }
     let from = crate::infrastructure::persistence::last_any_source();
     let thumb = video_thumb(state, path);
-    match video_route(transitions_enabled, from.as_deref(), &render_path, thumb.as_deref()) {
+    match video_route(transitions_enabled, from.as_deref(), path, thumb.as_deref()) {
         VideoRoute::Transition(source) => {
             application.apply_video_transition(VideoTransitionRequest {
                 from: source,
-                to: &render_path,
+                to: path,
                 fill_mode: fill,
                 shader: &shader,
                 duration_ms,
@@ -719,7 +694,7 @@ fn video_render(
         }
         VideoRoute::Plain => application.apply_video(ApplyVideoRequest {
             output: "*",
-            path: &render_path,
+            path,
             fill_mode: fill,
             mute,
             volume,
@@ -743,14 +718,16 @@ fn apply_we_arm(
     let (enabled, shader, duration_ms) = {
         let config = state.config();
         let configured = config.transition();
+        let shader = transition_override
+            .and_then(|value| value.shader.clone())
+            .unwrap_or_else(|| configured.shader());
+        let duration_ms = transition_override
+            .and_then(|value| value.duration_ms)
+            .unwrap_or_else(|| configured.duration_for(&shader));
         (
             transition_override.and_then(|value| value.enabled).unwrap_or(configured.active()),
-            transition_override
-                .and_then(|value| value.shader.clone())
-                .unwrap_or_else(|| configured.shader()),
-            transition_override
-                .and_then(|value| value.duration_ms)
-                .unwrap_or(configured.duration_ms()),
+            shader,
+            duration_ms,
         )
     };
     let transition = Some(OutputTransitionRequest {
@@ -762,16 +739,7 @@ fn apply_we_arm(
         let item_directory = state.config().we_dir().join(we_id);
         skwd_wall_core::we::find_preview(&item_directory).map(|path| path.display().to_string())
     } else if output != "*" {
-        we_render_output(
-            state,
-            application,
-            we_id,
-            output,
-            fill,
-            decision.mute,
-            decision.volume,
-            transition,
-        )?
+        we_render_output(state, application, decision, fill, transition)?
     } else {
         application.apply_we(we_id, transition)?
     };
@@ -782,13 +750,14 @@ fn apply_we_arm(
 fn we_render_output(
     state: &Arc<WallState>,
     application: &dyn WallpaperApplication,
-    we_id: &str,
-    output: &str,
+    decision: &ApplyDecision,
     fill: &str,
-    mute: bool,
-    volume: u32,
     transition: Option<OutputTransitionRequest<'_>>,
 ) -> anyhow::Result<Option<String>> {
+    let we_id = decision.we_id.as_str();
+    let output = decision.output.as_str();
+    let mute = decision.mute;
+    let volume = decision.volume;
     if !state.config().steam_enabled() {
         anyhow::bail!("steam/WE feature is disabled");
     }
@@ -812,12 +781,15 @@ fn we_render_output(
             output,
             kind: wall_proto::kind::VIDEO,
             path: &video,
-            we_id: "",
+            we_id,
             fill_mode: fill,
             mute,
             volume,
-            frame_rate: None,
             transition,
+            fanout: Some(ApplyFanout {
+                targets: &decision.committed_outputs,
+                previous_static: decision.previous_static.as_ref(),
+            }),
         })?;
     } else {
         application.apply_output(ApplyOutputRequest {
@@ -828,8 +800,11 @@ fn we_render_output(
             fill_mode: fill,
             mute,
             volume,
-            frame_rate: None,
             transition,
+            fanout: Some(ApplyFanout {
+                targets: &decision.committed_outputs,
+                previous_static: decision.previous_static.as_ref(),
+            }),
         })?;
     }
     Ok(skwd_wall_core::we::find_preview(&item_directory).map(|path| path.display().to_string()))

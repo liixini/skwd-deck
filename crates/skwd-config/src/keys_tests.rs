@@ -6,6 +6,9 @@ use super::*;
 fn wire_strings_pinned() {
     use super::keys;
     assert_eq!(keys::display::FILL_COLOR, "display.fillColor");
+    assert_eq!(keys::widgets::ITEMS, "widgets.items");
+    assert_eq!(keys::drawing::DEVICE, "drawing.device");
+    assert_eq!(keys::drawing::MEMORY_LIMIT_MIB, "drawing.memoryLimitMib");
     assert_eq!(keys::display::FILL_MODE, "display.fillMode");
     assert_eq!(keys::display::FILL_MODES, "display.fillModes");
     assert_eq!(keys::display::OUTPUT_LOCKS, "display.outputLocks");
@@ -26,14 +29,22 @@ fn wire_strings_pinned() {
     assert_eq!(keys::filter_bar::OFFSET_Y, "filterBar.offsetY");
     assert_eq!(keys::filter_bar::ORIENTATION, "filterBar.orientation");
     assert_eq!(keys::filter_bar::RESOLUTION_PRESETS, "filterBar.resolutionPresets");
+    assert_eq!(keys::filter_bar::SHOW_ARRANGE, "filterBar.show.arrange");
     assert_eq!(keys::filter_bar::SHOW_COLORS, "filterBar.show.colors");
     assert_eq!(keys::filter_bar::SHOW_FAVOURITES, "filterBar.show.favourites");
     assert_eq!(keys::filter_bar::SHOW_FOLDER, "filterBar.show.folder");
     assert_eq!(keys::filter_bar::SHOW_RANDOM, "filterBar.show.random");
     assert_eq!(keys::filter_bar::SHOW_RESOLUTION, "filterBar.show.resolution");
+    assert_eq!(keys::filter_bar::SHOW_SWATCH, "filterBar.show.swatch");
     assert_eq!(keys::filter_bar::SHOW_TAG_CLOUD, "filterBar.show.tagcloud");
     assert_eq!(keys::filter_bar::SHOW_TAGGING, "filterBar.show.tagging");
     assert_eq!(keys::filter_bar::SHOW_THEME, "filterBar.show.theme");
+    assert_eq!(keys::filter_bar::ARRANGE_POSITION_ENABLED, "filterBar.arrangePositionEnabled");
+    assert_eq!(keys::filter_bar::ARRANGE_POSITION_X, "filterBar.arrangePositionX");
+    assert_eq!(keys::filter_bar::ARRANGE_POSITION_Y, "filterBar.arrangePositionY");
+    assert_eq!(keys::filter_bar::SWATCH_POSITION_ENABLED, "filterBar.swatchPositionEnabled");
+    assert_eq!(keys::filter_bar::SWATCH_POSITION_X, "filterBar.swatchPositionX");
+    assert_eq!(keys::filter_bar::SWATCH_POSITION_Y, "filterBar.swatchPositionY");
     assert_eq!(keys::filter_bar::STICKY, "filterBar.sticky");
     assert_eq!(keys::filter_bar::VISUAL_STYLE, "filterBar.visualStyle");
     assert_eq!(keys::general::CLOSE_ON_SELECTION, "general.closeOnSelection");
@@ -92,7 +103,6 @@ fn wire_strings_pinned() {
     assert_eq!(keys::paper::IDLE_PAUSE_SECONDS, "paper.idlePauseSeconds");
     assert_eq!(keys::paper::PERFORMANCE_MODE, "paper.performanceMode");
     assert_eq!(keys::paper::VIDEO_MULTI_PROCESS, "paper.videoMultiProcess");
-    assert_eq!(keys::paper::VIDEO_ENGINE, "paper.videoEngine");
     assert_eq!(keys::paths::PAPER_BIN, "paths.paperBin");
     assert_eq!(keys::paths::PAPER_STILL_BIN, "paths.paperStillBin");
     assert_eq!(keys::paths::PAPER_VK_BIN, "paths.paperVkBin");
@@ -324,6 +334,18 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::TAG_CLOUD_HEIGHT, "components.wallpaperSelector.tagCloudHeight");
     assert_eq!(keys::selector::TAG_CLOUD_OFFSET_X, "components.wallpaperSelector.tagCloudOffsetX");
     assert_eq!(keys::selector::TAG_CLOUD_OFFSET_Y, "components.wallpaperSelector.tagCloudOffsetY");
+    assert_eq!(
+        keys::selector::TAG_CLOUD_POSITION_ENABLED,
+        "components.wallpaperSelector.tagCloudPositionEnabled"
+    );
+    assert_eq!(
+        keys::selector::TAG_CLOUD_POSITION_X,
+        "components.wallpaperSelector.tagCloudPositionX"
+    );
+    assert_eq!(
+        keys::selector::TAG_CLOUD_POSITION_Y,
+        "components.wallpaperSelector.tagCloudPositionY"
+    );
     for (actual, expected) in [
         (
             keys::selector::SLICE_FILTER_BAR_OFFSET_X,
@@ -409,6 +431,58 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::CORNER_RADIUS, "components.wallpaperSelector.cornerRadius");
     assert_eq!(keys::selector::CORNER_TL, "components.wallpaperSelector.cornerTL");
     assert_eq!(keys::selector::CORNER_TR, "components.wallpaperSelector.cornerTR");
+    assert_eq!(keys::selector::CORNER_ALL, "components.wallpaperSelector.cornerAll");
+    assert_eq!(keys::selector::CORNER_STYLE, "components.wallpaperSelector.cornerStyle");
+    assert_eq!(keys::selector::CORNERS_SAME, "components.wallpaperSelector.cornersSame");
+    assert_eq!(keys::selector::GRID_CORNER_STYLE, "components.wallpaperSelector.gridCornerStyle");
+    assert_eq!(keys::selector::GRID_CORNERS_SAME, "components.wallpaperSelector.gridCornersSame");
+    assert_eq!(keys::selector::GRID_CORNER_TL, "components.wallpaperSelector.gridCornerTL");
+    assert_eq!(keys::selector::GRID_CORNER_TR, "components.wallpaperSelector.gridCornerTR");
+    assert_eq!(keys::selector::GRID_CORNER_BR, "components.wallpaperSelector.gridCornerBR");
+    assert_eq!(keys::selector::GRID_CORNER_BL, "components.wallpaperSelector.gridCornerBL");
+    assert_eq!(keys::selector::GRID_CORNER_ALL, "components.wallpaperSelector.gridCornerAll");
+    assert_eq!(keys::selector::HAND_CORNER_STYLE, "components.wallpaperSelector.handCornerStyle");
+    assert_eq!(keys::selector::HAND_CORNERS_SAME, "components.wallpaperSelector.handCornersSame");
+    assert_eq!(keys::selector::HAND_CORNER_TL, "components.wallpaperSelector.handCornerTL");
+    assert_eq!(keys::selector::HAND_CORNER_TR, "components.wallpaperSelector.handCornerTR");
+    assert_eq!(keys::selector::HAND_CORNER_BR, "components.wallpaperSelector.handCornerBR");
+    assert_eq!(keys::selector::HAND_CORNER_BL, "components.wallpaperSelector.handCornerBL");
+    assert_eq!(keys::selector::HAND_CORNER_ALL, "components.wallpaperSelector.handCornerAll");
+    assert_eq!(keys::selector::DEPTH_CORNER_STYLE, "components.wallpaperSelector.depthCornerStyle");
+    assert_eq!(keys::selector::DEPTH_CORNERS_SAME, "components.wallpaperSelector.depthCornersSame");
+    assert_eq!(keys::selector::DEPTH_CORNER_TL, "components.wallpaperSelector.depthCornerTL");
+    assert_eq!(keys::selector::DEPTH_CORNER_TR, "components.wallpaperSelector.depthCornerTR");
+    assert_eq!(keys::selector::DEPTH_CORNER_BR, "components.wallpaperSelector.depthCornerBR");
+    assert_eq!(keys::selector::DEPTH_CORNER_BL, "components.wallpaperSelector.depthCornerBL");
+    assert_eq!(keys::selector::DEPTH_CORNER_ALL, "components.wallpaperSelector.depthCornerAll");
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_STYLE,
+        "components.wallpaperSelector.collectionCornerStyle"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNERS_SAME,
+        "components.wallpaperSelector.collectionCornersSame"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_TL,
+        "components.wallpaperSelector.collectionCornerTL"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_TR,
+        "components.wallpaperSelector.collectionCornerTR"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_BR,
+        "components.wallpaperSelector.collectionCornerBR"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_BL,
+        "components.wallpaperSelector.collectionCornerBL"
+    );
+    assert_eq!(
+        keys::selector::COLLECTION_CORNER_ALL,
+        "components.wallpaperSelector.collectionCornerAll"
+    );
     assert_eq!(keys::selector::DISPLAY_MODE, "components.wallpaperSelector.displayMode");
     assert_eq!(keys::selector::ENABLED, "components.wallpaperSelector.enabled");
     assert_eq!(keys::selector::FLIP_BACK_REVEAL, "components.wallpaperSelector.flipBackReveal");
@@ -417,6 +491,7 @@ fn wire_strings_pinned() {
     assert_eq!(keys::selector::FLIP_SHADER, "components.wallpaperSelector.flipShader");
     assert_eq!(keys::selector::HEX_ARC, "components.wallpaperSelector.hexArc");
     assert_eq!(keys::selector::HEX_ARC_INTENSITY, "components.wallpaperSelector.hexArcIntensity");
+    assert_eq!(keys::selector::LOOP_AROUND, "components.wallpaperSelector.loopAround");
     assert_eq!(keys::selector::ROUND_CORNERS, "components.wallpaperSelector.roundCorners");
     assert_eq!(
         keys::selector::SANDY_OUTGOING_LIVE,
@@ -513,6 +588,12 @@ fn wire_strings_pinned() {
     assert_eq!(keys::keybind::SCENE_PROPERTIES, "keys.sceneProperties");
     assert_eq!(keys::keybind::SELECT, "keys.select");
     assert_eq!(keys::keybind::STUDIO, "keys.studio");
+    assert_eq!(keys::keybind::COLOUR_STUDIO, "keys.colourStudio");
+    assert_eq!(keys::keybind::WIDGETS, "keys.widgets");
+    assert_eq!(keys::theme::STUDIO_MODE, "theme.studioMode");
+    assert_eq!(keys::theme::STUDIO_AREA, "theme.studioArea");
+    assert_eq!(keys::theme::STUDIO_AREA_IMAGE, "theme.studioAreaImage");
+    assert_eq!(keys::theme::STUDIO_SAVED, "theme.studioSaved");
     assert_eq!(keys::keybind::SETTINGS, "keys.settings");
     assert_eq!(keys::keybind::TAG_CLOUD, "keys.tagCloud");
     assert_eq!(keys::keybind::TAG_MODE, "keys.tagMode");

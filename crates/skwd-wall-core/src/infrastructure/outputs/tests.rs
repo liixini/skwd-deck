@@ -12,6 +12,9 @@ fn info(name: &str) -> OutputInfo {
         refresh_mhz: 60000,
         scale: 1,
         rotated: false,
+        logical: None,
+        description: String::new(),
+        serial: String::new(),
     }
 }
 
@@ -21,6 +24,33 @@ fn rotated_swaps_dims() {
     assert_eq!(flat.logical_size(), (1920, 1080));
     let portrait = OutputInfo { rotated: true, ..info("DP-2") };
     assert_eq!(portrait.logical_size(), (1080, 1920));
+}
+
+#[test]
+fn scaled_logical_size() {
+    for (scale, rotated, expected) in [
+        (2, false, (600, 800)),
+        (2, true, (800, 600)),
+        (1, true, (1600, 1200)),
+        (0, false, (1200, 1600)),
+        (-1, true, (1600, 1200)),
+    ] {
+        let output = OutputInfo { width: 1200, height: 1600, scale, rotated, ..info("DP-1") };
+        assert_eq!(output.logical_size(), expected);
+        assert_eq!(output.pixel_size(), if rotated { (1600, 1200) } else { (1200, 1600) });
+        assert_eq!((output.width, output.height), (1200, 1600));
+    }
+}
+
+#[test]
+fn reported_logical_size() {
+    for (rotated, logical) in [(false, (1280, 720)), (true, (720, 1280))] {
+        let output = OutputInfo { scale: 2, rotated, logical: Some(logical), ..info("DP-1") };
+        assert_eq!(output.logical_size(), logical);
+        assert_eq!(output.pixel_size(), if rotated { (1080, 1920) } else { (1920, 1080) });
+    }
+    let invalid = OutputInfo { scale: 2, logical: Some((0, 720)), ..info("DP-1") };
+    assert_eq!(invalid.logical_size(), (960, 540));
 }
 
 #[test]
@@ -239,4 +269,67 @@ fn disconnected_session_recovers() {
     }
     assert_eq!(attempts, 2);
     assert_eq!(changes, 1);
+}
+
+#[test]
+fn monitor_key_follows_serial() {
+    let dell = |description: &str| OutputInfo {
+        make: "Dell Inc.".to_string(),
+        model: "DELL P2723DE".to_string(),
+        description: description.to_string(),
+        ..info("DP-7")
+    };
+    assert_eq!(
+        dell("Dell Inc. DELL P2723DE 317ZNR3 (DP-7)").monitor(),
+        "Dell Inc. DELL P2723DE 317ZNR3"
+    );
+    assert_eq!(dell("Dell Inc. DELL P2723DE 317ZNR3").monitor(), "Dell Inc. DELL P2723DE 317ZNR3");
+    assert_eq!(dell("Dell Inc. DELL P2723DE (DP-7)").monitor(), "Dell Inc. DELL P2723DE @ DP-7");
+    assert_eq!(dell("").monitor(), "Dell Inc. DELL P2723DE @ DP-7");
+    assert_eq!(dell("Built-in display").monitor(), "Dell Inc. DELL P2723DE @ DP-7");
+    assert_eq!(info("eDP-1").monitor(), "eDP-1");
+}
+
+#[test]
+fn monitor_key_prefers_head_serial() {
+    let aoc = |name: &str, serial: &str| OutputInfo {
+        make: "PNP(AOC)".to_string(),
+        model: "2590G4".to_string(),
+        description: format!("PNP(AOC) - 2590G4 - {name}"),
+        serial: serial.to_string(),
+        ..info(name)
+    };
+    assert_eq!(aoc("DP-9", "0x00002AB6").monitor(), "PNP(AOC) 2590G4 0x00002AB6");
+    assert_eq!(aoc("HDMI-A-1", "0x00002AB6").monitor(), aoc("DP-9", "0x00002AB6").monitor());
+    assert_eq!(aoc("DP-9", "").monitor(), "PNP(AOC) 2590G4 @ DP-9");
+    assert_eq!(OutputInfo { serial: "0x1".to_string(), ..info("eDP-1") }.monitor(), "eDP-1");
+}
+
+#[test]
+fn unclear_serials_are_dropped() {
+    let panel = |name: &str, model: &str, serial: &str| OutputInfo {
+        make: "AOC".to_string(),
+        model: model.to_string(),
+        serial: serial.to_string(),
+        ..info(name)
+    };
+    let mut outputs = [
+        panel("DP-1", "24G2", "123456789"),
+        panel("DP-2", "24G2", "123456789"),
+        panel("DP-3", "27G2", "123456789"),
+        panel("DP-4", "27G2", "0x00000000"),
+        panel("DP-5", "Q27", " 0x00002AB6 "),
+    ];
+    unique_serials(&mut outputs);
+    let keys = outputs.iter().map(OutputInfo::monitor).collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        [
+            "AOC 24G2 @ DP-1",
+            "AOC 24G2 @ DP-2",
+            "AOC 27G2 123456789",
+            "AOC 27G2 @ DP-4",
+            "AOC Q27 0x00002AB6",
+        ]
+    );
 }

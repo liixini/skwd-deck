@@ -6,6 +6,7 @@ use super::Config;
 use crate::infrastructure::config::config_path;
 
 mod integrations;
+mod studio;
 pub use integrations::Integration;
 
 #[derive(Clone, Copy)]
@@ -35,6 +36,16 @@ impl<'a> ThemeConfig<'a> {
         noctalia_theme_mode: str(skwd_config::keys::noctalia::THEME_MODE, "follow");
         noctalia_pure_black: bool(skwd_config::keys::theme::NOCTALIA_PURE_BLACK, false);
         static_theme: str(skwd_config::keys::theme::STATIC_THEME, "nord");
+        studio_mode: str(skwd_config::keys::theme::STUDIO_MODE, "");
+        studio_area_image: str(skwd_config::keys::theme::STUDIO_AREA_IMAGE, "");
+        studio_warmth: num(skwd_config::keys::theme::STUDIO_WARMTH, 0.0) as f32;
+        studio_colour: num(skwd_config::keys::theme::STUDIO_COLOUR, 1.0) as f32;
+        studio_contrast: num(skwd_config::keys::theme::STUDIO_CONTRAST, 0.0) as f32;
+    }
+
+    pub fn studio_method(&self) -> String {
+        skwd_config::schema::read_text(self.root(), skwd_config::keys::theme::STUDIO_METHOD)
+            .expect("studio method schema")
     }
 
     pub fn backend(&self) -> String {

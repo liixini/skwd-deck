@@ -1,5 +1,10 @@
 use serde_json::Value;
 
+const RGB_DIGITS: usize = 6;
+const RGBA_DIGITS: usize = 8;
+const CHANNEL_DIGITS: usize = 2;
+const HEX_RADIX: u32 = 16;
+
 pub fn get<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
     let mut cur = root;
     for part in path.split('.') {
@@ -58,6 +63,28 @@ pub fn bool_false_unless_true(root: &Value, path: &str) -> bool {
 
 pub fn bool_at(root: &Value, path: &str, default: bool) -> bool {
     get(root, path).and_then(Value::as_bool).unwrap_or(default)
+}
+
+pub fn parse_rgb(text: &str) -> Option<[u8; 3]> {
+    let hex = text.strip_prefix('#').unwrap_or(text);
+    if !matches!(hex.len(), RGB_DIGITS | RGBA_DIGITS)
+        || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    hex_bytes(&hex[..RGB_DIGITS])
+}
+
+pub(crate) fn hex_bytes<const N: usize>(hex: &str) -> Option<[u8; N]> {
+    if hex.len() != N * CHANNEL_DIGITS || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = [0; N];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * CHANNEL_DIGITS;
+        *byte = u8::from_str_radix(&hex[start..start + CHANNEL_DIGITS], HEX_RADIX).ok()?;
+    }
+    Some(bytes)
 }
 
 #[cfg(test)]

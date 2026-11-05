@@ -13,6 +13,7 @@ use super::policy::{
 use super::reconcile::{ReconcileIntent, reconcile_outputs};
 use super::resolver::reconcile_targets;
 use super::static_media::apply_static_per_output_transition;
+use super::still_policy::record_still_background;
 use super::transition::TransitionSelection;
 use super::wallpaper_engine::rebuild_we;
 use super::*;
@@ -126,6 +127,7 @@ fn distinct_we_audio() {
 
 #[test]
 fn distinct_we_launch_audio() {
+    let _guard = crate::outputs::enum_shared();
     let dir = tempfile::tempdir().unwrap();
     let workshop = dir.path().join("we");
     for id in ["100", "200"] {
@@ -429,7 +431,7 @@ fn stub_state(
     std::fs::create_dir_all(&cache).unwrap();
     WallState::test_new(serde_json::json!({
         "display": display,
-        "paper": {"engine": engine, "videoEngine": "vulkan", "videoMultiProcess": video_multi},
+        "paper": {"engine": engine, "videoMultiProcess": video_multi},
         "paths": {
             "cache": cache.display().to_string(),
             "paperStillBin": bin.display().to_string(),
@@ -445,6 +447,7 @@ fn sleeper() -> Child {
 
 #[test]
 fn paper_policy_gate_stale() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     assert!(paper_policy_matches(&st));
     st.renderers().set_policy(PAPER_POLICY_KEY, &current_paper_policy(&st).signature());
@@ -455,6 +458,7 @@ fn paper_policy_gate_stale() {
 
 #[test]
 fn active_policy_gate_video() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     seed(&st, "*", "video", "/v/a.mp4", "", true, 80);
     record_paper_policy(&st);
@@ -478,9 +482,6 @@ fn paper_policy_signature_fields() {
     changed.idle_pause_seconds = base.idle_pause_seconds.saturating_add(1);
     assert_ne!(base.signature(), changed.signature());
     changed = base.clone();
-    changed.video_engine = "tinier".to_string();
-    assert_ne!(base.signature(), changed.signature());
-    changed = base.clone();
     changed.fill_mode = "cover".to_string();
     assert_ne!(base.signature(), changed.signature());
     changed = base.clone();
@@ -490,6 +491,7 @@ fn paper_policy_signature_fields() {
 
 #[test]
 fn paper_policy_binary_rebuild() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     record_paper_policy(&st);
     assert!(paper_policy_matches(&st));
@@ -566,6 +568,7 @@ fn native_scene_signature_fields() {
 
 #[test]
 fn native_scene_policy_nests_paper() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     st.renderers()
         .set_policy(NATIVE_SCENE_POLICY_KEY, &current_native_scene_policy(&st).signature());
@@ -576,6 +579,7 @@ fn native_scene_policy_nests_paper() {
 
 #[test]
 fn native_only_scene_matches() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     st.renderers().set_video_paper("*", sleeper(), None);
     st.renderers().mark_scene_paper("*", true);
@@ -767,7 +771,14 @@ fn reconcile_ready(
 ) -> anyhow::Result<()> {
     let transition =
         TransitionSelection::Explicit { enabled: trans, shader, duration_ms: dur }.resolve(st);
-    with_readiness(st, || reconcile_outputs(st, mons, &ReconcileIntent::Apply { transition }))
+    with_readiness(st, || {
+        reconcile_outputs(
+            st,
+            mons,
+            &ReconcileIntent::Apply { transition },
+            super::reconcile::ReconcileScope::All,
+        )
+    })
 }
 
 fn refresh_policy_ready(st: &WallState) -> anyhow::Result<()> {
@@ -1116,12 +1127,174 @@ fn unchanged_static_noop() {
     let out = st.path().join("dp1-still.stdin");
     let (child, stdin) = capture_child(&out);
     st.renderers().set_output_still("DP-1", child, stdin);
+    record_still_background(&st, "DP-1");
     st.renderers().set_assignment("DP-1", "/w/a.png");
     seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
     reconcile_ready(&st, "fill", &["DP-1".to_string()], true, "fade", 600).unwrap();
     assert!(settled_spawns(st.path()).is_empty());
     assert!(st.renderers().has_output_still("DP-1"));
     assert_eq!(std::fs::read_to_string(&out).unwrap(), "");
+}
+
+#[test]
+fn transition_keeps_unchanged_still() {
+    let st = Stub::new();
+    let old = st.path().join("old.png");
+    std::fs::write(&old, b"old").unwrap();
+    let old = old.to_str().unwrap();
+    let (dp1, dp1_stdin) = capture_child(&st.path().join("dp1-still.stdin"));
+    let locked_out = st.path().join("dp2-still.stdin");
+    let (dp2, dp2_stdin) = capture_child(&locked_out);
+    st.renderers().set_output_still("DP-1", dp1, dp1_stdin);
+    st.renderers().set_output_still("DP-2", dp2, dp2_stdin);
+    record_still_background(&st, "DP-2");
+    st.renderers().set_assignment("DP-1", old);
+    st.renderers().set_assignment("DP-2", "/w/locked.png");
+    seed(&st, "DP-1", "static", "/w/new.png", "", true, 0);
+    seed(&st, "DP-2", "static", "/w/locked.png", "", true, 0);
+
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], true, "fade", 600).unwrap();
+
+    wait_spawns(st.path(), 2);
+    assert_eq!(
+        settled_spawns(st.path()),
+        vec![
+            vec!["DP-1", "/w/new.png", "--fill-mode", "fill", "--persist"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>(),
+            staged(transition_args_for("DP-1", old, "/w/new.png", "fill", "fade", 600)),
+        ]
+    );
+    assert!(st.renderers().has_output_still("DP-2"));
+    assert_eq!(std::fs::read_to_string(locked_out).unwrap_or_default(), "");
+}
+
+#[test]
+fn shared_still_kept() {
+    let st = Stub::new();
+    let old = st.path().join("old.png");
+    std::fs::write(&old, b"old").unwrap();
+    let old = old.to_str().unwrap();
+    let shared_out = st.path().join("shared-still.stdin");
+    let (shared, shared_stdin) = capture_child(&shared_out);
+    let (dp2, dp2_stdin) = capture_child(&st.path().join("dp2-still.stdin"));
+    st.renderers().set_output_still("DP-1,DP-3", shared, shared_stdin);
+    record_still_background(&st, "DP-1,DP-3");
+    st.renderers().set_output_still("DP-2", dp2, dp2_stdin);
+    st.renderers().set_assignment("DP-1", "/w/a.png");
+    st.renderers().set_assignment("DP-3", "/w/a.png");
+    st.renderers().set_assignment("DP-2", old);
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-3", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-2", "static", "/w/new.png", "", true, 0);
+    let mons = vec!["DP-1".to_string(), "DP-2".to_string(), "DP-3".to_string()];
+
+    reconcile_ready(&st, "fill", &mons, true, "fade", 600).unwrap();
+
+    wait_spawns(st.path(), 2);
+    let spawns = settled_spawns(st.path());
+    assert_eq!(spawns.len(), 2);
+    assert!(spawns.iter().all(|args| args[0] == "DP-2"));
+    assert!(st.renderers().has_output_still("DP-1,DP-3"));
+    assert_eq!(std::fs::read_to_string(shared_out).unwrap_or_default(), "");
+}
+
+#[test]
+fn single_change_swaps_warm() {
+    let st = Stub::new();
+    let swap_out = st.path().join("dp1-still.stdin");
+    let (dp1, dp1_stdin) = capture_child(&swap_out);
+    let (dp2, dp2_stdin) = capture_child(&st.path().join("dp2-still.stdin"));
+    st.renderers().set_output_still("DP-1", dp1, dp1_stdin);
+    record_still_background(&st, "DP-1");
+    st.renderers().set_output_still("DP-2", dp2, dp2_stdin);
+    record_still_background(&st, "DP-2");
+    st.renderers().set_assignment("DP-1", "/w/old.png");
+    st.renderers().set_assignment("DP-2", "/w/locked.png");
+    seed(&st, "DP-1", "static", "/w/new.png", "", true, 0);
+    seed(&st, "DP-2", "static", "/w/locked.png", "", true, 0);
+
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], false, "fade", 600).unwrap();
+
+    assert!(settled_spawns(st.path()).is_empty());
+    assert_eq!(wait_stdin_lines(&swap_out, 1)[0]["path"], "/w/new.png");
+    assert_eq!(st.renderers().assignments().get("DP-1").map(String::as_str), Some("/w/new.png"));
+}
+
+#[test]
+fn shared_kept_swaps_warm() {
+    let st = Stub::new();
+    let (shared, shared_stdin) = capture_child(&st.path().join("shared-still.stdin"));
+    let swap_out = st.path().join("dp2-still.stdin");
+    let (dp2, dp2_stdin) = capture_child(&swap_out);
+    st.renderers().set_output_still("DP-1,DP-3", shared, shared_stdin);
+    record_still_background(&st, "DP-1,DP-3");
+    st.renderers().set_output_still("DP-2", dp2, dp2_stdin);
+    record_still_background(&st, "DP-2");
+    st.renderers().set_assignment("DP-1", "/w/a.png");
+    st.renderers().set_assignment("DP-3", "/w/a.png");
+    st.renderers().set_assignment("DP-2", "/w/old.png");
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-3", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-2", "static", "/w/new.png", "", true, 0);
+    let mons = vec!["DP-1".to_string(), "DP-2".to_string(), "DP-3".to_string()];
+
+    reconcile_ready(&st, "fill", &mons, false, "fade", 600).unwrap();
+
+    assert!(settled_spawns(st.path()).is_empty());
+    assert_eq!(wait_stdin_lines(&swap_out, 1)[0]["path"], "/w/new.png");
+    assert!(st.renderers().has_output_still("DP-1,DP-3"));
+}
+
+#[test]
+fn changed_background_respawns_still() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::with_display(&serde_json::json!({"fillMode":"center", "fillColor":"#123456"}));
+    let _ready = st.readiness();
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+    seed(&st, "DP-2", "static", "/w/b.png", "", true, 0);
+    let mons = vec!["DP-1".to_string(), "DP-2".to_string()];
+    reconcile_ready(&st, "center", &mons, false, "", 0).unwrap();
+    let first = settled_spawns(st.path()).len();
+    st.renderers().set_policy("stillbackground:DP-1", "stale");
+
+    reconcile_ready(&st, "center", &mons, false, "", 0).unwrap();
+
+    let spawns = settled_spawns(st.path());
+    assert_eq!(spawns.len(), first + 1);
+    assert_eq!(spawns.iter().filter(|args| args[0] == "DP-1").count(), 2);
+}
+
+#[test]
+fn shared_overlay_one_process() {
+    let st = Stub::new();
+    let old = st.path().join("old.png");
+    std::fs::write(&old, b"old").unwrap();
+    let old = old.to_str().unwrap();
+    let (dp1, dp1_stdin) = capture_child(&st.path().join("dp1-still.stdin"));
+    let (dp3, dp3_stdin) = capture_child(&st.path().join("dp3-still.stdin"));
+    st.renderers().set_output_still("DP-1", dp1, dp1_stdin);
+    st.renderers().set_output_still("DP-3", dp3, dp3_stdin);
+    st.renderers().set_assignment("DP-1", old);
+    st.renderers().set_assignment("DP-3", old);
+    seed(&st, "DP-1", "static", "/w/new.png", "", true, 0);
+    seed(&st, "DP-3", "static", "/w/new.png", "", true, 0);
+
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-3".into()], true, "fade", 600).unwrap();
+
+    let launches = launch_order(st.path());
+    assert_eq!(launches.len(), 2);
+    assert_eq!(launches[0].1, vec!["DP-1,DP-3", "/w/new.png", "--fill-mode", "fill", "--persist"]);
+    assert_eq!(
+        launches[1].1,
+        staged(transition_args_for("DP-1,DP-3", old, "/w/new.png", "fill", "fade", 600))
+    );
+    assert_eq!(
+        wait_stdin_lines(&st.path().join(format!("{}.stdin", launches[1].0)), 1)[0]["pause"],
+        false
+    );
+    assert!(st.renderers().has_output_still("DP-1,DP-3"));
 }
 
 #[test]
@@ -1184,6 +1357,7 @@ fn reconcile_vk_reshape_plain_spawn() {
 #[test]
 fn we_regroup_failure_rollback() {
     use std::sync::atomic::AtomicU32;
+    let _guard = crate::outputs::enum_shared();
 
     let dir = tempfile::tempdir().unwrap();
     let workshop = dir.path().join("we");
@@ -1243,6 +1417,7 @@ fn we_regroup_failure_rollback() {
             &st,
             &["DP-1".to_string(), "DP-2".to_string()],
             &ReconcileIntent::PolicyRefresh,
+            super::reconcile::ReconcileScope::All,
         );
         stop.store(true, Ordering::Relaxed);
         ready.join().unwrap();
@@ -1316,7 +1491,12 @@ fn mixed_shared_renderers_roll_back_when_we_prepare_fails() {
     let monitors = ["DP-S1", "DP-S2", "DP-V1", "DP-V2", "DP-W1", "DP-W2"].map(str::to_string);
     let (result, staged_pids) =
         with_recorded_readiness(&st, &[old_static_pid, old_video_pid, old_scene_pid], || {
-            reconcile_outputs(&st, &monitors, &ReconcileIntent::PolicyRefresh)
+            reconcile_outputs(
+                &st,
+                &monitors,
+                &ReconcileIntent::PolicyRefresh,
+                super::reconcile::ReconcileScope::All,
+            )
         });
 
     assert!(result.unwrap_err().to_string().contains("invalid WE id"));
@@ -1365,7 +1545,12 @@ fn mixed_per_output_renderers_roll_back_when_we_prepare_fails() {
     let monitors = ["DP-S", "DP-V", "DP-W"].map(str::to_string);
     let (result, staged_pids) =
         with_recorded_readiness(&st, &[old_static_pid, old_video_pid], || {
-            reconcile_outputs(&st, &monitors, &ReconcileIntent::PolicyRefresh)
+            reconcile_outputs(
+                &st,
+                &monitors,
+                &ReconcileIntent::PolicyRefresh,
+                super::reconcile::ReconcileScope::All,
+            )
         });
 
     assert!(result.unwrap_err().to_string().contains("invalid WE id"));
@@ -1465,12 +1650,52 @@ fn still_kept_until_ready() {
     st.renderers().set_assignment("DP-1", "/w/old.png");
     seed(&st, "DP-1", "video", "/v/new.mp4", "", true, 50);
     let (alive_at_ready, handle) = alive_at_ready_poller(&st, old_pid);
-    reconcile_outputs(&st, &["DP-1".to_string()], &ReconcileIntent::PolicyRefresh).unwrap();
+    reconcile_outputs(
+        &st,
+        &["DP-1".to_string()],
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    )
+    .unwrap();
     handle.join().unwrap();
     assert!(alive_at_ready.load(Ordering::Relaxed),);
     assert!(!Path::new(&format!("/proc/{old_pid}")).exists(),);
     assert!(st.renderers().has_video_paper("DP-1"));
     assert!(!st.renderers().has_output_still("DP-1"));
+}
+
+#[test]
+fn failed_respawn_forgets_background() {
+    let _guard = crate::outputs::enum_shared();
+    let st = Stub::new();
+    let old = sleeper();
+    st.renderers().set_output_still("DP-1", old, None);
+    st.renderers().set_policy("stillbackground:DP-1", "stale");
+    st.renderers().set_assignment("DP-1", "/w/a.png");
+    seed(&st, "DP-1", "static", "/w/a.png", "", true, 0);
+
+    let result = reconcile_outputs(
+        &st,
+        &["DP-1".to_string()],
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    );
+
+    assert!(result.is_err());
+    assert!(st.renderers().has_output_still("DP-1"));
+    assert!(!super::still_policy::still_kept(&st, "DP-1"));
+}
+
+#[test]
+fn group_background_all_members() {
+    let st = Stub::with_display(
+        &serde_json::json!({"fillMode":"center", "backgroundModes":{"DP-3":"blur"}}),
+    );
+    let first_only = super::still_policy::still_background(&st, "DP-1");
+    st.renderers().set_policy("stillbackground:DP-1,DP-3", &first_only);
+    assert!(!super::still_policy::still_background_current(&st, "DP-1,DP-3"));
+    record_still_background(&st, "DP-1,DP-3");
+    assert!(super::still_policy::still_background_current(&st, "DP-1,DP-3"));
 }
 
 #[test]
@@ -1483,7 +1708,13 @@ fn timeout_keeps_surface() {
     st.renderers().set_assignment("DP-1", "/w/old.png");
     seed(&st, "DP-1", "video", "/v/new.mp4", "", true, 50);
     assert!(
-        reconcile_outputs(&st, &["DP-1".to_string()], &ReconcileIntent::PolicyRefresh).is_err()
+        reconcile_outputs(
+            &st,
+            &["DP-1".to_string()],
+            &ReconcileIntent::PolicyRefresh,
+            super::reconcile::ReconcileScope::All
+        )
+        .is_err()
     );
     assert!(Path::new(&format!("/proc/{old_pid}")).exists(),);
     assert!(st.renderers().has_output_still("DP-1"));
@@ -1499,7 +1730,13 @@ fn star_split_handoff() {
     st.renderers().set_video_paper("*", star, None);
     seed(&st, "DP-1", "static", "/w/pin.png", "", true, 0);
     let (alive_at_ready, handle) = alive_at_ready_poller(&st, star_pid);
-    reconcile_outputs(&st, &["DP-1".to_string()], &ReconcileIntent::PolicyRefresh).unwrap();
+    reconcile_outputs(
+        &st,
+        &["DP-1".to_string()],
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    )
+    .unwrap();
     handle.join().unwrap();
     assert!(alive_at_ready.load(Ordering::Relaxed),);
     assert!(!Path::new(&format!("/proc/{star_pid}")).exists(),);
@@ -1694,6 +1931,23 @@ fn multi_manifest_audio_and_from() {
 }
 
 #[test]
+fn semicolon_video_splits() {
+    let st = Stub::new();
+    let first = st.path().join("a;1.mp4");
+    let second = st.path().join("b.mp4");
+    std::fs::write(&first, b"fixture").unwrap();
+    std::fs::write(&second, b"fixture").unwrap();
+    seed(&st, "DP-1", "video", first.to_str().unwrap(), "", true, 80);
+    seed(&st, "DP-2", "video", second.to_str().unwrap(), "", true, 80);
+
+    reconcile_ready(&st, "fill", &["DP-1".into(), "DP-2".into()], false, "", 0).unwrap();
+
+    let launches = settled_spawns(st.path());
+    assert_eq!(launches.len(), 2);
+    assert!(launches.iter().all(|args| args.first().is_none_or(|arg| arg != "--multi-json")));
+}
+
+#[test]
 fn mixed_video_we_audio() {
     let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
@@ -1718,6 +1972,7 @@ fn mixed_video_we_audio() {
     )
     .unwrap();
 
+    assert_eq!(st.renderers().assignments()["DP-1"], scene.to_str().unwrap());
     let launches = settled_spawns(st.path());
     assert_eq!(launches.len(), 2);
     let multi = launches
@@ -1774,6 +2029,7 @@ fn duplicate_source_audio_resync() {
 
 #[test]
 fn per_output_spawn_failure_restores() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     let old = sleeper();
     let old_pid = old.id();
@@ -1783,7 +2039,12 @@ fn per_output_spawn_failure_restores() {
     seed(&st, "DP-1", "video", "/v/a.mp4", "", true, 80);
     std::fs::remove_file(st.config().renderer().vk_bin()).unwrap();
 
-    let result = reconcile_outputs(&st, &["DP-1".to_string()], &ReconcileIntent::PolicyRefresh);
+    let result = reconcile_outputs(
+        &st,
+        &["DP-1".to_string()],
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    );
 
     assert!(result.is_err());
     assert_eq!(st.renderers().video_paper_pid("DP-1"), Some(old_pid));
@@ -1829,6 +2090,7 @@ fn reconcile_batch_failure_at_each_candidate_keeps_complete_renderer_set() {
                 &st,
                 &outputs.iter().map(ToString::to_string).collect::<Vec<_>>(),
                 &ReconcileIntent::PolicyRefresh,
+                super::reconcile::ReconcileScope::All,
             )
         });
 
@@ -2190,16 +2452,18 @@ fn session_keeps_transition_running() {
 }
 
 #[test]
-fn maximized_display_pause_uses_independent_renderers() {
-    for (fullscreen, maximized, scope, independent) in [
-        (false, false, "display", false),
-        (false, true, "display", true),
-        (true, false, "display", true),
-        (true, true, "display", true),
-        (false, true, "all", false),
+fn window_display_pause_uses_independent_renderers() {
+    for (fullscreen, maximized, focused, scope, independent) in [
+        (false, false, false, "display", false),
+        (false, true, false, "display", true),
+        (true, false, false, "display", true),
+        (false, false, true, "display", true),
+        (true, true, true, "display", true),
+        (false, true, true, "all", false),
     ] {
         let state = WallState::test_new(serde_json::json!({"playback": {
-            "fullscreen": fullscreen, "maximized": maximized, "fullscreenScope": scope
+            "fullscreen": fullscreen, "maximized": maximized, "focused": focused,
+            "fullscreenScope": scope
         }}));
         assert_eq!(super::policy::independent_playback(&state), independent);
     }
@@ -2230,6 +2494,7 @@ fn still_for_one_output_carries_that_outputs_audio_memory() {
 
 #[test]
 fn scene_fps_policy_detects_active_override_changes_and_default_restoration() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     record_native_scene_policies(&st);
     let global = st.config().renderer().we_fps();
@@ -2251,6 +2516,7 @@ fn scene_fps_policy_detects_active_override_changes_and_default_restoration() {
 
 #[test]
 fn external_handoff_retires_every_renderer_and_clears_restore_state() {
+    let _guard = crate::outputs::enum_shared();
     let st = Stub::new();
     st.renderers().swap_paper(sleeper());
     st.renderers().set_base_still(sleeper(), None);
@@ -2391,22 +2657,20 @@ fn background_policy_refresh_replaces_same_path_still() {
     reconcile_ready(&st, "center", &["DP-1".into()], false, "", 0).unwrap();
     let previous = st.renderers().wallpaper_pids();
     st.renderers().set_policy(PAPER_POLICY_KEY, "previous-background");
-    reconcile_outputs(&st, &["DP-1".into()], &ReconcileIntent::PolicyRefresh).unwrap();
+    reconcile_outputs(
+        &st,
+        &["DP-1".into()],
+        &ReconcileIntent::PolicyRefresh,
+        super::reconcile::ReconcileScope::All,
+    )
+    .unwrap();
     let current = st.renderers().wallpaper_pids();
     assert!(!previous.is_empty());
     assert!(!current.is_empty());
     assert!(current.iter().all(|pid| !previous.contains(pid)));
     wait_spawns(st.path(), previous.len() + current.len());
     for pid in current {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let environment = loop {
-            let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
-            if !environment.is_empty() {
-                break environment;
-            }
-            assert!(Instant::now() < deadline, "renderer environment stayed empty");
-            std::thread::sleep(Duration::from_millis(10));
-        };
+        let environment = std::fs::read(format!("/proc/{pid}/environ")).unwrap();
         let environment = String::from_utf8_lossy(&environment);
         assert!(
             environment.contains("SKWD_PAPER_BACKGROUND={\"color\":[18,52,86],\"blur\":false}")
@@ -2554,3 +2818,79 @@ fn visible_video_backgrounds_split() {
         assert!(!st.renderers().has_video_paper("multi"));
     }
 }
+
+#[test]
+fn service_scene_policy_gate() {
+    let state = WallState::test_new(serde_json::json!({
+        "display": {"outputLocks": {"DP-2": true}}
+    }));
+    let outputs = ["DP-1", "DP-2"]
+        .map(|name| crate::outputs::OutputInfo { name: name.into(), ..Default::default() });
+    let desired = serde_json::json!({
+        "DP-1": crate::audio::entry("we", "", "42", true, 80),
+        "DP-2": crate::audio::entry("static", "/wall/locked.png", "", true, 80)
+    });
+    let config = state.config().clone();
+    let crate::infrastructure::paper::PaperCompositionPlan::Replace(mut expected) =
+        crate::infrastructure::paper::PaperClientAdapter::configured(&config)
+            .composition_plan(&config, &desired, &outputs)
+            .unwrap()
+    else {
+        panic!("missing composition");
+    };
+    expected
+        .assignments
+        .retain(|assignment| assignment.source.kind == paper_control::SourceKind::WallpaperEngine);
+    let mut status = paper_control::StatusResult {
+        paused: true,
+        policy: expected.policy.clone(),
+        assignments: expected
+            .assignments
+            .iter()
+            .map(|assignment| {
+                paper_control::AssignmentStatus::from_assignment(assignment, 1, Some(17), true)
+            })
+            .collect(),
+        renderers: Vec::new(),
+    };
+    assert!(super::service::scenes_match(&expected, &status));
+    for mutation in 0..7 {
+        let mut stale = status.clone();
+        match mutation {
+            0 => stale.assignments.clear(),
+            1 => stale.assignments[0].ready = false,
+            2 => stale.assignments[0].pid = None,
+            3 => stale.assignments[0].source.path = "/wrong/scene".into(),
+            4 => stale.assignments[0].outputs = vec!["DP-2".into()],
+            5 => stale.assignments[0].fill_mode = paper_control::FillMode::Fit,
+            _ => stale.policy = None,
+        }
+        assert!(!super::service::scenes_match(&expected, &stale));
+    }
+    for mutation in 0..3 {
+        let mut stale = status.clone();
+        let policy = stale.policy.as_mut().unwrap();
+        match mutation {
+            0 => policy.idle_seconds = Some(17),
+            1 => policy.transitions_enabled = Some(false),
+            _ => policy.sand.as_mut().unwrap().sharp = Some(true),
+        }
+        assert!(!super::service::scenes_match(&expected, &stale));
+    }
+    status.policy.as_mut().unwrap().scene.as_mut().unwrap().fps = Some(17);
+    assert!(!super::service::scenes_match(&expected, &status));
+    status.policy = expected.policy.clone();
+    status.policy.as_mut().unwrap().output_fps.insert("DP-1".into(), 17);
+    assert!(!super::service::scenes_match(&expected, &status));
+    status.policy = expected.policy.clone();
+    let missing = serde_json::json!({
+        "DP-1": crate::audio::entry("we", "", "42", true, 80),
+        "DP-2": crate::audio::entry("we", "", "43", true, 80)
+    });
+    let expected = super::service::plan(&state, &missing, &outputs, &status).unwrap();
+    assert_eq!(expected.assignments.len(), 2);
+    assert!(!super::service::scenes_match(&expected, &status));
+}
+
+#[path = "service_refresh_tests.rs"]
+mod service_refresh;

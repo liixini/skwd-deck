@@ -20,7 +20,7 @@ use crate::state::WallState;
 use super::static_media::native_still_override;
 use super::transition::TransitionSelection;
 
-pub use super::engine::{VideoEngine, video_engine_is_vk};
+pub use super::engine::VideoEngine;
 pub use super::external::release_outputs;
 pub use super::policy::{
     active_renderer_policy_matches, independent_playback, native_scene_properties_match,
@@ -131,6 +131,7 @@ pub fn apply_output_with_transition(
         state,
         &monitors,
         &super::reconcile::ReconcileIntent::Apply { transition },
+        super::reconcile::ReconcileScope::All,
     );
     if result.is_err() {
         crate::audio::write_state(&cache, &previous);

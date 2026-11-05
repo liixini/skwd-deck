@@ -44,10 +44,7 @@ fn entry_of(swatch: &Swatch) -> Entry {
 }
 
 fn relative_luminance(color: Rgb) -> f32 {
-    let linearize = |channel: u8| {
-        let value = f32::from(channel) / 255.0;
-        if value <= 0.040_45 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
-    };
+    let linearize = crate::seed::linearize;
     0.2126 * linearize(color.0) + 0.7152 * linearize(color.1) + 0.0722 * linearize(color.2)
 }
 

@@ -4,14 +4,24 @@ use wall_proto::{AppThemeRefresh, AppThemesResult};
 
 use crate::{WallState, config::Config};
 
-const LIGHT_MODE: &str = "light";
-const DARK_MODE: &str = "dark";
-const APPLIED_DARK_KEY: &str = "dark";
+pub const APPLIED_DARK_KEY: &str = "dark";
+pub const APPLIED_SOURCE_KEY: &str = "source";
+pub const PROFILE_KEY: &str = "key";
+pub const PROFILE_ENABLED: &str = "enabled";
 const PALETTE_KEY: &str = "palette";
 const SCHEME_KEY: &str = "scheme";
+const COLORS_FILE: &str = "colors.json";
 const SCHEME_META_KEY: &str = "_scheme";
 pub const ERROR_SEPARATOR: &str = "; ";
 const IDENTITY_SQL: &str = "SELECT key, name, thumb FROM meta WHERE key = ?2 OR thumb = ?1 OR thumb_sm = ?1 OR video_file = ?1 ORDER BY key = ?2 DESC LIMIT 1";
+
+fn effective_dark(config: &Config, source: &str) -> bool {
+    if config.theme().backend() == wall_proto::STUDIO_ENGINE {
+        super::studio::mode_dark(config, source)
+    } else {
+        super::resolve_dark(config, source)
+    }
+}
 
 pub const ROLE_KEYS: [&str; 9] = [
     "primary",
@@ -66,15 +76,7 @@ pub fn refresh_apps(
     if let Some(scheme) = snapshot.as_ref().and_then(|theme| theme.get(SCHEME_KEY)) {
         current[SCHEME_META_KEY] = scheme.clone();
     }
-    let dark = match config.theme().mode().as_str() {
-        LIGHT_MODE => false,
-        DARK_MODE => true,
-        _ => snapshot
-            .as_ref()
-            .and_then(|theme| theme.get(APPLIED_DARK_KEY).and_then(Value::as_bool))
-            .or_else(|| state.theme().source().map(|source| super::resolve_dark(&config, &source)))
-            .unwrap_or(true),
-    };
+    let dark = refresh_dark(state, &config, snapshot.as_ref());
     let profile = request.profile.as_deref();
     if profile == Some("") {
         anyhow::bail!("Colour profile name is empty");
@@ -135,6 +137,35 @@ pub fn refresh_apps(
     Ok(super::apps::list(&config))
 }
 
+fn refresh_dark(state: &WallState, config: &Config, snapshot: Option<&Value>) -> bool {
+    let source = state.theme().source();
+    let applied_config = source.as_ref().map(|source| configuration(state, source));
+    let applied_dark = || {
+        snapshot
+            .filter(|theme| {
+                source.as_ref().is_none_or(|source| {
+                    theme.get(APPLIED_SOURCE_KEY).and_then(Value::as_str) == Some(source.as_str())
+                })
+            })
+            .and_then(|theme| theme.get(APPLIED_DARK_KEY).and_then(Value::as_bool))
+            .or_else(|| {
+                source
+                    .as_ref()
+                    .map(|source| effective_dark(applied_config.as_ref().unwrap_or(config), source))
+            })
+            .unwrap_or(true)
+    };
+    if applied_config.as_ref().unwrap_or(config).theme().backend() == wall_proto::STUDIO_ENGINE {
+        applied_dark()
+    } else {
+        match config.theme().mode().as_str() {
+            skwd_config::keys::theme::MODE_LIGHT => false,
+            skwd_config::keys::theme::MODE_DARK => true,
+            _ => applied_dark(),
+        }
+    }
+}
+
 pub fn identity(state: &WallState, source: &str) -> Value {
     let key = state.library_key(std::path::Path::new(source)).unwrap_or_else(|| source.to_string());
     state
@@ -156,7 +187,7 @@ pub fn configuration(state: &WallState, source: &str) -> Config {
     let identity = identity(state, source);
     if let Some(settings) = skwd_config::theme_profile::settings(
         config.theme().wallpaper_profiles(),
-        identity["key"].as_str().unwrap_or(source),
+        identity[PROFILE_KEY].as_str().unwrap_or(source),
     ) {
         config = config.with_overrides(settings);
     }
@@ -172,7 +203,8 @@ pub fn selected(config: &Config, key: &str, dark: bool) -> Option<Value> {
         .wallpaper_profiles()
         .iter()
         .find(|profile| {
-            profile["key"].as_str() == Some(key) && profile["enabled"].as_bool() == Some(true)
+            profile[PROFILE_KEY].as_str() == Some(key)
+                && profile[PROFILE_ENABLED].as_bool() == Some(true)
         })?
         .get(if dark { "dark" } else { "light" })
         .filter(|palette| valid_palette(palette))
@@ -189,7 +221,7 @@ fn palette_for(state: &WallState, source: &str, config: &Config) -> Option<Value
         return None;
     }
     let identity = identity(state, source);
-    selected(config, identity["key"].as_str()?, super::resolve_dark(config, source))
+    selected(config, identity[PROFILE_KEY].as_str()?, effective_dark(config, source))
 }
 
 pub fn current(state: &WallState) -> anyhow::Result<Value> {
@@ -199,31 +231,45 @@ pub fn current(state: &WallState) -> anyhow::Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("no applied palette is available yet"))
 }
 
+pub fn live_palette(state: &WallState, config: &Config) -> Option<Value> {
+    if let Some(applied) =
+        state.theme().applied_theme().and_then(|theme| theme.get(PALETTE_KEY).cloned())
+    {
+        return Some(applied);
+    }
+    read_colors(config).ok()
+}
+
+fn read_colors(config: &Config) -> anyhow::Result<Value> {
+    let bytes = std::fs::read(std::path::Path::new(&config.cache_dir()).join(COLORS_FILE))?;
+    let mut palette: Value = serde_json::from_slice(&bytes)?;
+    super::alias_ui_keys(&mut palette);
+    anyhow::ensure!(valid_palette(&palette), "the applied palette is incomplete");
+    Ok(palette)
+}
+
 pub fn remember_applied(state: &WallState, source: &str, config: &Config) -> anyhow::Result<()> {
     if config.theme().policy() == "off" {
         return Ok(());
     }
     let mut result = identity(state, source);
-    let bytes = std::fs::read(std::path::Path::new(&config.cache_dir()).join("colors.json"))?;
-    let mut palette: Value = serde_json::from_slice(&bytes)?;
-    super::alias_ui_keys(&mut palette);
-    anyhow::ensure!(valid_palette(&palette), "the applied palette is incomplete");
-    result[PALETTE_KEY] = palette;
+    result[PALETTE_KEY] = read_colors(config)?;
     if let Ok(bytes) = std::fs::read(super::scheme_path(config))
         && let Ok(scheme) = serde_json::from_slice::<Value>(&bytes)
     {
         result[SCHEME_KEY] = scheme;
     }
-    result["dark"] = if config.theme().authority() == "dms" || config.theme().backend() == "matugen"
+    result["dark"] = if config.theme().authority() == "dms"
+        || matches!(config.theme().backend().as_str(), "matugen" | wall_proto::STUDIO_ENGINE)
     {
         result
             .pointer("/scheme/is_dark_mode")
             .cloned()
-            .unwrap_or_else(|| json!(super::resolve_dark(config, source)))
+            .unwrap_or_else(|| json!(effective_dark(config, source)))
     } else {
-        json!(super::resolve_dark(config, source))
+        json!(effective_dark(config, source))
     };
-    result["source"] = json!(source);
+    result[APPLIED_SOURCE_KEY] = json!(source);
     let mut app_palette = result[PALETTE_KEY].clone();
     if let Some(scheme) = result.get(SCHEME_KEY) {
         app_palette[SCHEME_META_KEY] = scheme.clone();
@@ -237,7 +283,7 @@ pub fn apply(state: &WallState, source: &str, config: &Config) -> bool {
     let Some(palette) = palette_for(state, source, config) else {
         return super::apply(config, source);
     };
-    let dark = super::resolve_dark(config, source);
+    let dark = effective_dark(config, source);
     publish(config, &palette, dark)
 }
 

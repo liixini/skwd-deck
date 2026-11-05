@@ -13,6 +13,7 @@ BINARIES = (
     "skwd-walld",
     "skwd-wall-scan",
     "skwd-wall-effects",
+    "skwd-wall-draw",
     "skwd-steam",
     "skwd-helm",
 )

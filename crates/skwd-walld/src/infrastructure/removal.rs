@@ -102,9 +102,6 @@ fn reconcile_removed(state: &Arc<WallState>, key: &str, path: &str, we_id: &str)
     crate::composition::runtime::playlist::reload();
     if !path.is_empty() {
         state.theme().clear_source_if(path);
-        if let Ok(Some(dest)) = state.with_db(|conn| db::tinier_convert_delete(conn, path)) {
-            let _ = std::fs::remove_file(&dest);
-        }
     }
     crate::infrastructure::persistence::forget_last_wallpaper_if(path, we_id);
     crate::infrastructure::restore_policy::forget_wallpaper(

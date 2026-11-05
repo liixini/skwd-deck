@@ -8,6 +8,10 @@ use crate::domain::history::{HistoryEntry, OutputHistory};
 
 type Rings = HashMap<String, OutputHistory>;
 
+pub(crate) fn history_path(cache_dir: impl AsRef<Path>) -> PathBuf {
+    cache_dir.as_ref().join("history.json")
+}
+
 pub(crate) struct FileHistoryRepository {
     path: PathBuf,
     io: Mutex<()>,
@@ -15,7 +19,7 @@ pub(crate) struct FileHistoryRepository {
 
 impl FileHistoryRepository {
     pub(crate) fn new(cache_dir: impl AsRef<Path>) -> Self {
-        Self { path: cache_dir.as_ref().join("history.json"), io: Mutex::new(()) }
+        Self { path: history_path(cache_dir), io: Mutex::new(()) }
     }
 
     fn load(&self) -> Rings {

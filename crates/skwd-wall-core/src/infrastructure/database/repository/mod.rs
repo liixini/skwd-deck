@@ -11,7 +11,7 @@ mod wallpapers;
 mod we_properties;
 
 pub use assignments::{playlist_assign_clear, playlist_assign_set, playlist_assigns};
-pub use connection::{open, open_in_memory};
+pub use connection::{drop_tinier_converts, open, open_in_memory, retiring_tinier_converts};
 pub use library::{LibraryImport, export_library, import_library};
 pub use maintenance::{
     image_optimization_record, image_optimization_records, record_image_optimization_and_rename,
@@ -27,14 +27,12 @@ pub use tags::{
 };
 pub use visibility::{entry_path, key_kind, library_visible, reconcile_library};
 pub use wallpapers::{
-    RandomEntry, TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET, bump_apply_count, clear_cache,
-    color_rows, delete_by_name, delete_entries, has_entry, invalidate_source_mtimes,
-    invalidate_thumbnail_cache, item_count, key_for_video_file, known_keys, known_we_meta,
-    list_wallpapers, list_wallpapers_json, random_pick, retire_video_converts, set_favourite,
-    set_hidden, thumb_for_key, thumb_for_video, thumbnail_cache, tinier_convert_delete,
-    tinier_convert_entry, tinier_convert_record, tinier_convert_src, update_colors,
-    update_duration, update_thumbnail_paths, update_user_tags, upsert_cache_entry,
-    video_file_for_key, visit_wallpapers,
+    RandomEntry, bump_apply_count, clear_cache, color_rows, delete_by_name, delete_entries,
+    drawable_keys, has_entry, invalidate_source_mtimes, invalidate_thumbnail_cache, item_count,
+    key_for_video_file, known_keys, known_we_meta, list_wallpapers, list_wallpapers_json,
+    random_pick, retire_video_converts, set_favourite, set_hidden, thumb_for_key, thumb_for_video,
+    thumbnail_cache, update_colors, update_duration, update_thumbnail_paths, update_user_tags,
+    upsert_cache_entry, video_file_for_key, visit_wallpapers,
 };
 pub use we_properties::{
     MAX_WE_PROPERTIES, MAX_WE_PROPERTY_NAME, clear_we_properties, set_we_property,

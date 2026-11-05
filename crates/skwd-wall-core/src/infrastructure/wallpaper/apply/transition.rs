@@ -112,50 +112,66 @@ pub(super) fn static_overlay_plans(
     let Some(plan) = transition else {
         return Vec::new();
     };
-    targets
-        .iter()
-        .filter_map(|output| {
-            if !transitions_for_output(true, transition_primary, output) {
-                log::debug!("overlay {output}: not the transition primary, skipping");
-                return None;
-            }
-            let entry = map.get(output)?;
-            if entry.get("type").and_then(serde_json::Value::as_str)
-                != Some(wall_proto::kind::STATIC)
-            {
-                return None;
-            }
-            let path = entry.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
-            let previous = previous_assignments.get(output).map_or("", String::as_str);
-            if path.is_empty()
-                || previous == path
-                || !crate::domain::wallpaper::is_safe_positional(path)
-                || !crate::domain::wallpaper::is_safe_positional(previous)
-            {
-                log::debug!("overlay {output}: no plan (previous={previous:?} path={path:?})");
-                return None;
-            }
-            let Some(from) = previous_media_source(state, output, previous) else {
-                log::debug!("overlay {output}: previous {previous:?} yields no media source");
-                return None;
-            };
-            if from == path {
-                log::debug!("overlay {output}: source equals destination, skipping");
-                return None;
-            }
-            Some(static_overlay_plan(
-                output,
+    let mut groups: std::collections::BTreeMap<(String, String, String, String), Vec<String>> =
+        std::collections::BTreeMap::new();
+    for output in targets {
+        if !transitions_for_output(true, transition_primary, output) {
+            log::debug!("overlay {output}: not the transition primary, skipping");
+            continue;
+        }
+        let Some((from, path)) = overlay_sources(state, map, previous_assignments, output) else {
+            continue;
+        };
+        let (fill, background) = super::still_policy::still_surface_key(state, output);
+        groups.entry((from, path, fill, background)).or_default().push(output.clone());
+    }
+    groups
+        .into_iter()
+        .map(|((from, path, fill, _background), outputs)| {
+            static_overlay_plan(
+                &crate::we::scene_renderer_key(&outputs),
                 &from,
-                path,
-                &state.config().display().fill_mode_for(output),
+                &path,
+                &fill,
                 plan.shader(),
                 plan.duration_ms(),
-            ))
+            )
         })
         .collect()
 }
 
-pub(super) fn previous_media_source(
+fn overlay_sources(
+    state: &WallState,
+    map: &serde_json::Map<String, serde_json::Value>,
+    previous_assignments: &std::collections::HashMap<String, String>,
+    output: &str,
+) -> Option<(String, String)> {
+    let entry = map.get(output)?;
+    if entry.get("type").and_then(serde_json::Value::as_str) != Some(wall_proto::kind::STATIC) {
+        return None;
+    }
+    let path = entry.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
+    let previous = previous_assignments.get(output).map_or("", String::as_str);
+    if path.is_empty()
+        || previous == path
+        || !crate::domain::wallpaper::is_safe_positional(path)
+        || !crate::domain::wallpaper::is_safe_positional(previous)
+    {
+        log::debug!("overlay {output}: no plan (previous={previous:?} path={path:?})");
+        return None;
+    }
+    let Some(from) = previous_media_source(state, output, previous) else {
+        log::debug!("overlay {output}: previous {previous:?} yields no media source");
+        return None;
+    };
+    if from == path {
+        log::debug!("overlay {output}: source equals destination, skipping");
+        return None;
+    }
+    Some((from, path.to_string()))
+}
+
+pub(crate) fn previous_media_source(
     state: &WallState,
     output: &str,
     previous: &str,
@@ -163,10 +179,15 @@ pub(super) fn previous_media_source(
     if previous.is_empty() {
         return None;
     }
-    if let Some(frame) = crate::we::capture_transition_frame(state, output) {
+    let path = std::path::Path::new(previous);
+    if path.is_file() && !paper_control::is_video_path(previous) {
+        return Some(previous.to_string());
+    }
+    if let Some(frame) =
+        crate::we::capture_transition_frame(state, output, crate::we::CaptureFrame::Source)
+    {
         return Some(frame);
     }
-    let path = std::path::Path::new(previous);
     if path.is_file() {
         return Some(previous.to_string());
     }

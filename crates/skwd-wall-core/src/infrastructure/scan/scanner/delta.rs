@@ -13,7 +13,12 @@ use super::common::{artifacts_ready, is_image, is_video, known_mtimes, mtime_sec
 use super::images::thumb_image;
 use super::videos::thumb_video;
 
-pub fn scan_paths<F>(state: &WallState, changed: &[PathBuf], on_item: F) -> usize
+pub fn scan_paths<F>(
+    state: &WallState,
+    changed: &[PathBuf],
+    encoder: &crate::blocks::Encoder,
+    on_item: F,
+) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
@@ -22,7 +27,7 @@ where
     let count = AtomicUsize::new(0);
     let work = || {
         changed.par_iter().for_each(|path| {
-            if scan_path(state, &known, path, &config, &on_item) {
+            if scan_path(state, &known, path, &config, encoder, &on_item) {
                 count.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -39,6 +44,7 @@ fn scan_path<F>(
     known: &HashMap<String, i64>,
     path: &Path,
     config: &crate::config::Config,
+    encoder: &crate::blocks::Encoder,
     on_item: &F,
 ) -> bool
 where
@@ -65,13 +71,17 @@ where
         wall_proto::kind::VIDEO => paths::video_thumb(&name),
         _ => paths::image_thumb(&name),
     };
+    let small = match kind {
+        wall_proto::kind::VIDEO => paths::video_thumb_sm(&name),
+        _ => paths::image_thumb_sm(&name),
+    };
     let should_generate = match kind {
-        wall_proto::kind::VIDEO => needs_regen(known, &key, mtime, artifacts_ready(&thumb)),
+        wall_proto::kind::VIDEO => needs_regen(known, &key, mtime, artifacts_ready(&thumb, &small)),
         _ => image_needs_thumb(
             known,
             &key,
             mtime,
-            artifacts_ready(&thumb),
+            artifacts_ready(&thumb, &small),
             scan_error_fresh(&thumb, mtime),
         ),
     };
@@ -80,8 +90,8 @@ where
     }
 
     match kind {
-        wall_proto::kind::VIDEO => thumb_video(state, path, &name, mtime, on_item),
-        _ => thumb_image(state, path, &name, mtime, on_item),
+        wall_proto::kind::VIDEO => thumb_video(state, path, &name, mtime, encoder, on_item),
+        _ => thumb_image(state, path, &name, mtime, encoder, on_item),
     }
 }
 

@@ -104,15 +104,17 @@ impl ApplyQueue {
 fn run(ctx: &Ctx, mut job: QueuedApply) {
     loop {
         let started = Instant::now();
+        let _recording = ctx.state.apply().record_phases();
         let result = super::router::dispatch(ctx, &job.request);
         log::info!(
-            "apply request={} type={} output={} queue_ms={} execution_ms={} total_ms={}",
+            "apply request={} type={} output={} queue_ms={} execution_ms={} total_ms={} {}",
             job.request.id,
             job.request.str_param("type", "static"),
             job.request.str_param("output", "*"),
             started.duration_since(job.received).as_millis(),
             started.elapsed().as_millis(),
             job.received.elapsed().as_millis(),
+            ctx.state.apply().phases(),
         );
         job.reply(&result);
         let next =

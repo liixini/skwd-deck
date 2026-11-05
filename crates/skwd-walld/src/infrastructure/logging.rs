@@ -47,7 +47,7 @@ pub(crate) fn init_logging(level: &str) {
         .or_else(|_| std::env::var("RUST_LOG"))
         .unwrap_or_else(|_| level.to_string());
     let mut builder = env_logger::Builder::new();
-    builder.parse_filters(&filter);
+    builder.parse_filters(&filter).format_timestamp_millis();
     let path = walld_log_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);

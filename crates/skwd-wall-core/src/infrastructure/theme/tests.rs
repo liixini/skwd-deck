@@ -492,6 +492,32 @@ fn auto_tone_cached() {
     }
 }
 
+#[test]
+fn replaced_tone_reprobes() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = dir.path().join("image.png");
+    let replacement = dir.path().join("next.png");
+    std::fs::write(&image, b"dark").unwrap();
+    let cache = Mutex::new(HashMap::new());
+    let path = image.to_str().unwrap();
+    let mut calls = 0;
+    assert!(cached_tone(&cache, path, || {
+        calls += 1;
+        Some(true)
+    }));
+    assert!(cached_tone(&cache, path, || {
+        calls += 1;
+        Some(false)
+    }));
+    std::fs::write(&replacement, b"light").unwrap();
+    std::fs::rename(&replacement, &image).unwrap();
+    assert!(!cached_tone(&cache, path, || {
+        calls += 1;
+        Some(false)
+    }));
+    assert_eq!(calls, 2);
+}
+
 fn styled_config(cache: &std::path::Path, style: &str) -> Config {
     Config::from_root(json!({
         "paths": { "cache": cache.to_string_lossy() },

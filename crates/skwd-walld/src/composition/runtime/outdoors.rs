@@ -326,7 +326,7 @@ fn aspect_change(item: &WallpaperItem, output: &str) -> f64 {
     else {
         return 1.0;
     };
-    let (out_width, out_height) = monitor.logical_size();
+    let (out_width, out_height) = monitor.pixel_size();
     if out_width <= 0 || out_height <= 0 {
         return 1.0;
     }

@@ -1,4 +1,4 @@
-use super::ApplyRuntime;
+use super::{ApplyPhase, ApplyRuntime};
 
 #[test]
 fn concurrent_apply_owners_are_serialized() {
@@ -42,15 +42,6 @@ fn generation_monotonic() {
 }
 
 #[test]
-fn claim_current_generation() {
-    let runtime = ApplyRuntime::default();
-    let queued = runtime.next_generation();
-    assert_eq!(runtime.claim_generation(queued), Some(queued + 1));
-    assert_eq!(runtime.claim_generation(queued), None);
-    assert_eq!(runtime.generation(), queued + 1);
-}
-
-#[test]
 fn distinct_targets_survive_commits() {
     let runtime = ApplyRuntime::default();
     let first = runtime.intent("work", "DP-1");
@@ -75,4 +66,43 @@ fn overlapping_targets_supersede() {
     assert!(!runtime.intent_current(&all));
     runtime.next_generation();
     assert!(!runtime.intent_current(&one));
+}
+
+#[test]
+fn phases_sum_per_recording() {
+    let runtime = ApplyRuntime::default();
+    let recording = runtime.record_phases();
+    let phases = [
+        (ApplyPhase::Lock, 7),
+        (ApplyPhase::Prepare, 11),
+        (ApplyPhase::ReconcileTotal, 13),
+        (ApplyPhase::Capture, 17),
+        (ApplyPhase::Ready, 40),
+        (ApplyPhase::Ready, 2),
+    ];
+    for (phase, millis) in phases {
+        runtime.note_phase(phase, std::time::Duration::from_millis(millis));
+    }
+
+    assert_eq!(
+        runtime.phases().to_string(),
+        "lock_ms=7 prep_ms=11 reconcile_total_ms=13 capture_ms=17 ready_ms=42"
+    );
+    drop(recording);
+    assert_eq!(
+        runtime.phases().to_string(),
+        "lock_ms=0 prep_ms=0 reconcile_total_ms=0 capture_ms=0 ready_ms=0"
+    );
+}
+
+#[test]
+fn phases_ignored_unrecorded() {
+    let runtime = ApplyRuntime::default();
+    runtime.note_phase(ApplyPhase::Lock, std::time::Duration::from_millis(9));
+    let _recording = runtime.record_phases();
+
+    assert_eq!(
+        runtime.phases().to_string(),
+        "lock_ms=0 prep_ms=0 reconcile_total_ms=0 capture_ms=0 ready_ms=0"
+    );
 }

@@ -6,6 +6,58 @@ use tokio::time::Instant;
 
 use super::{ThemeJob, next_ready};
 
+#[test]
+fn clock_guards_mode() {
+    let (_guard, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({
+        "theme": {"policy": "wallpaper", "engine": wall_proto::STUDIO_ENGINE, "studioMode": "by-time"}
+    }));
+    let (state, _, _) = crate::testenv::harness();
+    state.theme().set_source("/clock.jpg");
+    let job = ThemeJob {
+        path: "/clock.jpg".into(),
+        ready_at: Instant::now(),
+        weather_generation: None,
+        clock_dark: Some(skwd_wall_core::theme::studio::mode_dark(&state.config(), "/clock.jpg")),
+    };
+    assert!(job.current(&state));
+    let wrong = ThemeJob { clock_dark: Some(!job.clock_dark.unwrap()), ..job.clone() };
+    assert!(!wrong.current(&state));
+    state.theme().set_source("/new.jpg");
+    assert!(!job.current(&state));
+    state.theme().set_source("/clock.jpg");
+    crate::testenv::write_config(serde_json::json!({
+        "theme": {"policy": "wallpaper", "engine": wall_proto::STUDIO_ENGINE, "studioMode": "light"}
+    }));
+    state.reload_config();
+    assert!(!job.current(&state));
+}
+
+#[test]
+fn clock_uses_profile() {
+    let (_guard, _root) = crate::testenv::lock();
+    crate::testenv::write_config(serde_json::json!({
+        "theme": {
+            "policy": "wallpaper", "engine": wall_proto::STUDIO_ENGINE, "studioMode": "light",
+            "wallpaperProfiles": [{
+                "key": "/clock.jpg", "settingsPinned": true,
+                "settings": {"theme.studioMode": "by-time"}
+            }]
+        }
+    }));
+    let (state, _, _) = crate::testenv::harness();
+    state.theme().set_source("/clock.jpg");
+    let config = skwd_wall_core::theme::profiles::configuration(&state, "/clock.jpg");
+    assert_eq!(config.theme().studio_mode(), "by-time");
+    let job = ThemeJob {
+        path: "/clock.jpg".into(),
+        ready_at: Instant::now(),
+        weather_generation: None,
+        clock_dark: Some(skwd_wall_core::theme::studio::mode_dark(&config, "/clock.jpg")),
+    };
+    assert!(job.current(&state));
+}
+
 #[tokio::test(start_paused = true)]
 async fn slot_latest_wins() {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -14,6 +66,7 @@ async fn slot_latest_wins() {
             path: "/w/a.png".into(),
             ready_at: Instant::now() + Duration::from_secs(1),
             weather_generation: None,
+            clock_dark: None,
         })
         .unwrap();
     sender
@@ -21,6 +74,7 @@ async fn slot_latest_wins() {
             path: "/w/b.png".into(),
             ready_at: Instant::now(),
             weather_generation: None,
+            clock_dark: None,
         })
         .unwrap();
     let first = receiver.recv().await.unwrap();
@@ -39,6 +93,7 @@ async fn delayed_job_waits_until_ready() {
             path: "/w/a.png".into(),
             ready_at: t0 + Duration::from_secs(300),
             weather_generation: None,
+            clock_dark: None,
         })
         .unwrap();
     let first = receiver.recv().await.unwrap();
@@ -56,6 +111,7 @@ async fn delay_real_time() {
             path: "/w/a.png".into(),
             ready_at: t0 + Duration::from_millis(30),
             weather_generation: None,
+            clock_dark: None,
         })
         .unwrap();
     let first = receiver.recv().await.unwrap();
@@ -78,6 +134,7 @@ fn stale_weather_jobs_cancel() {
             path: "/weather.jpg".into(),
             ready_at: Instant::now(),
             weather_generation: Some(state.theme().source_generation()),
+            clock_dark: None,
         };
         assert!(job.current(&state));
         sender.send(job).unwrap();
@@ -116,6 +173,7 @@ fn other_output_preserves_theme() {
         path: "/weather.jpg".into(),
         ready_at: Instant::now(),
         weather_generation: Some(state.theme().source_generation()),
+        clock_dark: None,
     };
     state.apply().next_generation();
     assert!(job.current(&state));
@@ -135,6 +193,7 @@ fn skipped_theme_invalidates_weather() {
         path: "/weather.jpg".into(),
         ready_at: Instant::now(),
         weather_generation: Some(state.theme().source_generation()),
+        clock_dark: None,
     };
     assert!(job.current(&state));
     state.theme().invalidate_source();
@@ -170,6 +229,7 @@ fn valid_jobs_publish_palette() {
             path: "/weather.jpg".into(),
             ready_at: Instant::now(),
             weather_generation: weather.then(|| state.theme().source_generation()),
+            clock_dark: None,
         };
         let state = std::sync::Arc::clone(&state);
         let events = std::sync::Arc::clone(&events);

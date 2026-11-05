@@ -1,6 +1,7 @@
 usr/bin/skwd-walld
 usr/bin/skwd-wall-scan
 usr/bin/skwd-wall-effects
+usr/bin/skwd-wall-draw
 usr/bin/skwd-steam
 usr/bin/skwd-helm
 usr/bin/libsteam_api.so

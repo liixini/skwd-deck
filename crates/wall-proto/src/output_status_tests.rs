@@ -44,3 +44,16 @@ fn outputs_from_envelope() {
     assert_eq!(outputs_from(&result).len(), 1);
     assert!(outputs_from(&serde_json::json!({})).is_empty());
 }
+
+#[test]
+fn monitor_key_is_additive() {
+    let output: OutputStatus = serde_json::from_value(serde_json::json!({
+        "name": "DP-7", "monitor": "Dell Inc. DELL P2723DE 317ZNR3"
+    }))
+    .unwrap();
+    assert_eq!(output.monitor, "Dell Inc. DELL P2723DE 317ZNR3");
+    assert_eq!(serde_json::to_value(&output).unwrap()["monitor"], "Dell Inc. DELL P2723DE 317ZNR3");
+    let legacy: OutputStatus = serde_json::from_value(serde_json::json!({"name": "DP-7"})).unwrap();
+    assert!(legacy.monitor.is_empty());
+    assert!(serde_json::to_value(&legacy).unwrap().get("monitor").is_none());
+}

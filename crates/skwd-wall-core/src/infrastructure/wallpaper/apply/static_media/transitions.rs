@@ -21,6 +21,8 @@ pub fn apply_static_transition(
     if crate::plasma::available() {
         let outputs = crate::outputs::names();
         let transition = crate::infrastructure::paper::TransitionPolicy {
+            drawing: None,
+            drawing_source: None,
             fps: None,
             from: Some(from.to_string()),
             effect: Some(shader.to_string()),

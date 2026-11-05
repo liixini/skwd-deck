@@ -86,14 +86,14 @@ fn preview_cycle(provider: &str, image: &str, output: &Path) -> Result<(), Strin
     }
     let sink = theme_sink::active(provider);
     let before = observe(&state, provider);
-    if let Some(arm) = sink.arm {
-        arm(&state);
-    }
     let generation = state.theme().bump_shell_preview();
+    if let Some(arm) = sink.arm {
+        arm(&state, generation);
+    }
     let preview = (sink.preview)(&state, image, generation).map_err(|err| format!("{err:#}"));
     let after = observe(&state, provider);
-    state.theme().bump_shell_preview();
-    (sink.preview_end)(&state);
+    let generation = state.theme().bump_shell_preview();
+    (sink.preview_end)(&state, Some(generation));
     let restored = observe(&state, provider);
     let report = json!({
         "provider": provider,

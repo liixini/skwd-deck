@@ -26,7 +26,7 @@ fn full_secret_config() -> Value {
             {"template": "src.tmpl", "output": "/home/secret/out", "reload": "rm -rf /"}
         ],
         "display": {"fillMode": "fit", "fillColor": "112233ff"},
-        "paper": {"engine": "awww", "videoEngine": "vulkan", "awww": {"filter": "Nearest"}},
+        "paper": {"engine": "awww", "awww": {"filter": "Nearest"}},
         "transition": {"shader": "fade", "durationMs": 800},
         "matugen": {"schemeType": "scheme-vibrant", "colorIndex": 2, "contrast": 0.5, "mode": "light"},
         "weRender": {"fps": 30},
@@ -69,7 +69,6 @@ fn export_keeps_look_keys() {
     let overlay = build_overlay(&full_secret_config());
     assert_eq!(overlay["display"]["fillMode"], "fit");
     assert_eq!(overlay["paper"]["engine"], "awww");
-    assert_eq!(overlay["paper"]["videoEngine"], "vulkan");
     assert_eq!(overlay["paper"]["awww"]["filter"], "Nearest");
     assert_eq!(overlay["transition"]["shader"], "fade");
     assert_eq!(overlay["matugen"]["schemeType"], "scheme-vibrant");

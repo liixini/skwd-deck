@@ -1,6 +1,8 @@
-use std::sync::Arc;
+mod drawing;
+mod handoff;
+pub use drawing::preview;
 
-use anyhow::bail;
+use std::sync::Arc;
 
 use crate::backend::wallpaper::{
     ApplyOutputRequest, ApplyStaticRequest, ApplyVideoRequest, StaticSmartRequest,
@@ -17,74 +19,32 @@ impl CoreWallpaperApplication {
         Self { state }
     }
 
-    fn stop_paper(&self) -> anyhow::Result<()> {
-        crate::plasma::require_backend()?;
-        let socket = crate::infrastructure::paper::paper_socket_path();
-        if socket.exists() {
-            crate::infrastructure::paper::PaperClient::new(
-                self.state.config().renderer().paper_bin(),
-                socket,
-            )
-            .stop(Vec::new())?;
-        }
-        Ok(())
+    fn note_prepared(&self, started: std::time::Instant) {
+        self.state
+            .apply()
+            .note_phase(crate::backend::wallpaper::ApplyPhase::Prepare, started.elapsed());
     }
 
-    fn apply_tinier(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
-        crate::plasma::require_backend()?;
-        let outputs = crate::outputs::enumerate();
-        if outputs.is_empty() {
-            bail!("Tinier requires at least one named output");
-        }
-        if !outputs.iter().any(|output| output.name == request.output) {
-            bail!("Tinier output {} is not live", request.output);
-        }
-        if crate::plasma::available() {
-            self.stop_paper()?;
-            return crate::apply::apply_output_with_transition(
-                &self.state,
-                request.output,
-                request.kind,
-                request.path,
-                request.we_id,
-                request.fill_mode,
-                request.mute,
-                request.volume,
-                request.transition,
-            );
-        }
-        let cache = self.state.config().cache_dir();
-        let mut candidate = crate::audio::read_state(&cache);
-        let map = candidate.as_object_mut().expect("audio state is always an object");
-        if let Some(wildcard) = map.remove("*") {
-            for output in &outputs {
-                map.entry(output.name.clone()).or_insert_with(|| wildcard.clone());
+    fn retire_paper<T>(&self, output: &str, result: anyhow::Result<T>) -> anyhow::Result<T> {
+        let applied = result?;
+        let socket = crate::infrastructure::paper::paper_socket_path();
+        if socket.exists() {
+            let config = self.state.config();
+            let outputs = crate::outputs::enumerate()
+                .into_iter()
+                .filter(|candidate| {
+                    (output == wall_proto::apply_fields::ALL_OUTPUTS || output == candidate.name)
+                        && !config.display().output_locked(&candidate.name)
+                })
+                .map(|candidate| candidate.name)
+                .collect::<Vec<_>>();
+            if outputs.is_empty() {
+                return Ok(applied);
             }
+            crate::infrastructure::paper::PaperClient::new(config.renderer().paper_bin(), socket)
+                .stop(outputs)?;
         }
-        map.insert(
-            request.output.to_string(),
-            crate::audio::entry(wall_proto::kind::VIDEO, request.path, "", true, request.volume),
-        );
-        let adapter =
-            crate::infrastructure::paper::PaperClientAdapter::configured(&self.state.config());
-        let plan = adapter.tinier_composition_plan(&self.state, &candidate, &outputs)?;
-        let crate::infrastructure::paper::PaperCompositionPlan::Replace(apply) = plan else {
-            bail!("Tinier composition has no live assignments");
-        };
-        adapter.apply_request(apply)?;
-        crate::audio::write_state(&cache, &candidate);
-        crate::awww::stop();
-        self.state.renderers().kill_all();
-        let assignments = outputs
-            .into_iter()
-            .filter_map(|output| {
-                let entry = candidate.get(&output.name)?;
-                let path = entry.get("path")?.as_str()?;
-                Some((output.name, path.to_string()))
-            })
-            .collect();
-        self.state.renderers().replace_assignments(assignments);
-        Ok(())
+        Ok(applied)
     }
 }
 
@@ -103,93 +63,206 @@ impl WallpaperApplication for CoreWallpaperApplication {
     }
 
     fn apply_static(&self, request: ApplyStaticRequest<'_>) -> anyhow::Result<()> {
-        self.stop_paper()?;
-        crate::apply::apply_static(
+        let started = std::time::Instant::now();
+        if drawing::apply(
             &self.state,
+            std::path::Path::new(request.path),
             request.output,
-            request.path,
-            request.fill_mode,
-            request.from,
-            request.transition,
-            request.shader,
-            request.duration_ms,
+            request.targets,
+            request.previous_static,
+        )? {
+            return Ok(());
+        }
+        if handoff::image(
+            &self.state,
+            StaticSmartRequest {
+                output: request.output,
+                path: request.path,
+                fill_mode: request.fill_mode,
+            },
+            crate::backend::wallpaper::OutputTransitionRequest {
+                enabled: request.transition,
+                shader: request.shader,
+                duration_ms: request.duration_ms,
+            },
+            request.targets,
+        )? {
+            return Ok(());
+        }
+        self.note_prepared(started);
+        self.retire_paper(
+            request.output,
+            crate::apply::apply_static(
+                &self.state,
+                request.output,
+                request.path,
+                request.fill_mode,
+                request.from,
+                request.transition,
+                request.shader,
+                request.duration_ms,
+            ),
         )
     }
 
     fn apply_static_smart(&self, request: StaticSmartRequest<'_>) -> anyhow::Result<()> {
-        self.stop_paper()?;
-        crate::apply::apply_static_smart(
+        if drawing::apply(
             &self.state,
+            std::path::Path::new(request.path),
             request.output,
-            request.path,
-            request.fill_mode,
+            &[],
+            None,
+        )? {
+            return Ok(());
+        }
+        if handoff::image(
+            &self.state,
+            request,
+            crate::backend::wallpaper::OutputTransitionRequest {
+                enabled: false,
+                shader: "",
+                duration_ms: 0,
+            },
+            &[],
+        )? {
+            return Ok(());
+        }
+        self.retire_paper(
+            request.output,
+            crate::apply::apply_static_smart(
+                &self.state,
+                request.output,
+                request.path,
+                request.fill_mode,
+            ),
         )
     }
 
     fn apply_video(&self, request: ApplyVideoRequest<'_>) -> anyhow::Result<()> {
-        self.stop_paper()?;
-        if crate::apply::independent_playback(&self.state) {
-            return crate::apply::apply_independent_video(&self.state, request, None);
-        }
-        crate::apply::apply_video(
+        if handoff::apply(
             &self.state,
+            ApplyOutputRequest {
+                output: request.output,
+                kind: wall_proto::kind::VIDEO,
+                path: request.path,
+                we_id: "",
+                fill_mode: request.fill_mode,
+                mute: request.mute,
+                volume: request.volume,
+                transition: None,
+                fanout: None,
+            },
+            &[],
+        )? {
+            return Ok(());
+        }
+        if crate::apply::independent_playback(&self.state) {
+            return self.retire_paper(
+                request.output,
+                crate::apply::apply_independent_video(&self.state, request, None),
+            );
+        }
+        self.retire_paper(
             request.output,
-            request.path,
-            request.fill_mode,
-            request.mute,
-            request.volume,
+            crate::apply::apply_video(
+                &self.state,
+                request.output,
+                request.path,
+                request.fill_mode,
+                request.mute,
+                request.volume,
+            ),
         )
     }
 
     fn apply_output(&self, request: ApplyOutputRequest<'_>) -> anyhow::Result<()> {
-        if request.kind == wall_proto::kind::VIDEO
-            && self.state.config().renderer().video_engine() == "tinier"
-            && request.frame_rate.is_some()
+        let started = std::time::Instant::now();
+        if request.kind == wall_proto::kind::STATIC
+            && drawing::apply(
+                &self.state,
+                std::path::Path::new(request.path),
+                request.output,
+                &[],
+                None,
+            )?
         {
-            return self.apply_tinier(request);
+            return Ok(());
         }
-        self.stop_paper()?;
-        crate::apply::apply_output_with_transition(
-            &self.state,
+        let targets = request.fanout.map_or(&[][..], |fanout| fanout.targets);
+        if handoff::apply(&self.state, request, targets)? {
+            return Ok(());
+        }
+        self.note_prepared(started);
+        self.retire_paper(
             request.output,
-            request.kind,
-            request.path,
-            request.we_id,
-            request.fill_mode,
-            request.mute,
-            request.volume,
-            request.transition,
+            crate::apply::apply_output_with_transition(
+                &self.state,
+                request.output,
+                request.kind,
+                request.path,
+                request.we_id,
+                request.fill_mode,
+                request.mute,
+                request.volume,
+                request.transition,
+            ),
         )
     }
 
     fn apply_video_transition(&self, request: VideoTransitionRequest<'_>) -> anyhow::Result<()> {
-        self.stop_paper()?;
-        if crate::apply::independent_playback(&self.state) {
-            return crate::apply::apply_independent_video(
-                &self.state,
-                ApplyVideoRequest {
-                    output: "*",
-                    path: request.to,
-                    fill_mode: request.fill_mode,
-                    mute: request.mute,
-                    volume: request.volume,
-                },
-                Some(crate::backend::wallpaper::OutputTransitionRequest {
+        if handoff::apply(
+            &self.state,
+            ApplyOutputRequest {
+                output: wall_proto::apply_fields::ALL_OUTPUTS,
+                kind: wall_proto::kind::VIDEO,
+                path: request.to,
+                we_id: "",
+                fill_mode: request.fill_mode,
+                mute: request.mute,
+                volume: request.volume,
+                transition: Some(crate::backend::wallpaper::OutputTransitionRequest {
                     enabled: true,
                     shader: request.shader,
                     duration_ms: request.duration_ms,
                 }),
+                fanout: None,
+            },
+            &[],
+        )? {
+            return Ok(());
+        }
+        if crate::apply::independent_playback(&self.state) {
+            return self.retire_paper(
+                wall_proto::apply_fields::ALL_OUTPUTS,
+                crate::apply::apply_independent_video(
+                    &self.state,
+                    ApplyVideoRequest {
+                        output: "*",
+                        path: request.to,
+                        fill_mode: request.fill_mode,
+                        mute: request.mute,
+                        volume: request.volume,
+                    },
+                    Some(crate::backend::wallpaper::OutputTransitionRequest {
+                        enabled: true,
+                        shader: request.shader,
+                        duration_ms: request.duration_ms,
+                    }),
+                ),
             );
         }
-        crate::apply::apply_video_transition(
-            &self.state,
-            request.from,
-            request.to,
-            request.fill_mode,
-            request.shader,
-            request.duration_ms,
-            request.mute,
-            request.volume,
+        self.retire_paper(
+            wall_proto::apply_fields::ALL_OUTPUTS,
+            crate::apply::apply_video_transition(
+                &self.state,
+                request.from,
+                request.to,
+                request.fill_mode,
+                request.shader,
+                request.duration_ms,
+                request.mute,
+                request.volume,
+            ),
         )
     }
 
@@ -198,16 +271,59 @@ impl WallpaperApplication for CoreWallpaperApplication {
         we_id: &str,
         transition: Option<crate::backend::wallpaper::OutputTransitionRequest<'_>>,
     ) -> anyhow::Result<Option<String>> {
-        self.stop_paper()?;
-        crate::we::apply_we(&self.state, we_id, transition)
-    }
-
-    fn video_engine_is_vk(&self) -> bool {
-        crate::apply::video_engine_is_vk(&self.state)
+        let started = std::time::Instant::now();
+        let item = crate::we::require_project(&self.state, we_id)?;
+        let config = self.state.config();
+        let (mute, volume) = crate::audio::resolve_defaults(
+            &config.cache_dir(),
+            wall_proto::apply_fields::ALL_OUTPUTS,
+            config.renderer().mute(),
+            config.renderer().volume(),
+        );
+        if handoff::apply(
+            &self.state,
+            ApplyOutputRequest {
+                output: wall_proto::apply_fields::ALL_OUTPUTS,
+                kind: wall_proto::kind::WE,
+                path: "",
+                we_id,
+                fill_mode: &config.display().fill_mode(),
+                mute,
+                volume,
+                transition,
+                fanout: None,
+            },
+            &[],
+        )? {
+            return Ok(crate::we::find_preview(&item).map(|path| path.display().to_string()));
+        }
+        self.note_prepared(started);
+        self.retire_paper(
+            wall_proto::apply_fields::ALL_OUTPUTS,
+            crate::we::apply_we(&self.state, we_id, transition),
+        )
     }
 
     fn reload_we(&self) -> anyhow::Result<()> {
-        self.stop_paper()?;
-        crate::apply::reload_we(&self.state)
+        crate::plasma::require_backend()?;
+        self.retire_paper(
+            wall_proto::apply_fields::ALL_OUTPUTS,
+            crate::apply::reload_we(&self.state),
+        )
     }
+}
+
+#[cfg(test)]
+fn stationary_child(test: &str) -> bool {
+    if std::env::var_os("NIRI_SOCKET").is_some() {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env("NIRI_SOCKET", "fixture")
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success() && text.contains("1 passed"), "{text}");
+    true
 }

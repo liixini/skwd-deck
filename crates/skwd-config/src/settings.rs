@@ -1,6 +1,10 @@
 use serde_json::Value;
+use wall_proto::drawing::Device;
 
 use crate::{bool_true_unless_false, str_at};
+
+const DRAWING_MEMORY_MIN_MIB: u64 = 512;
+const DRAWING_MEMORY_MAX_MIB: u64 = 64 * 1024;
 
 pub fn wallpaper_dir(root: &Value) -> String {
     let dir = str_at(root, crate::keys::paths::WALLPAPER, "");
@@ -50,6 +54,40 @@ pub fn locale(root: &Value) -> String {
 
 pub fn wallpaper_mute(root: &Value) -> bool {
     crate::schema::read_boolean(root, crate::keys::wallpaper::MUTE).unwrap_or(true)
+}
+
+pub fn drawing_enabled(root: &Value, key: &str) -> bool {
+    let drawing = root.get(crate::keys::drawing::ROOT);
+    drawing
+        .and_then(|section| section.get(crate::keys::drawing::WALLPAPERS))
+        .and_then(|wallpapers| wallpapers.get(key))
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| {
+            crate::schema::read_boolean(root, crate::keys::drawing::ENABLED).unwrap_or(false)
+        })
+}
+
+pub fn drawing_device(root: &Value) -> Device {
+    let label =
+        str_at(root, crate::keys::drawing::DEVICE, wall_proto::drawing::Device::Auto.label());
+    Device::parse(&label).unwrap_or(Device::Auto)
+}
+
+pub fn drawing_device_invalid(root: &Value) -> Option<String> {
+    let label = crate::value::get(root, crate::keys::drawing::DEVICE)?;
+    let label = label.as_str().map_or_else(|| label.to_string(), str::to_string);
+    Device::parse(&label).is_none().then_some(label)
+}
+
+pub fn drawing_memory_limit_invalid(root: &Value) -> Option<String> {
+    let value = crate::value::get(root, crate::keys::drawing::MEMORY_LIMIT_MIB)?;
+    (!value.is_null() && crate::u64_at(root, crate::keys::drawing::MEMORY_LIMIT_MIB).is_none())
+        .then(|| value.to_string())
+}
+
+pub fn drawing_memory_limit_mib(root: &Value) -> Option<u64> {
+    crate::u64_at(root, crate::keys::drawing::MEMORY_LIMIT_MIB)
+        .map(|mib| mib.clamp(DRAWING_MEMORY_MIN_MIB, DRAWING_MEMORY_MAX_MIB))
 }
 
 pub fn wallpaper_volume(root: &Value) -> u32 {

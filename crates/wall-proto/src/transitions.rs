@@ -1,3 +1,9 @@
+use paper_control::transitions::{
+    CROP_RELAY, PAPER_HEART, PHOTO_CUTOUT, SLAT_TURN, STUDIO_TRANSITIONS, SUNLIT_ARCADE,
+};
+
+const STUDIO_TEXT: (&str, &str, &str) = ("studio", "Studio", "Cut, folded and staged transitions.");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     Random,
@@ -6,6 +12,7 @@ pub enum Family {
     Warp,
     Break,
     Sand,
+    Studio,
 }
 
 impl Family {
@@ -17,6 +24,7 @@ impl Family {
             Family::Warp => "warp",
             Family::Break => "break",
             Family::Sand => "sand",
+            Family::Studio => STUDIO_TEXT.0,
         }
     }
 
@@ -28,6 +36,7 @@ impl Family {
             Family::Warp => "Warp",
             Family::Break => "Break up",
             Family::Sand => "Sand",
+            Family::Studio => STUDIO_TEXT.1,
         }
     }
 
@@ -39,12 +48,20 @@ impl Family {
             Family::Warp => "The image bends, stretches or ripples.",
             Family::Break => "The image shatters, pixelates or smears.",
             Family::Sand => "Every pixel becomes a grain and flies into a shape.",
+            Family::Studio => STUDIO_TEXT.2,
         }
     }
 }
 
-pub const FAMILIES: [Family; 6] =
-    [Family::Random, Family::Fade, Family::Wipe, Family::Warp, Family::Break, Family::Sand];
+pub const FAMILIES: [Family; 7] = [
+    Family::Random,
+    Family::Fade,
+    Family::Wipe,
+    Family::Warp,
+    Family::Break,
+    Family::Sand,
+    Family::Studio,
+];
 
 #[derive(Debug, Clone, Copy)]
 pub struct TransitionSpec {
@@ -52,13 +69,14 @@ pub struct TransitionSpec {
     pub family: Family,
 }
 
-pub const TRANSITIONS: [TransitionSpec; 40] = [
+pub const TRANSITIONS: [TransitionSpec; 45] = [
     TransitionSpec { key: "random", family: Family::Random },
     TransitionSpec { key: "chromatic-bloom", family: Family::Break },
     TransitionSpec { key: "circle-crop", family: Family::Wipe },
     TransitionSpec { key: "colour-distance", family: Family::Fade },
     TransitionSpec { key: "crossfade", family: Family::Fade },
     TransitionSpec { key: "crosswarp", family: Family::Warp },
+    TransitionSpec { key: CROP_RELAY, family: Family::Studio },
     TransitionSpec { key: "crosshatch", family: Family::Wipe },
     TransitionSpec { key: "directional", family: Family::Wipe },
     TransitionSpec { key: "directional-scaled", family: Family::Wipe },
@@ -73,10 +91,12 @@ pub const TRANSITIONS: [TransitionSpec; 40] = [
     TransitionSpec { key: "morph", family: Family::Warp },
     TransitionSpec { key: "mosaic-tumble", family: Family::Break },
     TransitionSpec { key: "parametric-glitch", family: Family::Break },
+    TransitionSpec { key: PAPER_HEART, family: Family::Studio },
     TransitionSpec { key: "perlin", family: Family::Fade },
     TransitionSpec { key: "pixelate", family: Family::Break },
     TransitionSpec { key: "pixelfade-wave", family: Family::Fade },
     TransitionSpec { key: "plasma-flow", family: Family::Break },
+    TransitionSpec { key: PHOTO_CUTOUT, family: Family::Studio },
     TransitionSpec { key: "polka-dots-curtain", family: Family::Wipe },
     TransitionSpec { key: "puzzle-right", family: Family::Wipe },
     TransitionSpec { key: "randomsquares", family: Family::Wipe },
@@ -89,11 +109,17 @@ pub const TRANSITIONS: [TransitionSpec; 40] = [
     TransitionSpec { key: "sand-mobius", family: Family::Sand },
     TransitionSpec { key: "sand-murmuration", family: Family::Sand },
     TransitionSpec { key: "sand-tornado", family: Family::Sand },
+    TransitionSpec { key: SLAT_TURN, family: Family::Studio },
     TransitionSpec { key: "smoke", family: Family::Break },
     TransitionSpec { key: "soft-warp-fade", family: Family::Fade },
+    TransitionSpec { key: SUNLIT_ARCADE, family: Family::Studio },
     TransitionSpec { key: "voronoi-shatter", family: Family::Break },
     TransitionSpec { key: "zoom-blur-pull", family: Family::Warp },
 ];
+
+pub fn preset_duration_ms(key: &str) -> Option<u64> {
+    STUDIO_TRANSITIONS.iter().find(|spec| spec.id == key).map(|spec| spec.duration_ms)
+}
 
 pub fn family_of(key: &str) -> Family {
     if let Some(spec) = TRANSITIONS.iter().find(|spec| spec.key == key) {

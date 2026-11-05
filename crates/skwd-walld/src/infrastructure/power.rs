@@ -172,22 +172,21 @@ async fn watch(
         if !reconcile_needed {
             continue;
         }
-        // A failed refresh stays authoritative even once the renderer recorded the signature.
-        if !retrying && skwd_wall_core::apply::active_renderer_policy_matches(&state) {
-            log::debug!(
-                "power/config change did not alter the active renderer policy; keeping the live renderer"
-            );
-            tracker.mark_current(on_battery);
-            continue;
-        }
-        log::info!(
-            "{} renderer power policy for {}",
-            if retrying { "retrying" } else { "refreshing" },
-            if on_battery { "battery" } else { "external power" }
-        );
         let refresh_state = Arc::clone(&state);
         let refreshed = tokio::task::spawn_blocking(move || {
-            skwd_wall_core::apply::refresh_renderer_policy(&refresh_state)
+            let _apply = refresh_state.apply().lock();
+            if !retrying && skwd_wall_core::apply::active_renderer_policy_matches(&refresh_state) {
+                log::debug!(
+                    "power/config change did not alter the active renderer policy; keeping the live renderer"
+                );
+                return Ok(());
+            }
+            log::info!(
+                "{} renderer power policy for {}",
+                if retrying { "retrying" } else { "refreshing" },
+                if on_battery { "battery" } else { "external power" }
+            );
+            skwd_wall_core::apply::refresh_renderer_policy_locked(&refresh_state)
         })
         .await;
         match refreshed {
@@ -239,7 +238,8 @@ fn power_event_socket() -> io::Result<OwnedFd> {
 }
 
 fn watch_socket() -> io::Result<AsyncFd<OwnedFd>> {
-    AsyncFd::with_interest(power_event_socket()?, Interest::READABLE)
+    let socket = power_event_socket()?;
+    Ok(unsafe { AsyncFd::register_with_interest(socket, Interest::READABLE) }?)
 }
 
 async fn next_wake(

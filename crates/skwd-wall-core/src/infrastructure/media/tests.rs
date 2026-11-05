@@ -64,7 +64,15 @@ fn thumbs_decodable() {
 
     let thumb = dir.path().join("thumbs/src.webp");
     let small = dir.path().join("thumbs-sm/src.webp");
-    let result = generate_image_thumbs(&src, &thumb, &small).unwrap();
+    let result = generate_image_thumbs(
+        &src,
+        crate::media::Thumbs {
+            full: &thumb,
+            small: &small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
 
     assert_eq!((result.width, result.height), (800, 600));
     assert!(thumb.exists() && small.exists());
@@ -170,7 +178,16 @@ fn video_thumbs_dims() {
     write_y4m(&src, 160, 120, &[(180, 40)]);
     let thumb = dir.path().join("video-thumbs/clip.webp");
     let small = dir.path().join("thumbs-sm/vid--clip.webp");
-    let result = generate_video_thumbs(&src, &thumb, &small, 1).unwrap();
+    let result = generate_video_thumbs(
+        &src,
+        crate::media::Thumbs {
+            full: &thumb,
+            small: &small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+        1,
+    )
+    .unwrap();
     assert_eq!((result.width, result.height), (160, 120));
     assert!(result.duration_ms >= 1_500);
     let decoded = image::open(&thumb).unwrap();
@@ -191,7 +208,16 @@ fn scanner_video_benchmark() {
     let started = std::time::Instant::now();
     let cpu_started = process_cpu_seconds();
     let memory_before = skwd_log::proc::mem_breakdown();
-    let result = generate_video_thumbs(&source, &thumb, &small, 1).unwrap();
+    let result = generate_video_thumbs(
+        &source,
+        crate::media::Thumbs {
+            full: &thumb,
+            small: &small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+        1,
+    )
+    .unwrap();
     let memory_after = skwd_log::proc::mem_breakdown();
     eprintln!(
         "scanner-video-benchmark source={}x{} elapsed_ms={} cpu_ms={:.1} rss_kb={} pss_kb={} rss_delta_kb={} pss_delta_kb={} thumb_bytes={} small_bytes={}",
@@ -223,10 +249,27 @@ fn scanner_video_quality_benchmark() {
     let dir = tempfile::tempdir().unwrap();
     let legacy = dir.path().join("legacy.webp");
     let legacy_small = dir.path().join("legacy-small.webp");
-    write_thumbs(decode_video_frame(&source, 1).unwrap(), &legacy, &legacy_small).unwrap();
+    write_thumbs(
+        decode_video_frame(&source, 1).unwrap(),
+        crate::media::Thumbs {
+            full: &legacy,
+            small: &legacy_small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
     let direct = dir.path().join("direct.webp");
     let direct_small = dir.path().join("direct-small.webp");
-    generate_video_thumbs(&source, &direct, &direct_small, 1).unwrap();
+    generate_video_thumbs(
+        &source,
+        crate::media::Thumbs {
+            full: &direct,
+            small: &direct_small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+        1,
+    )
+    .unwrap();
 
     let legacy = image::open(legacy).unwrap().to_rgb8();
     let direct = image::open(direct).unwrap().to_rgb8();
@@ -255,7 +298,15 @@ fn scanner_image_benchmark() {
     let thumb = dir.path().join("image-thumbs/benchmark.webp");
     let small = dir.path().join("thumbs-sm/benchmark.webp");
     let started = std::time::Instant::now();
-    let result = generate_image_thumbs(&source, &thumb, &small).unwrap();
+    let result = generate_image_thumbs(
+        &source,
+        crate::media::Thumbs {
+            full: &thumb,
+            small: &small,
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
     eprintln!(
         "scanner-image-benchmark source={}x{} elapsed_ms={} thumb_bytes={} small_bytes={}",
         result.width,
@@ -424,7 +475,15 @@ fn tall_thumbs_only_for_portrait_sources() {
     let wide = dir.path().join("wide.png");
     RgbImage::from_pixel(800, 600, Rgb([10, 200, 10])).save(&wide).unwrap();
     let wide_thumb = dir.path().join("thumbs/wide.webp");
-    generate_image_thumbs(&wide, &wide_thumb, &dir.path().join("thumbs-sm/wide.webp")).unwrap();
+    generate_image_thumbs(
+        &wide,
+        crate::media::Thumbs {
+            full: &wide_thumb,
+            small: &dir.path().join("thumbs-sm/wide.webp"),
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
     assert!(!crate::paths::tall_thumb(&wide_thumb).exists());
 
     let tall = dir.path().join("tall.png");
@@ -434,7 +493,15 @@ fn tall_thumbs_only_for_portrait_sources() {
     }
     buf.save(&tall).unwrap();
     let tall_thumb = dir.path().join("thumbs/tall.webp");
-    generate_image_thumbs(&tall, &tall_thumb, &dir.path().join("thumbs-sm/tall.webp")).unwrap();
+    generate_image_thumbs(
+        &tall,
+        crate::media::Thumbs {
+            full: &tall_thumb,
+            small: &dir.path().join("thumbs-sm/tall.webp"),
+            encoder: &crate::blocks::Encoder::default(),
+        },
+    )
+    .unwrap();
     let path = crate::paths::tall_thumb(&tall_thumb);
     assert_eq!(path, dir.path().join("thumbs/tall.tall.webp"));
     let decoded = image::open(&path).unwrap().to_rgb8();
@@ -449,4 +516,24 @@ fn tall_thumbs_only_for_portrait_sources() {
     std::fs::remove_file(&path).unwrap();
     assert_eq!(generate_image_tall_thumb(&tall, &tall_thumb).unwrap(), path);
     assert!(path.exists());
+}
+
+#[test]
+fn blocks_failure_propagates() {
+    for extension in [crate::blocks::NEAR_EXT, crate::blocks::FAR_EXT] {
+        let root = tempfile::tempdir().unwrap();
+        let thumb = root.path().join("thumbs/item.webp");
+        let small = root.path().join("thumbs-sm/item.webp");
+        let (near, far) = crate::blocks::dests_for(&thumb.to_string_lossy());
+        let blocked = if extension == crate::blocks::NEAR_EXT { &near } else { &far };
+        std::fs::create_dir_all(blocked).unwrap();
+        let result = write_thumbs(
+            DynamicImage::ImageRgb8(RgbImage::from_pixel(8, 8, Rgb([30, 60, 90]))),
+            Thumbs { full: &thumb, small: &small, encoder: &crate::blocks::Encoder::default() },
+        );
+        assert!(result.is_err());
+        assert!(thumb.is_file());
+        assert!(small.is_file());
+        assert!(blocked.is_dir());
+    }
 }

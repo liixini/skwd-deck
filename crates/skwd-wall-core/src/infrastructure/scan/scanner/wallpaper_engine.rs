@@ -11,7 +11,7 @@ use crate::{db, media, paths};
 use super::super::concurrency::{decode_budget, image_decode_weight, scan_threads};
 use super::common::{artifacts_ready, mtime_secs, we_sources_unchanged};
 
-pub fn scan_we<F>(state: &WallState, on_item: F) -> usize
+pub fn scan_we<F>(state: &WallState, encoder: &crate::blocks::Encoder, on_item: F) -> usize
 where
     F: Fn(&serde_json::Value) + Sync,
 {
@@ -50,8 +50,8 @@ where
 
     let count = AtomicUsize::new(0);
     let work = || {
-        candidates.par_iter().for_each(|(item_directory, wallpaper_engine_id, mtime)| {
-            if scan_item(state, &known, item_directory, wallpaper_engine_id, *mtime, &on_item) {
+        candidates.par_iter().for_each(|(directory, id, mtime)| {
+            if scan_item(state, &known, directory, id, *mtime, encoder, &on_item) {
                 count.fetch_add(1, Ordering::Relaxed);
             }
         });
@@ -68,15 +68,14 @@ fn generate_thumbnails(
     item_directory: &Path,
     wallpaper_engine_id: &str,
     video_path: Option<&Path>,
-    thumb: &Path,
-    thumb_small: &Path,
+    thumbs: media::Thumbs<'_>,
 ) -> Option<media::ThumbResult> {
     let result = if let Some(video_path) = video_path {
         let _permit = decode_budget().acquire_exclusive();
-        media::generate_video_thumbs(video_path, thumb, thumb_small, 1).or_else(|error| {
+        media::generate_video_thumbs(video_path, thumbs, 1).or_else(|error| {
             log::warn!("we video thumb failed for {wallpaper_engine_id}: {error}; trying preview");
             match crate::we::find_preview(item_directory) {
-                Some(preview) => media::generate_image_thumbs(&preview, thumb, thumb_small),
+                Some(preview) => media::generate_image_thumbs(&preview, thumbs),
                 None => Err(error),
             }
         })
@@ -84,7 +83,7 @@ fn generate_thumbnails(
         match crate::we::find_preview(item_directory) {
             Some(preview) => {
                 let _permit = decode_budget().acquire(image_decode_weight(&preview));
-                media::generate_image_thumbs(&preview, thumb, thumb_small)
+                media::generate_image_thumbs(&preview, thumbs)
             }
             None => Err(anyhow::anyhow!("project has no usable preview")),
         }
@@ -94,7 +93,7 @@ fn generate_thumbnails(
         Ok(result) => Some(result),
         Err(error) => {
             log::warn!("we thumb failed for {wallpaper_engine_id}: {error}; using placeholder");
-            media::generate_placeholder_thumbs(thumb, thumb_small)
+            media::generate_placeholder_thumbs(thumbs)
                 .inspect_err(|error| {
                     log::warn!("we placeholder failed for {wallpaper_engine_id}: {error}");
                 })
@@ -109,6 +108,7 @@ fn scan_item<F>(
     item_directory: &Path,
     wallpaper_engine_id: &str,
     mtime: i64,
+    encoder: &crate::blocks::Encoder,
     on_item: &F,
 ) -> bool
 where
@@ -138,7 +138,7 @@ where
     let thumb_small = paths::we_thumb_sm(wallpaper_engine_id);
     let fresh = known.get(&key).is_some_and(|(known_mtime, known_type, known_video_file)| {
         *known_mtime == mtime && known_type == entry_type && *known_video_file == video_file
-    }) && artifacts_ready(&thumb)
+    }) && artifacts_ready(&thumb, &thumb_small)
         && we_sources_unchanged(item_directory, video_path.as_deref(), &thumb);
     if fresh {
         return false;
@@ -148,8 +148,7 @@ where
         item_directory,
         wallpaper_engine_id,
         video_path.as_deref(),
-        &thumb,
-        &thumb_small,
+        media::Thumbs { full: &thumb, small: &thumb_small, encoder },
     ) else {
         return false;
     };

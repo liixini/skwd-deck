@@ -73,7 +73,6 @@ impl CommitReadyWe<'_> {
                             );
                         }
                     }
-                    state.renderers().set_we_render(self.groups, self.audio);
                 }
                 log::info!(
                     "reconcile: WE scene set unchanged ({} group(s)), {}",
@@ -83,9 +82,15 @@ impl CommitReadyWe<'_> {
             }
             CommitReadyWeMode::Replace(native) => {
                 crate::we::finalize_scene_set(state, native);
-                state.renderers().set_we_render(self.groups, self.audio);
             }
         }
+        for (we_id, outputs) in &self.groups {
+            let source = state.config().we_dir().join(we_id);
+            for output in outputs {
+                state.renderers().set_assignment(output, &source.to_string_lossy());
+            }
+        }
+        state.renderers().set_we_render(self.groups, self.audio);
     }
 }
 

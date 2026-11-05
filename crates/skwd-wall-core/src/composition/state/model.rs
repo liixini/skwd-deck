@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLockReadGuard};
+use std::sync::{Arc, Mutex, OnceLock, RwLockReadGuard};
 
 use rusqlite::Connection;
 
@@ -12,6 +12,8 @@ use crate::infrastructure::renderers::RendererSupervisor;
 use crate::lock;
 
 const SHELL_PALETTE_CACHE_CAP: usize = 128;
+
+type PaletteJob = OnceLock<Option<Vec<u8>>>;
 
 /// Composition root for independently owned core services.
 pub struct WallState {
@@ -39,6 +41,7 @@ pub struct ThemeRuntime {
     shell_preview_lock: Mutex<()>,
     shell_generation: AtomicU64,
     shell_palettes: Mutex<HashMap<String, Vec<u8>>>,
+    shell_palette_jobs: Mutex<HashMap<String, Arc<PaletteJob>>>,
 }
 
 impl WallState {
@@ -182,6 +185,14 @@ impl ThemeRuntime {
         self.shell_generation.fetch_add(1, Ordering::SeqCst) + 1
     }
 
+    pub fn cancel_shell_preview(&self, expected: u64) -> Option<u64> {
+        let next = expected.wrapping_add(1);
+        self.shell_generation
+            .compare_exchange(expected, next, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| next)
+    }
+
     pub fn shell_preview_generation(&self) -> u64 {
         self.shell_generation.load(Ordering::SeqCst)
     }
@@ -242,6 +253,35 @@ impl ThemeRuntime {
             palettes.clear();
         }
         palettes.insert(key, json);
+    }
+
+    pub fn palette_or_generate(
+        &self,
+        key: &str,
+        generate: impl FnOnce() -> Option<Vec<u8>>,
+    ) -> Option<Vec<u8>> {
+        if let Some(cached) = self.shell_palette_cached(key) {
+            return Some(cached);
+        }
+        let job = {
+            let mut jobs = lock(&self.shell_palette_jobs);
+            Arc::clone(jobs.entry(key.to_owned()).or_insert_with(|| Arc::new(OnceLock::new())))
+        };
+        let result = job
+            .get_or_init(|| {
+                if let Some(cached) = self.shell_palette_cached(key) {
+                    return Some(cached);
+                }
+                let bytes = generate()?;
+                self.cache_shell_palette(key.to_owned(), bytes.clone());
+                Some(bytes)
+            })
+            .clone();
+        let mut jobs = lock(&self.shell_palette_jobs);
+        if jobs.get(key).is_some_and(|current| Arc::ptr_eq(current, &job)) {
+            jobs.remove(key);
+        }
+        result
     }
 
     pub fn set_source(&self, path: &str) {

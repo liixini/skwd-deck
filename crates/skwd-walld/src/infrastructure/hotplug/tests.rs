@@ -101,9 +101,6 @@ impl WallpaperApplication for Backend {
         self.apply("*", "")?;
         Ok(None)
     }
-    fn video_engine_is_vk(&self) -> bool {
-        true
-    }
     fn reload_we(&self) -> anyhow::Result<()> {
         Ok(())
     }

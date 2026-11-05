@@ -1,15 +1,18 @@
 #![deny(unsafe_code)]
 
 mod atomic;
+pub mod corners;
 mod environment;
 mod getter_macro;
 mod key_catalog;
 mod library;
 mod picker;
+pub mod picker_layout;
 mod power;
 mod profile;
 pub mod schema;
 mod settings;
+pub mod studio_time;
 pub mod theme_profile;
 mod value;
 
@@ -21,12 +24,12 @@ pub use library::{
 };
 pub use picker::canonicalize_depth_layout;
 pub use power::{
-    DEFAULT_BATTERY_FPS, DEFAULT_BATTERY_VIDEO_IDLE_SECONDS, PowerSourceState, battery_fps,
-    battery_percent, battery_percent_at, battery_saver_enabled, battery_video_idle_seconds,
-    battery_wallpaper_performance, configured_gpu_device, configured_gpu_preference,
-    effective_gpu_preference, effective_picker_fps, effective_video_idle_seconds,
-    effective_wallpaper_performance, on_battery_power, power_source_state, power_source_state_at,
-    set_power_source_snapshot,
+    DEFAULT_BATTERY_FPS, DEFAULT_BATTERY_VIDEO_IDLE_SECONDS, GPU_DEVICE_ENV, GPU_UUID_BYTES,
+    PowerSourceState, battery_fps, battery_percent, battery_percent_at, battery_saver_enabled,
+    battery_video_idle_seconds, battery_wallpaper_performance, configured_gpu_device,
+    configured_gpu_preference, effective_gpu_preference, effective_picker_fps,
+    effective_video_idle_seconds, effective_wallpaper_performance, gpu_uuid, on_battery_power,
+    power_source_state, power_source_state_at, set_power_source_snapshot,
 };
 pub use profile::{
     EVERYTHING_PROFILE, FolderState, LibraryItem, LibraryProfile, active_library_profile,
@@ -34,11 +37,13 @@ pub use profile::{
 };
 pub use settings::{
     cache_dir_of, canonicalize_backdrop_blur, canonicalize_paper_engine, canonicalize_we_renderer,
-    locale, paper_engine, pexels_api_key, steam_enabled, theme_authority, theme_backend,
-    theme_engine, theme_mode, theme_policy, unsplash_access_key, video_dir, video_preview_delay_ms,
-    video_preview_enabled, wallhaven_enabled, wallpaper_dir, wallpaper_mute, wallpaper_volume,
+    drawing_device, drawing_device_invalid, drawing_enabled, drawing_memory_limit_invalid,
+    drawing_memory_limit_mib, locale, paper_engine, pexels_api_key, steam_enabled, theme_authority,
+    theme_backend, theme_engine, theme_mode, theme_policy, unsplash_access_key, video_dir,
+    video_preview_delay_ms, video_preview_enabled, wallhaven_enabled, wallpaper_dir,
+    wallpaper_mute, wallpaper_volume,
 };
 pub use value::{
     arr_ref, bool_at, bool_false_unless_true, bool_true_unless_false, f64_ref, get, i64_ref,
-    num_at, str_at, str_ref, u64_at, u64_ref,
+    num_at, parse_rgb, str_at, str_ref, u64_at, u64_ref,
 };

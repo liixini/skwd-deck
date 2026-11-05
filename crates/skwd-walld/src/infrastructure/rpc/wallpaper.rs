@@ -1,5 +1,3 @@
-use crate::backend::workers::TinierRequest;
-use crate::composition::apply::ExpectedApply;
 use wall_proto::apply_fields;
 
 const OVERRIDE_LOCKS: &str = "override_locks";
@@ -9,39 +7,7 @@ const ACTIVITY_TYPE_ERROR: &str = "Activity must be a string";
 #[allow(clippy::wildcard_imports)]
 use super::common::*;
 
-const PREPARATION_ERROR_KIND: &str = "decode_failed";
 const PREHEAT_MAX_BYTES: usize = 32 << 20;
-
-#[derive(Debug, PartialEq, Eq)]
-enum DeferredTerminal {
-    Success,
-    Cancelled,
-    Superseded,
-    Failure(String),
-}
-
-fn preparation_terminal(current: bool, result: Result<(), String>) -> DeferredTerminal {
-    if !current {
-        return DeferredTerminal::Superseded;
-    }
-    match result {
-        Ok(()) => DeferredTerminal::Success,
-        Err(detail) if detail == "Preparation cancelled" => DeferredTerminal::Cancelled,
-        Err(detail) => DeferredTerminal::Failure(detail),
-    }
-}
-
-fn apply_terminal(result: anyhow::Result<serde_json::Value>) -> DeferredTerminal {
-    match result {
-        Ok(_) => DeferredTerminal::Success,
-        Err(error)
-            if error.downcast_ref::<crate::composition::apply::SupersededApply>().is_some() =>
-        {
-            DeferredTerminal::Superseded
-        }
-        Err(error) => DeferredTerminal::Failure(error.to_string()),
-    }
-}
 
 pub(super) fn signal_ready(
     renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
@@ -187,10 +153,8 @@ pub(super) fn outputs_list(
             let (logical_width, logical_height) = mon.logical_size();
             let entry = audio_state.get(&mon.name).or_else(|| audio_state.get("*"));
             let getf = |key: &str| entry.and_then(|entry| entry.get(key));
-            let raw_path = getf("path").and_then(serde_json::Value::as_str).unwrap_or("");
+            let path = getf("path").and_then(serde_json::Value::as_str).unwrap_or("");
             let we_id = getf("we_id").and_then(serde_json::Value::as_str).unwrap_or("");
-            let path_owned = crate::infrastructure::media_paths::library_path(state, raw_path);
-            let path = path_owned.as_str();
             let kind = getf("type").and_then(Value::as_str).unwrap_or("");
             let animated = matches!(kind, wall_proto::kind::VIDEO | wall_proto::kind::WE);
             wall_proto::OutputStatus {
@@ -199,6 +163,7 @@ pub(super) fn outputs_list(
                     && animated
                     && state.renderers().manual_paused_for(&mon.name),
                 target: mon.name.clone(),
+                monitor: mon.monitor(),
                 connected: true,
                 current: current_of(path, we_id, &assigns, &mon.name),
                 fill: state.config().display().fill_override_for(&mon.name).unwrap_or_default(),
@@ -246,17 +211,18 @@ fn offline_status(
     };
     let name = field("connector").to_string();
     let id = field("id");
+    let identity = Some(field("monitor")).filter(|key| !key.is_empty()).unwrap_or(id);
     if name.is_empty() || id.is_empty() {
         return None;
     }
-    let path_owned =
-        crate::infrastructure::media_paths::library_path(state, wallpaper_field("path"));
+    let path_owned = wallpaper_field("path").to_string();
     let kind = wallpaper_field("type").to_string();
     let we_id = wallpaper_field("we_id").to_string();
     let current = if kind == wall_proto::kind::WE { we_id.clone() } else { path_owned.clone() };
     Some(wall_proto::OutputStatus {
         name: name.clone(),
         target: format!("@monitor:{id}"),
+        monitor: identity.to_string(),
         connected: false,
         width: monitor.get("width").and_then(Value::as_i64).unwrap_or_default() as i32,
         height: monitor.get("height").and_then(Value::as_i64).unwrap_or_default() as i32,
@@ -360,6 +326,37 @@ pub(super) fn theme_previews(state: &Arc<WallState>, req: &Request) -> Response 
     Response::ok(req.id, json!({"backend": backend, "backends": backends, "previews": previews}))
 }
 
+pub(super) fn theme_studio(state: &Arc<WallState>, req: &Request) -> Response {
+    let request = match serde_json::from_value::<wall_proto::StudioRequest>(req.params.clone()) {
+        Ok(request) => request,
+        Err(error) => return Response::err(req.id, INVALID_PARAMS, error.to_string()),
+    };
+    let preview = request
+        .we_id
+        .filter(|id| skwd_wall_core::we::valid_we_id(id))
+        .and_then(|id| skwd_wall_core::we::find_preview(&state.config().we_dir().join(id)))
+        .map(|preview| preview.display().to_string());
+    let image = preview
+        .or_else(|| {
+            request
+                .image
+                .filter(|image| !image.is_empty())
+                .map(|image| crate::infrastructure::media_paths::studio_image(state, &image))
+        })
+        .or_else(|| state.theme().source());
+    let Some(image) = image else {
+        return Response::err(req.id, 1, "no current wallpaper for the colour studio");
+    };
+    match skwd_wall_core::theme::studio::snapshot(&image, request.area, request.materials) {
+        Some(mut result) => {
+            let config = skwd_wall_core::theme::profiles::configuration(state, &image);
+            result.dark = Some(skwd_wall_core::theme::studio::mode_dark(&config, &image));
+            Response::ok(req.id, json!(result))
+        }
+        None => Response::err(req.id, 1, format!("could not read colours from {image}")),
+    }
+}
+
 pub(super) fn clear_data(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, events, workers, stats, .. } = ctx;
     let _ = state.with_db(db::clear_cache);
@@ -423,7 +420,7 @@ fn scoped_result(
 }
 
 pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
-    let Ctx { state, wallpaper, history, events, workers, stats, .. } = ctx;
+    let Ctx { state, wallpaper, history, events, stats, .. } = ctx;
     state.reload_config();
     let ty = req.str_param("type", wall_proto::kind::STATIC);
     let path = req.str_param("path", "");
@@ -517,118 +514,9 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
         _ if req.bool_param("override_locks", false) => ApplySource::UserOverride,
         _ => ApplySource::User,
     };
-    if ty == wall_proto::kind::VIDEO
-        && state.config().renderer().video_engine() == "tinier"
-        && !output.starts_with("@monitor:")
-        && crate::infrastructure::media_paths::tinier_video(state, path).is_none()
-    {
-        let expected = {
-            let _apply = state.apply().lock();
-            activity.map_or_else(
-                || ExpectedApply::Generation(state.apply().next_generation()),
-                |activity| ExpectedApply::Intent(state.apply().intent(&activity.id, output)),
-            )
-        };
-        let preparation =
-            workers.prepare_tinier(TinierRequest { source: path, replace: activity.is_none() });
-        let task_id = preparation.task_id.clone();
-        let deferred_state = Arc::clone(state);
-        let deferred_wallpaper = Arc::clone(wallpaper);
-        let deferred_history = Arc::clone(history);
-        let deferred_events = Arc::clone(events);
-        let deferred_stats = Arc::clone(stats);
-        let path = path.to_string();
-        let deferred_output = output.to_string();
-        let transition_override = transition_override.clone();
-        let deferred_activity = activity.cloned();
-        let mut result = json!({apply_fields::REQUEST_ID:req.id,apply_fields::OUTPUT:output,apply_fields::TASK_ID:task_id});
-        if let Some(activity) = activity {
-            result[wall_proto::ACTIVITY_PARAM] = json!(activity.id);
-            result[apply_fields::VISIBLE] = json!(false);
-            result[apply_fields::APPLY_TOKEN] =
-                json!(req.params.get(apply_fields::APPLY_TOKEN).and_then(Value::as_str));
-        }
-        let mut queued = result.clone();
-        queued[apply_fields::QUEUED] = json!(true);
-        queued[apply_fields::OK] = json!(true);
-        events.publish(ev::APPLY_RESULT, queued.clone());
-        thread::spawn(move || {
-            let prepared = preparation
-                .result
-                .recv()
-                .map_err(|error| error.to_string())
-                .and_then(|inner| inner);
-            let preparation_failed = prepared.is_err();
-            let terminal = match preparation_terminal(expected.current(&deferred_state), prepared) {
-                DeferredTerminal::Success => {
-                    let target = deferred_activity
-                        .as_ref()
-                        .map(|activity| {
-                            skwd_wall_core::plasma::activities::Target::enter(&activity.id)
-                        })
-                        .transpose();
-                    apply_terminal(target.and_then(|_target| {
-                        apply_core(
-                            &deferred_state,
-                            deferred_wallpaper.as_ref(),
-                            deferred_history.as_ref(),
-                            deferred_events.as_ref(),
-                            &deferred_stats,
-                            wall_proto::kind::VIDEO,
-                            &path,
-                            "",
-                            mute,
-                            volume,
-                            source,
-                            &deferred_output,
-                            notify,
-                            no_transition,
-                            transition_override.as_ref(),
-                            Some(expected),
-                        )
-                    }))
-                }
-                terminal => terminal,
-            };
-            match terminal {
-                DeferredTerminal::Success => {
-                    result[apply_fields::OK] = json!(true);
-                    if deferred_activity.is_some() {
-                        result[apply_fields::VISIBLE] = json!(true);
-                    }
-                }
-                DeferredTerminal::Failure(detail) => {
-                    deferred_stats.error();
-                    result[apply_fields::OK] = json!(false);
-                    result[apply_fields::ERROR_KIND] = json!(if preparation_failed {
-                        PREPARATION_ERROR_KIND
-                    } else {
-                        classify_apply_error(&detail)
-                    });
-                    result[apply_fields::DETAIL] = json!(detail);
-                }
-                DeferredTerminal::Cancelled | DeferredTerminal::Superseded
-                    if deferred_activity.is_none() =>
-                {
-                    return;
-                }
-                DeferredTerminal::Cancelled => {
-                    result[apply_fields::OK] = json!(false);
-                    result[apply_fields::CANCELLED] = json!(true);
-                }
-                DeferredTerminal::Superseded => {
-                    result[apply_fields::OK] = json!(false);
-                    result[apply_fields::SUPERSEDED] = json!(true);
-                }
-            }
-            deferred_events.publish(ev::APPLY_RESULT, result);
-        });
-        queued[apply_fields::STATUS] = json!(apply_fields::PREPARING);
-        return Response::ok(req.id, queued);
-    }
     let expected = activity.map(|activity| {
         let _apply = state.apply().lock();
-        ExpectedApply::Intent(state.apply().intent(&activity.id, output))
+        state.apply().intent(&activity.id, output)
     });
     let _activity = match activity
         .as_ref()
@@ -660,7 +548,6 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
             if let Some(activity) = &activity {
                 val[wall_proto::ACTIVITY_PARAM] = json!(activity.id);
                 val[apply_fields::VISIBLE] = json!(true);
-                val[apply_fields::QUEUED] = json!(false);
             }
             events.publish(
                 ev::APPLY_RESULT,
@@ -751,7 +638,12 @@ pub(super) fn set_audio(
     Response::ok(req.id, json!({"ok": true}))
 }
 
-pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<Stats>) -> Response {
+pub(super) fn shell_preview(
+    state: &Arc<WallState>,
+    req: &Request,
+    stats: &Arc<Stats>,
+    reserve: impl FnOnce() -> Option<u64>,
+) -> Response {
     state.reload_config();
     let path = crate::infrastructure::media_paths::theme_image(state, req.str_param("path", ""));
     let cfg = skwd_wall_core::theme::profiles::configuration(state, &path);
@@ -785,24 +677,23 @@ pub(super) fn shell_preview(state: &Arc<WallState>, req: &Request, stats: &Arc<S
             "shell hover preview disabled".to_string(),
         );
     }
-    if let Some(arm) = skwd_wall_core::theme_sink::active(backend.as_str()).arm {
-        arm(state);
+    let Some(generation) = reserve() else {
+        return super::preview_queue::superseded(req);
+    };
+    if let Some(arm) = skwd_wall_core::theme_sink::active(backend.as_str()).arm
+        && !arm(state, generation)
+    {
+        return super::preview_queue::superseded(req);
     }
-    let generation = state.theme().bump_shell_preview();
-    let owned = Arc::clone(state);
-    thread::spawn(move || shell_preview_run(&owned, &backend, &path, generation));
-    Response::ok(req.id, json!({"queued": true}))
-}
-
-pub(super) fn shell_preview_run(
-    state: &Arc<WallState>,
-    backend: &str,
-    path: &str,
-    generation: u64,
-) {
-    let res = (skwd_wall_core::theme_sink::active(backend).preview)(state, path, generation);
-    if let Err(err) = res {
-        log::warn!("{backend} preview: {err:#}");
+    if state.theme().shell_preview_generation() != generation {
+        return super::preview_queue::superseded(req);
+    }
+    match (skwd_wall_core::theme_sink::active(&backend).preview)(state, &path, generation) {
+        Ok(()) => Response::ok(req.id, json!({"queued": true})),
+        Err(err) => {
+            log::warn!("{backend} preview: {err:#}");
+            fail(stats, req.id, format!("{err:#}"))
+        }
     }
 }
 
@@ -1036,39 +927,10 @@ fn apply_inactive(
                     json!({
                         apply_fields::APPLIED: if kind == wall_proto::kind::WE { we_id } else { path },
                         apply_fields::VISIBLE: false,
-                        apply_fields::QUEUED: false,
                     }),
                 ),
             )
         }
         Err(error) => Response::err(req.id, -1, error.to_string()),
-    }
-}
-
-#[cfg(test)]
-mod deferred_terminal_tests {
-    use super::*;
-
-    #[test]
-    fn tinier_terminal_results_distinguish_success_failure_cancel_and_supersession() {
-        assert_eq!(preparation_terminal(true, Ok(())), DeferredTerminal::Success);
-        assert_eq!(
-            preparation_terminal(true, Err("Preparation cancelled".into())),
-            DeferredTerminal::Cancelled
-        );
-        assert_eq!(preparation_terminal(false, Ok(())), DeferredTerminal::Superseded);
-        assert_eq!(
-            preparation_terminal(true, Err("decode broke".into())),
-            DeferredTerminal::Failure("decode broke".into())
-        );
-        assert_eq!(apply_terminal(Ok(json!({}))), DeferredTerminal::Success);
-        assert_eq!(
-            apply_terminal(Err(anyhow::Error::new(crate::composition::apply::SupersededApply))),
-            DeferredTerminal::Superseded
-        );
-        assert_eq!(
-            apply_terminal(Err(anyhow::anyhow!("superseded apply"))),
-            DeferredTerminal::Failure("superseded apply".into())
-        );
     }
 }

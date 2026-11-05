@@ -1,8 +1,25 @@
 use crate::lock;
 use std::collections::HashMap;
 
+use wayland_client::backend::ObjectId;
 use wayland_client::protocol::{wl_output, wl_registry};
-use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
+use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, WEnum, event_created_child};
+use wayland_protocols::xdg::xdg_output::zv1::client::{
+    zxdg_output_manager_v1::{self, ZxdgOutputManagerV1},
+    zxdg_output_v1::{self, ZxdgOutputV1},
+};
+use wayland_protocols_wlr::output_management::v1::client::{
+    zwlr_output_head_v1::{self, ZwlrOutputHeadV1},
+    zwlr_output_manager_v1::{self, ZwlrOutputManagerV1},
+    zwlr_output_mode_v1::{self, ZwlrOutputModeV1},
+};
+
+const OUTPUT_INTERFACE: &str = "wl_output";
+const OUTPUT_VERSION: u32 = 4;
+const XDG_OUTPUT_MANAGER: &str = "zxdg_output_manager_v1";
+const XDG_OUTPUT_VERSION: u32 = 3;
+const HEAD_MANAGER: &str = "zwlr_output_manager_v1";
+const HEAD_VERSION: u32 = 2;
 
 #[derive(Clone, Default)]
 pub struct OutputInfo {
@@ -14,10 +31,22 @@ pub struct OutputInfo {
     pub refresh_mhz: i32,
     pub scale: i32,
     pub rotated: bool,
+    pub logical: Option<(i32, i32)>,
+    pub description: String,
+    pub serial: String,
 }
 
 impl OutputInfo {
     pub fn logical_size(&self) -> (i32, i32) {
+        if let Some(size) = self.logical.filter(|(width, height)| *width > 0 && *height > 0) {
+            return size;
+        }
+        let (width, height) = self.pixel_size();
+        let scale = self.scale.max(1);
+        (width / scale, height / scale)
+    }
+
+    pub fn pixel_size(&self) -> (i32, i32) {
         if self.rotated { (self.height, self.width) } else { (self.width, self.height) }
     }
 
@@ -30,8 +59,24 @@ impl OutputInfo {
         if identity == self.name { identity } else { format!("{identity} @ {}", self.name) }
     }
 
+    pub fn monitor(&self) -> String {
+        let base = self.identity();
+        let serial = self.serial.trim();
+        if base != self.name && !serial.is_empty() {
+            return format!("{base} {serial}");
+        }
+        let suffix = format!("({})", self.name);
+        let described = self.description.trim();
+        let described = described.strip_suffix(&suffix).map_or(described, str::trim_end);
+        if base != self.name && described.len() > base.len() && described.starts_with(&base) {
+            described.to_string()
+        } else {
+            self.identity_key()
+        }
+    }
+
     pub fn portrait(&self) -> bool {
-        let (width, height) = self.logical_size();
+        let (width, height) = self.pixel_size();
         height > width
     }
 }
@@ -93,12 +138,25 @@ struct Acc {
     refresh_mhz: i32,
     scale: i32,
     rotated: bool,
+    logical: Option<(i32, i32)>,
+    description: String,
+}
+
+#[derive(Default)]
+struct Head {
+    name: String,
+    serial: String,
 }
 
 #[derive(Default)]
 struct Collector {
     next: u32,
     outs: HashMap<u32, Acc>,
+    outputs: HashMap<u32, wl_output::WlOutput>,
+    manager: Option<ZxdgOutputManagerV1>,
+    heads: HashMap<ObjectId, Head>,
+    head_manager: Option<ZwlrOutputManagerV1>,
+    heads_done: bool,
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for Collector {
@@ -110,13 +168,17 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Collector {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global { name, interface, version } = event
-            && interface == "wl_output"
-        {
-            let id = state.next;
-            state.next += 1;
-            state.outs.insert(id, Acc::default());
-            let _: wl_output::WlOutput = registry.bind(name, version.min(4), qh, id);
+        if let wl_registry::Event::Global { name, interface, version } = event {
+            if interface == OUTPUT_INTERFACE {
+                let id = state.next;
+                state.next += 1;
+                state.outs.insert(id, Acc::default());
+                state.outputs.insert(id, registry.bind(name, version.min(OUTPUT_VERSION), qh, id));
+            } else if interface == XDG_OUTPUT_MANAGER {
+                state.manager = Some(registry.bind(name, version.min(XDG_OUTPUT_VERSION), qh, ()));
+            } else if interface == HEAD_MANAGER && version >= HEAD_VERSION {
+                state.head_manager = Some(registry.bind(name, HEAD_VERSION, qh, ()));
+            }
         }
     }
 }
@@ -133,6 +195,7 @@ impl Dispatch<wl_output::WlOutput, u32> for Collector {
         let acc = state.outs.entry(*id).or_default();
         match event {
             wl_output::Event::Name { name } => acc.name = name,
+            wl_output::Event::Description { description } => acc.description = description,
             wl_output::Event::Mode { flags, width, height, refresh } => {
                 if matches!(flags, WEnum::Value(mflags) if mflags.contains(wl_output::Mode::Current))
                 {
@@ -156,6 +219,121 @@ impl Dispatch<wl_output::WlOutput, u32> for Collector {
                 );
             }
             _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZxdgOutputManagerV1, ()> for Collector {
+    fn event(
+        _: &mut Self,
+        _: &ZxdgOutputManagerV1,
+        _: zxdg_output_manager_v1::Event,
+        (): &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<ZxdgOutputV1, u32> for Collector {
+    fn event(
+        state: &mut Self,
+        _: &ZxdgOutputV1,
+        event: zxdg_output_v1::Event,
+        id: &u32,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let acc = state.outs.entry(*id).or_default();
+        match event {
+            zxdg_output_v1::Event::LogicalSize { width, height } => {
+                acc.logical = Some((width, height));
+            }
+            zxdg_output_v1::Event::Name { name } => acc.name = name,
+            zxdg_output_v1::Event::Description { description } => acc.description = description,
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZwlrOutputManagerV1, ()> for Collector {
+    fn event(
+        state: &mut Self,
+        _: &ZwlrOutputManagerV1,
+        event: zwlr_output_manager_v1::Event,
+        (): &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwlr_output_manager_v1::Event::Head { head } => {
+                state.heads.insert(head.id(), Head::default());
+            }
+            zwlr_output_manager_v1::Event::Done { .. }
+            | zwlr_output_manager_v1::Event::Finished => state.heads_done = true,
+            _ => {}
+        }
+    }
+
+    event_created_child!(Collector, ZwlrOutputManagerV1, [
+        zwlr_output_manager_v1::EVT_HEAD_OPCODE => (ZwlrOutputHeadV1, ()),
+    ]);
+}
+
+impl Dispatch<ZwlrOutputHeadV1, ()> for Collector {
+    fn event(
+        state: &mut Self,
+        head: &ZwlrOutputHeadV1,
+        event: zwlr_output_head_v1::Event,
+        (): &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let entry = state.heads.entry(head.id()).or_default();
+        match event {
+            zwlr_output_head_v1::Event::Name { name } => entry.name = name,
+            zwlr_output_head_v1::Event::SerialNumber { serial_number } => {
+                entry.serial = serial_number;
+            }
+            zwlr_output_head_v1::Event::Finished => {
+                state.heads.remove(&head.id());
+            }
+            _ => {}
+        }
+    }
+
+    event_created_child!(Collector, ZwlrOutputHeadV1, [
+        zwlr_output_head_v1::EVT_MODE_OPCODE => (ZwlrOutputModeV1, ()),
+    ]);
+}
+
+impl Dispatch<ZwlrOutputModeV1, ()> for Collector {
+    fn event(
+        _: &mut Self,
+        _: &ZwlrOutputModeV1,
+        _: zwlr_output_mode_v1::Event,
+        (): &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+pub(crate) fn unique_serials(outputs: &mut [OutputInfo]) {
+    let mut seen = HashMap::<(String, String, String), usize>::new();
+    for output in outputs.iter_mut() {
+        let serial = output.serial.trim();
+        if serial.trim_start_matches("0x").trim_start_matches('0').is_empty() {
+            output.serial.clear();
+            continue;
+        }
+        let key = (output.make.clone(), output.model.clone(), serial.to_string());
+        *seen.entry(key).or_default() += 1;
+    }
+    for output in outputs.iter_mut() {
+        let key = (output.make.clone(), output.model.clone(), output.serial.trim().to_string());
+        if seen.get(&key).is_some_and(|count| *count > 1) {
+            output.serial.clear();
         }
     }
 }
@@ -231,6 +409,9 @@ fn parse_fake_output(entry: &str) -> Option<OutputInfo> {
         refresh_mhz: 0,
         scale: 1,
         rotated: false,
+        logical: None,
+        description: String::new(),
+        serial: String::new(),
     })
 }
 
@@ -258,19 +439,26 @@ fn enumerate_live() -> Vec<OutputInfo> {
     if queue.roundtrip(&mut state).is_err() {
         return Vec::new();
     }
+    let _logical_outputs: Vec<_> = state.manager.as_ref().map_or_else(Vec::new, |manager| {
+        state.outputs.iter().map(|(id, output)| manager.get_xdg_output(output, &qh, *id)).collect()
+    });
     for _ in 0..MAX_ROUNDTRIPS {
         if queue.roundtrip(&mut state).is_err() {
             break;
         }
-        if !state.outs.is_empty() && state.outs.values().all(|acc| !acc.name.is_empty()) {
+        let named = !state.outs.is_empty() && state.outs.values().all(|acc| !acc.name.is_empty());
+        if named && (state.head_manager.is_none() || state.heads_done) {
             break;
         }
     }
+    let serials: HashMap<String, String> =
+        state.heads.into_values().map(|head| (head.name, head.serial)).collect();
     let mut outs: Vec<OutputInfo> = state
         .outs
         .into_values()
         .filter(|acc| !acc.name.is_empty())
         .map(|acc| OutputInfo {
+            serial: serials.get(&acc.name).cloned().unwrap_or_default(),
             name: acc.name,
             make: acc.make,
             model: acc.model,
@@ -279,10 +467,13 @@ fn enumerate_live() -> Vec<OutputInfo> {
             refresh_mhz: acc.refresh_mhz,
             scale: acc.scale.max(1),
             rotated: acc.rotated,
+            logical: acc.logical,
+            description: acc.description,
         })
         .collect();
     outs.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
     outs.dedup_by(|lhs, rhs| lhs.name == rhs.name);
+    unique_serials(&mut outs);
     outs
 }
 
@@ -306,7 +497,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Watcher {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            wl_registry::Event::Global { name, interface, .. } if interface == "wl_output" => {
+            wl_registry::Event::Global { name, interface, .. } if interface == OUTPUT_INTERFACE => {
                 if state.outputs.insert(name) {
                     state.changed = true;
                 }

@@ -20,6 +20,11 @@ async fn observe(stream: &mut UnixStream, output: &str, fullscreen: bool, maximi
     stream.write_all(format!("{value}\n").as_bytes()).await.unwrap();
 }
 
+async fn observe_focus(stream: &mut UnixStream, output: &str, focused: bool) {
+    let value = serde_json::json!({"version":1,"output":output,"supported":true,"fullscreen":false,"maximized":false,"focused":focused});
+    stream.write_all(format!("{value}\n").as_bytes()).await.unwrap();
+}
+
 async fn policy_line(stream: &mut BufReader<UnixStream>) -> (bool, Option<serde_json::Value>) {
     let mut line = String::new();
     tokio::time::timeout(Duration::from_secs(3), stream.read_line(&mut line))
@@ -28,7 +33,7 @@ async fn policy_line(stream: &mut BufReader<UnixStream>) -> (bool, Option<serde_
         .unwrap();
     let value: serde_json::Value = serde_json::from_str(&line).unwrap();
     assert_eq!(value["version"], 1);
-    assert_eq!(value["capabilities"], serde_json::json!(["assignments"]));
+    assert_eq!(value["capabilities"], serde_json::json!(["assignments", "focused"]));
     (value["paused"].as_bool().unwrap(), value.get("entry").cloned())
 }
 
@@ -61,6 +66,7 @@ async fn native_outputs_update_independently_and_clear_on_disconnect() {
     })
     .await;
     assert_eq!(receiver.borrow().backend, "plasma");
+    assert!(!receiver.borrow().focused_supported);
     observe(&mut first, "DP-1", false, false).await;
     until(&mut receiver, |value| {
         value.outputs.is_empty() && value.maximized_outputs.contains("DP-2")
@@ -73,6 +79,25 @@ async fn native_outputs_update_independently_and_clear_on_disconnect() {
     drop(receiver);
     task.await.unwrap().unwrap();
     assert!(!path.exists());
+}
+
+#[tokio::test]
+async fn focus_capability_is_additive_and_tracks_each_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("window-state.sock");
+    let (sender, mut receiver) = watch::channel(Snapshot::default());
+    let task_path = path.clone();
+    let task = tokio::spawn(async move { serve(&task_path, sender, policy().subscribe()).await });
+    let mut stream = connect(&path).await;
+    observe_focus(&mut stream, "DP-1", true).await;
+    until(&mut receiver, |value| value.focused_outputs.contains("DP-1")).await;
+    assert!(receiver.borrow().focused_supported);
+    observe_focus(&mut stream, "DP-1", false).await;
+    until(&mut receiver, |value| value.focused_outputs.is_empty()).await;
+    drop(stream);
+    until(&mut receiver, |value| !value.supported).await;
+    drop(receiver);
+    task.await.unwrap().unwrap();
 }
 
 #[tokio::test]
@@ -256,4 +281,8 @@ fn subscription_frames_are_strict() {
     }
     let observation = serde_json::json!({"version":1,"output":"DP-1","supported":true,"fullscreen":false,"maximized":false});
     assert!(matches!(Frame::decode(observation.to_string().as_bytes()), Ok(Frame::Observation(_))));
+    let observation = serde_json::json!({"version":1,"output":"DP-1","supported":true,"fullscreen":false,"maximized":false,"focused":true});
+    assert!(
+        matches!(Frame::decode(observation.to_string().as_bytes()), Ok(Frame::Observation(value)) if value.focused == Some(true))
+    );
 }

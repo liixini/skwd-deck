@@ -77,13 +77,13 @@ fn main() -> anyhow::Result<()> {
     let workers: Arc<dyn MediaWorkerSupervisor> = Arc::new(ProcessSupervisor::new(
         Arc::clone(&state),
         Arc::clone(&config),
-        Arc::clone(&database),
         publisher,
         Arc::clone(&tasks),
         Arc::clone(&stats),
         debug,
     ));
     let ctx = Ctx {
+        drawing: Arc::default(),
         apply_queue: Arc::default(),
         state: Arc::clone(&state),
         config,

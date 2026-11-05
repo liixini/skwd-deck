@@ -11,9 +11,6 @@ fn session(name: &str) -> Sandbox {
     let stub = skwd_e2e::stub_renderer!();
     sandbox.set_env("SKWD_WALL_PAPER_STILL", &stub);
     sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080,DP-2:2560x1440");
-    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR") {
-        sandbox.set_env("XDG_RUNTIME_DIR", &runtime.to_string_lossy());
-    }
     for directory in ["config/swaylock", "config/DankMaterialShell", "state/noctalia"] {
         std::fs::create_dir_all(sandbox.root.join(directory)).unwrap();
     }

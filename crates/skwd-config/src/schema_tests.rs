@@ -53,6 +53,7 @@ fn theme_mode_decodes_legacy_values_without_overriding_explicit_choices() {
 fn typed_settings_defaults() {
     assert_eq!(text_default(crate::keys::selector::START_POSITION), Some("beginning"));
     assert_eq!(text_default(crate::keys::selector::LAST_APPLIED_KEY), Some(""));
+    assert_eq!(boolean_default(crate::keys::selector::LOOP_AROUND), Some(false));
     assert_eq!(text_default(crate::keys::theme::MODE), Some("dark"));
     assert_eq!(
         read_text(&json!({"theme": {"mode": "light"}}), crate::keys::theme::MODE).as_deref(),
@@ -89,6 +90,8 @@ fn typed_settings_defaults() {
         Some(35.0)
     );
     assert_eq!(read_boolean(&json!({}), crate::keys::library::POLLING_FALLBACK), Some(false));
+    assert_eq!(read_boolean(&json!({}), crate::keys::playback::FOCUSED), Some(false));
+    assert_eq!(normalize_value(crate::keys::playback::FOCUSED, &json!(true)), Some(json!(true)));
     assert_eq!(
         read_number(
             &json!({"library": {"pollingIntervalSeconds": 1}}),
@@ -96,6 +99,103 @@ fn typed_settings_defaults() {
         ),
         Some(15.0)
     );
+}
+
+#[test]
+fn picker_frame_contract() {
+    use crate::keys::selector as key;
+
+    assert_eq!(read_boolean(&json!({}), key::FRAME_ENABLED), Some(false));
+    for (path, default) in [
+        (key::FRAME_X, 10.0),
+        (key::FRAME_Y, 10.0),
+        (key::FRAME_WIDTH, 80.0),
+        (key::FRAME_HEIGHT, 80.0),
+    ] {
+        assert_eq!(read_number(&json!({}), path), Some(default));
+        assert_eq!(normalize_value(path, &json!(42)), Some(json!(42)));
+    }
+    assert_eq!(normalize_value(key::FRAME_WIDTH, &json!(0)), Some(json!(5)));
+    assert_eq!(normalize_value(key::FRAME_Y, &json!(120)), Some(json!(100)));
+    assert_eq!(
+        normalize_value(crate::keys::filter_bar::BUTTON_ORDER, &json!("folder,sort")),
+        Some(json!("folder,sort"))
+    );
+    assert_eq!(read_text(&json!({}), key::AVOID_AREAS).as_deref(), Some(""));
+    assert_eq!(read_text(&json!({}), crate::keys::filter_bar::HIDDEN_BUTTONS).as_deref(), Some(""));
+    assert_eq!(normalize_value(key::AVOID_AREAS, &json!("0,0,100,10")), Some(json!("0,0,100,10")));
+}
+
+#[test]
+fn bar_position_contract() {
+    use crate::keys::filter_bar as key;
+
+    assert_eq!(read_boolean(&json!({}), key::POSITION_ENABLED), Some(false));
+    assert_eq!(read_number(&json!({}), key::POSITION_X), Some(0.0));
+    assert_eq!(read_number(&json!({}), key::POSITION_Y), Some(0.0));
+    assert_eq!(normalize_value(key::POSITION_X, &json!(42.5)), Some(json!(42.5)));
+    assert_eq!(normalize_value(key::POSITION_Y, &json!(120)), Some(json!(100)));
+    let config =
+        json!({"filterBar": {"positionEnabled": true, "positionX": 42.5, "positionY": 60}});
+    assert_eq!(read_boolean(&config, key::POSITION_ENABLED), Some(true));
+    assert_eq!(read_number(&config, key::POSITION_X), Some(42.5));
+    assert_eq!(read_number(&config, key::POSITION_Y), Some(60.0));
+}
+
+#[test]
+fn floating_position_contract() {
+    use crate::keys::filter_bar as key;
+
+    for (enabled, x, y, config) in [
+        (
+            key::ARRANGE_POSITION_ENABLED,
+            key::ARRANGE_POSITION_X,
+            key::ARRANGE_POSITION_Y,
+            json!({"filterBar": {
+                "arrangePositionEnabled": true,
+                "arrangePositionX": 42.5,
+                "arrangePositionY": 60
+            }}),
+        ),
+        (
+            key::SWATCH_POSITION_ENABLED,
+            key::SWATCH_POSITION_X,
+            key::SWATCH_POSITION_Y,
+            json!({"filterBar": {
+                "swatchPositionEnabled": true,
+                "swatchPositionX": 42.5,
+                "swatchPositionY": 60
+            }}),
+        ),
+    ] {
+        assert_eq!(read_boolean(&json!({}), enabled), Some(false));
+        assert_eq!(read_number(&json!({}), x), Some(0.0));
+        assert_eq!(read_number(&json!({}), y), Some(0.0));
+        assert_eq!(normalize_value(x, &json!(-5)), Some(json!(0)));
+        assert_eq!(normalize_value(y, &json!(120)), Some(json!(100)));
+        assert_eq!(read_boolean(&config, enabled), Some(true));
+        assert_eq!(read_number(&config, x), Some(42.5));
+        assert_eq!(read_number(&config, y), Some(60.0));
+    }
+}
+
+#[test]
+fn search_position_contract() {
+    use crate::keys::selector as key;
+
+    assert_eq!(read_boolean(&json!({}), key::TAG_CLOUD_POSITION_ENABLED), Some(false));
+    assert_eq!(read_number(&json!({}), key::TAG_CLOUD_POSITION_X), Some(0.0));
+    assert_eq!(read_number(&json!({}), key::TAG_CLOUD_POSITION_Y), Some(0.0));
+    let config = json!({"components": {"wallpaperSelector": {
+        "tagCloudPositionEnabled": true,
+        "tagCloudPositionX": 37.5,
+        "tagCloudPositionY": 62.5
+    }}});
+    assert_eq!(read_boolean(&config, key::TAG_CLOUD_POSITION_ENABLED), Some(true));
+    assert_eq!(read_number(&config, key::TAG_CLOUD_POSITION_X), Some(37.5));
+    assert_eq!(read_number(&config, key::TAG_CLOUD_POSITION_Y), Some(62.5));
+    assert_eq!(normalize_value(key::TAG_CLOUD_POSITION_X, &json!(-5)), Some(json!(0)));
+    assert_eq!(normalize_value(key::TAG_CLOUD_POSITION_Y, &json!(105)), Some(json!(100)));
 }
 
 #[test]
@@ -208,6 +308,7 @@ fn picker_keybindings_and_hidden_visibility_are_typed() {
         keybind::FOLDER_TOGGLE,
         keybind::HIDDEN_FOLDERS,
         keybind::THEME_PANEL,
+        keybind::COLOUR_STUDIO,
         keybind::DOWNLOADS,
         keybind::RANDOM_ROTATE,
         keybind::SEARCH_MODE,
@@ -327,6 +428,8 @@ fn optional_filter_controls_have_enabled_boolean_defaults() {
         crate::keys::filter_bar::SHOW_TAG_CLOUD,
         crate::keys::filter_bar::SHOW_DOWNLOAD,
         crate::keys::filter_bar::SHOW_PLAYLISTS,
+        crate::keys::filter_bar::SHOW_ARRANGE,
+        crate::keys::filter_bar::SHOW_SWATCH,
     ] {
         assert_eq!(find(path).map(|spec| spec.kind), Some(ValueKind::Boolean));
         assert_eq!(boolean_default(path), Some(true));
@@ -395,4 +498,15 @@ fn semantic_weather_defaults() {
     assert_eq!(normalize_value(weather::SEMANTIC_MAX_RESULTS, &json!(999)), Some(json!(64)));
     assert_eq!(normalize_value(weather::SEMANTIC_DWELL_SECONDS, &json!(0)), Some(json!(5)));
     assert_eq!(normalize_value(weather::SEMANTIC_SCORE_WINDOW, &json!(-1)), Some(json!(0)));
+}
+
+#[test]
+fn studio_tuning_is_bounded() {
+    let path = crate::keys::theme::STUDIO_COLOUR;
+    assert_eq!(read_number(&json!({}), path), Some(1.0));
+    assert_eq!(normalize_value(path, &json!(3.0)).and_then(|value| value.as_f64()), Some(1.6));
+    let warmth = crate::keys::theme::STUDIO_WARMTH;
+    assert_eq!(normalize_value(warmth, &json!(-4.0)).and_then(|value| value.as_f64()), Some(-1.0));
+    assert_eq!(text_default(crate::keys::theme::STUDIO_METHOD), Some("tonal"));
+    assert_eq!(text_default(crate::keys::theme::STUDIO_MODE), Some(""));
 }

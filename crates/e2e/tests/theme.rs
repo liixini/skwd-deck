@@ -334,6 +334,67 @@ fn preview_round_trip(
 
 #[test]
 #[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn studio_templates_round_trip() {
+    let mut sandbox = Sandbox::new("studio-templates");
+    let image = sandbox.library().join("preview.png");
+    assert!(ffmpeg_still(&image, "color=c=green:s=320x180"));
+    let templates = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data");
+    let outputs = sandbox.root.join("outputs");
+    let mut integrations = Vec::new();
+    for group in ["matugen/templates", "app-themes"] {
+        let directory = outputs.join(group);
+        std::fs::create_dir_all(&directory).unwrap();
+        for entry in std::fs::read_dir(templates.join(group)).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if !path.is_file() || path.extension().is_some_and(|ext| ext == "md" || ext == "lua") {
+                continue;
+            }
+            let output = directory.join(entry.file_name());
+            std::fs::write(&output, "applied").unwrap();
+            integrations.push(json!({"template": path, "output": output, "livePreview": true}));
+        }
+    }
+    let mut config = base_config(&sandbox);
+    config["theme"] = json!({
+        "policy": "wallpaper", "authority": "skwd", "engine": "skwd-studio",
+        "mode": "dark", "studioMethod": "theme:nord"
+    });
+    config["integrations"] = json!(integrations);
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut checks = Checks::default();
+    preview_round_trip(
+        &mut checks,
+        &walld,
+        "studio templates",
+        &image,
+        &mut || {
+            integrations.iter().all(|integration| {
+                let path = Path::new(integration["output"].as_str().unwrap());
+                let body = read(path);
+                !body.is_empty()
+                    && body != b"applied"
+                    && !String::from_utf8_lossy(&body).contains("{{colors.")
+                    && (path.extension().is_none_or(|ext| ext != "json")
+                        || serde_json::from_slice::<Value>(&body).is_ok())
+            })
+        },
+        &mut || {
+            integrations.iter().all(|integration| {
+                read(Path::new(integration["output"].as_str().unwrap())) == b"applied"
+            })
+        },
+    );
+    if checks.failed() {
+        sandbox.mark_failed();
+    }
+    drop(walld);
+    checks.finish();
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
 fn hover_preview_bridge_restores_integrations() {
     let stub = skwd_e2e::stub_renderer!();
     let mut sandbox = Sandbox::new("theme-bridge");

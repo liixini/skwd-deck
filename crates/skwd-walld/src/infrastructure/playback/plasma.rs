@@ -53,6 +53,8 @@ struct Observation {
     supported: bool,
     fullscreen: bool,
     maximized: bool,
+    #[serde(default)]
+    focused: Option<bool>,
 }
 
 fn valid_output(output: &str) -> bool {
@@ -139,6 +141,9 @@ fn snapshot(observations: &HashMap<u64, Observation>) -> Snapshot {
     Snapshot {
         supported,
         maximized_supported: supported,
+        focused_supported: observations
+            .values()
+            .any(|value| value.supported && value.focused.is_some()),
         backend: if supported { "plasma" } else { "unavailable" },
         outputs: observations
             .values()
@@ -148,6 +153,11 @@ fn snapshot(observations: &HashMap<u64, Observation>) -> Snapshot {
         maximized_outputs: observations
             .values()
             .filter(|value| value.supported && value.maximized)
+            .map(|value| value.output.clone())
+            .collect(),
+        focused_outputs: observations
+            .values()
+            .filter(|value| value.supported && value.focused == Some(true))
             .map(|value| value.output.clone())
             .collect(),
         observed_outputs: observations.values().map(|value| value.output.clone()).collect(),
@@ -200,7 +210,9 @@ async fn receive(
         if previous == Some(paused) && entry.is_none() {
             continue;
         }
-        let mut line = serde_json::json!({"version": 1, "paused": paused, "capabilities": if scoped { Vec::<&str>::new() } else { vec!["assignments"] }});
+        let capabilities = if scoped { vec!["focused"] } else { vec!["assignments", "focused"] };
+        let mut line =
+            serde_json::json!({"version": 1, "paused": paused, "capabilities": capabilities});
         if let Some(entry) = &entry {
             line["entry"] = entry.clone();
         }

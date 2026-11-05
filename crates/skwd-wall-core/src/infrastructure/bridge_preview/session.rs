@@ -60,24 +60,30 @@ fn cache_key(config: &Config, image: &str) -> String {
     let settings = theme.settings_snapshot();
     let name = theme.static_theme();
     let saved = theme.saved_themes().iter().find(|saved| saved["name"].as_str() == Some(&name));
+    let source = crate::theme::source_stamp(image);
     format!(
-        "bridge\0{}\0{}\0{}\0{}\0{image}",
+        "bridge\0{}\0{}\0{}\0{}\0{image}\0{}",
         config.theme().backend(),
         config.theme().mode(),
         serde_json::json!(settings),
-        serde_json::json!([saved, theme.static_custom()])
+        serde_json::json!([saved, theme.static_custom()]),
+        source.unwrap_or_default()
     )
 }
 
-pub fn arm(state: &WallState) {
+pub fn arm(state: &WallState, generation: u64) -> bool {
     let _serial = state.theme().lock_shell_preview();
+    if state.theme().shell_preview_generation() != generation {
+        return false;
+    }
     if state.theme().bridge_preview_armed() {
-        return;
+        return true;
     }
     let config = state.config();
     let path = bridge_path(&config);
     state.theme().arm_bridge_preview(std::fs::read(&path).unwrap_or_default());
     state.theme().arm_preview_files(side_snapshots(&config));
+    true
 }
 
 pub fn cached_palette(state: &WallState, image: &str) -> Option<serde_json::Value> {
@@ -90,19 +96,29 @@ pub fn cached_palette_for_config(
     config: &Config,
     image: &str,
 ) -> Option<serde_json::Value> {
-    let identity = crate::theme::profiles::identity(state, image);
-    if let Some(palette) = identity["key"].as_str().and_then(|key| {
-        crate::theme::profiles::selected(config, key, crate::theme::resolve_dark(config, image))
-    }) {
-        return Some(palette);
+    if config.theme().policy() == skwd_config::keys::theme::POLICY_WALLPAPER
+        && !config.theme().wallpaper_profiles().is_empty()
+    {
+        let identity = crate::theme::profiles::identity(state, image);
+        if let Some(key) = identity[crate::theme::profiles::PROFILE_KEY].as_str()
+            && config.theme().wallpaper_profiles().iter().any(|profile| {
+                profile[crate::theme::profiles::PROFILE_KEY].as_str() == Some(key)
+                    && profile[crate::theme::profiles::PROFILE_ENABLED].as_bool() == Some(true)
+            })
+            && let Some(palette) = crate::theme::profiles::selected(
+                config,
+                key,
+                crate::theme::resolve_dark(config, image),
+            )
+        {
+            return Some(palette);
+        }
     }
     let key = cache_key(config, image);
-    if let Some(bytes) = state.theme().shell_palette_cached(&key) {
-        return serde_json::from_slice(&bytes).ok();
-    }
-    let palette = crate::theme::preview_palette(config, image)?;
-    state.theme().cache_shell_palette(key, palette.to_string().into_bytes());
-    Some(palette)
+    let bytes = state.theme().palette_or_generate(&key, || {
+        crate::theme::preview_palette(config, image).map(|palette| palette.to_string().into_bytes())
+    })?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Result<()> {
@@ -129,8 +145,11 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     Ok(())
 }
 
-pub fn preview_end(state: &WallState) {
+pub fn preview_end(state: &WallState, expected: Option<u64>) {
     let _serial = state.theme().lock_shell_preview();
+    if expected.is_some_and(|generation| state.theme().shell_preview_generation() != generation) {
+        return;
+    }
     let Some(orig) = state.theme().take_bridge_preview() else {
         log::debug!("bridge preview: end with nothing armed");
         return;

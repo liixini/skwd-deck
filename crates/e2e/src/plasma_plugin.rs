@@ -63,7 +63,12 @@ impl FakePlugin {
     }
 
     pub fn report(&mut self, fullscreen: bool) {
-        let frame = json!({"version": 1, "output": self.output, "supported": true, "fullscreen": fullscreen, "maximized": false});
+        let frame = json!({"version": 1, "output": self.output, "supported": true, "fullscreen": fullscreen, "maximized": false, "focused": false});
+        self.send(&frame);
+    }
+
+    pub fn report_focused(&mut self, focused: bool) {
+        let frame = json!({"version": 1, "output": self.output, "supported": true, "fullscreen": false, "maximized": false, "focused": focused});
         self.send(&frame);
     }
 

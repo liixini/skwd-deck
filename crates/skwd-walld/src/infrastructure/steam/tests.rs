@@ -20,6 +20,7 @@ fn query_pairs_shape() {
     assert!(has("page", "2"));
     assert!(has("numperpage", "24"));
     assert!(has("match_all_tags", "true"));
+    assert!(has("return_vote_data", "true"));
     assert!(has("search_text", "anime"));
     assert!(has("days", "7"));
     assert!(has("requiredtags[0]", "Scene"));
@@ -47,6 +48,8 @@ fn parse_search_basic() {
     assert_eq!(page.results[0].id, "123");
     assert_eq!(page.results[0].file_size, 2048);
     assert_eq!(page.results[0].tags, "Scene, Nature");
+    assert_eq!(page.results[0].workshop.subscriptions, Some(99));
+    assert_eq!(page.results[0].workshop.votes_up, None);
     assert_eq!(page.last_page, 3);
     assert_eq!(page.current_page, 1);
 }
@@ -54,6 +57,65 @@ fn parse_search_basic() {
 #[test]
 fn parse_search_empty() {
     assert!(parse_search("{}", 1, 30).is_err());
+}
+
+#[test]
+fn parses_workshop_gallery() {
+    let json = r#"{"response":{"total":1,"publishedfiledetails":[{
+        "publishedfileid":"123","title":"Forest","preview_url":"https://images.steamusercontent.com/a",
+        "creator":"7656119","file_description":"Night forest","subscriptions":99,
+        "time_created":100,"time_updated":200,"vote_data":{"votes_up":9,"votes_down":1},
+        "tags":[{"tag":"Scene"}],"previews":[
+            {"preview_type":0,"url":"https://images.steamusercontent.com/b"},
+            {"preview_type":1,"youtubevideoid":"PEZIDtt1ceA"},
+            {"preview_type":2,"url":"https://elsewhere"}
+        ]
+    }]}}"#;
+    let page = parse_search(json, 1, 30).unwrap();
+    let workshop = &page.results[0].workshop;
+    assert_eq!(workshop.description, "Night forest");
+    assert_eq!(workshop.creator_id, "7656119");
+    assert_eq!((workshop.votes_up, workshop.votes_down), (Some(9), Some(1)));
+    assert_eq!((workshop.time_created, workshop.time_updated), (100, 200));
+    assert_eq!(workshop.previews.len(), 2);
+    assert_eq!(
+        workshop.previews[0],
+        WorkshopPreview::Image { url: "https://images.steamusercontent.com/b".into() }
+    );
+    assert_eq!(workshop.previews[1], WorkshopPreview::Youtube { id: "PEZIDtt1ceA".into() });
+}
+
+#[test]
+fn parses_public_gallery() {
+    let html = r#"<script>
+        <div class="creatorsBlock"><div class="friendBlockContent">Bazon &amp; WH<br>
+        var rgMovieFlashvars = {'movie_1': {YOUTUBE_VIDEO_ID: "PEZIDtt1ceA"}};
+        var rgCommonFlashVars = {};
+        var rgFullScreenshotURLs = [
+            { 'previewid' : '2', 'url': 'https://images.steamusercontent.com/ugc/a/b/?imw=5000' },
+            { 'previewid' : '3', 'url': 'https://attacker.example/bad' }
+        ];
+    </script>"#;
+    let (creator_name, previews) = gallery_from_html(html).unwrap();
+    assert_eq!(creator_name, "Bazon & WH");
+    assert_eq!(
+        previews,
+        [
+            WorkshopPreview::Image { url: "https://images.steamusercontent.com/ugc/a/b/".into() },
+            WorkshopPreview::Youtube { id: "PEZIDtt1ceA".into() },
+        ]
+    );
+    assert!(gallery_from_html("private item").is_err());
+}
+
+#[test]
+fn workshop_description_is_plain() {
+    let source = "[h1]Night[/h1] [url=https://example.com]forest[/url] [note]";
+    assert_eq!(description_text(source), "Night forest [note]");
+    assert_eq!(
+        description_text(&"夜".repeat(DESCRIPTION_CHARS + 1)).chars().count(),
+        DESCRIPTION_CHARS
+    );
 }
 
 #[test]
@@ -66,6 +128,42 @@ fn exact_item_details() {
     assert_eq!(page.results.len(), 1);
     assert_eq!(page.results[0].file_size, 2048);
     assert_eq!(page.last_page, 1);
+}
+
+#[test]
+fn keyed_item_details() {
+    let json = r#"{"response":{"publishedfiledetails":[{
+        "publishedfileid":"123","result":1,"consumer_appid":431960,
+        "title":"Scene","file_description":"[b]Blue[/b] sea",
+        "creator":"7656119","subscriptions":18,
+        "vote_data":{"votes_up":5,"votes_down":2},
+        "tags":[{"tag":"Scene"}],
+        "previews":[
+            {"preview_type":0,"url":"https://images.steamusercontent.com/ugc/a/"},
+            {"preview_type":1,"youtubevideoid":"PEZIDtt1ceA"}
+        ]
+    }]}}"#;
+    let page = parse_item_details(json, 123).unwrap();
+    let workshop = &page.results[0].workshop;
+    assert_eq!(workshop.description, "Blue sea");
+    assert_eq!(workshop.creator_id, "7656119");
+    assert_eq!(workshop.subscriptions, Some(18));
+    assert_eq!((workshop.votes_up, workshop.votes_down), (Some(5), Some(2)));
+    assert_eq!(workshop.previews.len(), 2);
+    assert_eq!(WEB_DETAILS_FLAGS.len(), 4);
+    assert!(WEB_DETAILS_FLAGS.contains(&("includeadditionalpreviews", "true")));
+    assert!(WEB_DETAILS_FLAGS.contains(&("includevotes", "true")));
+}
+
+#[test]
+fn creator_profile_name() {
+    let json = r#"{"response":{"players":[
+        {"steamid":"7656119","personaname":"Ada"},
+        {"steamid":"7656120","personaname":"Grace"}
+    ]}}"#;
+    assert_eq!(parse_creator_name(json, "7656119").unwrap(), "Ada");
+    assert_eq!(parse_creator_name(json, "missing").unwrap(), "");
+    assert!(parse_creator_name("{}", "7656119").is_err());
 }
 
 #[test]
@@ -87,6 +185,7 @@ fn exact_item_filters() {
         file_size: 0,
         subscriptions: 0,
         tags: "Wallpaper, Scene, Everyone".into(),
+        workshop: WorkshopDetails::default(),
     };
     let mut params = SearchParams { tags: vec!["Scene".into()], ..Default::default() };
     assert!(matches_tags(&item, &params));
@@ -116,6 +215,19 @@ fn helper_search_paging() {
 
     let unsupported = r#"{"results":[{"id":"9","tags":"Web, Anime"}]}"#;
     assert!(parse_helper_search(unsupported, 1).unwrap().results.is_empty());
+}
+
+#[test]
+fn helper_preserves_workshop_metadata() {
+    let json = r#"{"results":[{"id":"123","title":"Forest","tags":"Scene",
+        "workshop":{"description":"[b]Night[/b] forest","creator_id":"7656119",
+        "creator_name":"Ada","subscriptions":99,"votes_up":9,"votes_down":1,
+        "time_created":100,"time_updated":200}}]}"#;
+    let page = parse_helper_search(json, 1).unwrap();
+    let workshop = &page.results[0].workshop;
+    assert_eq!(workshop.description, "Night forest");
+    assert_eq!(workshop.creator_name, "Ada");
+    assert_eq!(workshop.votes_up, Some(9));
 }
 
 #[test]

@@ -1,4 +1,4 @@
 mod application;
 pub mod apply;
 
-pub use application::CoreWallpaperApplication;
+pub use application::{CoreWallpaperApplication, preview};

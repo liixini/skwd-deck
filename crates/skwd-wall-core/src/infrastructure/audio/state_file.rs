@@ -27,14 +27,28 @@ pub fn write_state(cache_dir: &str, state: &Value) {
     let _ = crate::paths::atomic_write(&path, text.as_bytes());
 }
 
+const THUMB: &str = "thumb";
+
 pub fn entry(ty: &str, path: &str, we_id: &str, mute: bool, volume: u32) -> Value {
-    serde_json::json!({
+    let mut ent = serde_json::json!({
         "type": ty,
         "path": path,
         "we_id": we_id,
         "mute": mute,
         "volume": volume.min(100),
-    })
+    });
+    if let Some(thumb) = we_still(ty, we_id) {
+        ent[THUMB] = Value::String(thumb);
+    }
+    ent
+}
+
+fn we_still(ty: &str, we_id: &str) -> Option<String> {
+    if ty != wall_proto::kind::WE || !crate::paths::safe_component(we_id) {
+        return None;
+    }
+    let thumb = crate::paths::we_thumb(we_id);
+    thumb.is_file().then(|| thumb.to_string_lossy().into_owned())
 }
 
 pub fn record_outputs<S: BuildHasher>(

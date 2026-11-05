@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
 pub(crate) enum Command {
+    GpuWorker { cache: String },
     Version,
     Ansi16 { image: String, dark: bool, auto: bool, variant: String },
     Tone { image: String },
     Semantic { image: String, dark: bool, auto: bool },
     ThemePreview { image: String, dark: bool },
+    Studio { image: String, area: Option<wall_proto::StudioArea> },
     Recolor,
     Theme { image: String, dark: bool },
     RemoteThumb { source: String },
@@ -22,6 +24,11 @@ pub(crate) enum Command {
 }
 
 pub(crate) fn parse(arguments: &[String]) -> Command {
+    if let Some(position) = position(arguments, skwd_wall_core::blocks::GPU_WORKER_FLAG) {
+        return Command::GpuWorker {
+            cache: arguments.get(position + 1).cloned().unwrap_or_default(),
+        };
+    }
     if has(arguments, "--scene-thumbnail-stream") {
         return Command::SceneThumbnailStream;
     }
@@ -47,6 +54,12 @@ pub(crate) fn parse(arguments: &[String]) -> Command {
             image: arguments.get(position + 1).cloned().unwrap_or_default(),
             dark,
             auto,
+        };
+    }
+    if let Some(position) = position(arguments, wall_proto::STUDIO_SCAN_FLAG) {
+        return Command::Studio {
+            image: arguments.get(position + 1).cloned().unwrap_or_default(),
+            area: value_after(arguments, wall_proto::STUDIO_AREA_FLAG).and_then(studio_area),
         };
     }
     if let Some(position) = position(arguments, "--theme-preview") {
@@ -125,6 +138,11 @@ fn path_values(arguments: &[String], start: usize) -> Vec<PathBuf> {
         }
     }
     paths
+}
+
+fn studio_area(text: &str) -> Option<wall_proto::StudioArea> {
+    let edges: Vec<f32> = text.split(',').filter_map(|part| part.trim().parse().ok()).collect();
+    wall_proto::StudioArea::from_edges(&edges)
 }
 
 fn has(arguments: &[String], flag: &str) -> bool {

@@ -4,9 +4,7 @@ use std::process::Command;
 
 use anyhow::Context;
 
-use super::paper::{
-    Assignment, Layer, Source, TransitionPolicy, VideoEngine, tinier_or_default_source,
-};
+use super::paper::{Assignment, Layer, Source, TransitionPolicy};
 use crate::state::WallState;
 
 pub mod activities;
@@ -23,6 +21,19 @@ const LOCK_SCREEN_GROUPS: [&str; 4] = ["Greeter", "Wallpaper", PLUGIN_ID, "Gener
 const LOCK_SCREEN_CONFIG: &str = "kscreenlockerrc";
 const LOCK_SCREEN_RECEIPT: &str = "plasma.json";
 const QDBUS_PROGRAMS: &[&str] = &["qdbus6", "qdbus-qt6"];
+pub const PRESENTATION_DIRECTORY_ENV: &str = "SKWD_PLASMA_PRESENTATION_DIR";
+const PRESENTATION_DIRECTORY: &str = "skwd-paper-plasma";
+
+pub fn presentation_directory() -> anyhow::Result<PathBuf> {
+    if let Some(directory) = std::env::var_os(PRESENTATION_DIRECTORY_ENV) {
+        let path = PathBuf::from(directory);
+        anyhow::ensure!(path.is_absolute(), "Plasma presentation directory must be absolute");
+        return Ok(path);
+    }
+    let runtime =
+        std::env::var_os("XDG_RUNTIME_DIR").context("Plasma apply needs XDG_RUNTIME_DIR")?;
+    Ok(PathBuf::from(runtime).join(PRESENTATION_DIRECTORY))
+}
 
 pub struct LockScreenCurrent<'a> {
     pub kind: &'a str,
@@ -182,7 +193,7 @@ fn notify_lock_screen() {
 fn lock_screen_stream_size(outputs: &[crate::outputs::OutputInfo]) -> (i32, i32) {
     outputs
         .iter()
-        .map(crate::outputs::OutputInfo::logical_size)
+        .map(crate::outputs::OutputInfo::pixel_size)
         .max_by_key(|(width, height)| i64::from(*width) * i64::from(*height))
         .map_or((1920, 1080), |(width, height)| (width.max(16), height.max(16)))
 }
@@ -326,7 +337,7 @@ fn assignments(
         ) {
             continue;
         }
-        let (width, height) = output.logical_size();
+        let (width, height) = output.pixel_size();
         let mut assignment = paper_assignment(state, &output.name, entry)?;
         assignment.transition = transitions.get(&output.name).cloned().map(|mut transition| {
             transition.fps = Some(state.config().transition().output_fps(output.refresh_mhz));
@@ -359,10 +370,7 @@ fn paper_assignment(
     let we_id = entry.get("we_id").and_then(serde_json::Value::as_str).unwrap_or("");
     let source = match kind {
         wall_proto::kind::STATIC => Source::static_file(path),
-        wall_proto::kind::VIDEO if state.config().renderer().video_engine() == "tinier" => {
-            tinier_or_default_source(state, path)?
-        }
-        wall_proto::kind::VIDEO => Source::video(path, Some(VideoEngine::Default)),
+        wall_proto::kind::VIDEO => Source::video(path),
         wall_proto::kind::WE => {
             let properties = state
                 .with_db(|connection| Ok(crate::db::we_properties(connection, we_id)))
@@ -383,6 +391,7 @@ fn paper_assignment(
             as u32,
         layer: Layer::Background,
         transition: None,
+        system_audio: None,
     })
 }
 

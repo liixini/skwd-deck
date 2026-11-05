@@ -23,34 +23,6 @@ fn retire_video_converts_clears() {
 }
 
 #[test]
-fn tinier_convert_roundtrip() {
-    let connection = open_in_memory().unwrap();
-    tinier_convert_record(
-        &connection,
-        "/vids/v.mp4",
-        "/cache/v.tinier-v1.ivf",
-        "30000/1001",
-        "tinier-av1-v1",
-        10,
-        300,
-    )
-    .unwrap();
-    assert_eq!(
-        tinier_convert_entry(&connection, "/vids/v.mp4").unwrap(),
-        Some(("/cache/v.tinier-v1.ivf".into(), "30000/1001".into(), "tinier-av1-v1".into(), 10,))
-    );
-    assert_eq!(
-        tinier_convert_src(&connection, "/cache/v.tinier-v1.ivf").unwrap(),
-        Some("/vids/v.mp4".into())
-    );
-    assert_eq!(
-        tinier_convert_delete(&connection, "/vids/v.mp4").unwrap(),
-        Some("/cache/v.tinier-v1.ivf".into())
-    );
-    assert_eq!(tinier_convert_entry(&connection, "/vids/v.mp4").unwrap(), None);
-}
-
-#[test]
 fn upsert_list_roundtrip() {
     let conn = open_in_memory().unwrap();
     seed(&conn, "static:a.png", "a.png", "static");
@@ -458,4 +430,28 @@ fn invalidate_legacy_sources() {
         assert_eq!(mtime, if key == "static:a.png" || key == "video:a.mp4" { -1 } else { 100 });
     }
     assert_eq!(invalidate_source_mtimes(&conn, false, false, true).unwrap(), 1);
+}
+
+#[test]
+fn drawable_keys_skip_hidden() {
+    let connection = open_in_memory().unwrap();
+    for (key, kind) in [
+        ("static:b.png", "static"),
+        ("static:a.png", "static"),
+        ("we:7", "we"),
+        ("video:c.mp4", "video"),
+        ("generative:pond", "generative"),
+        ("static:hidden.png", "static"),
+        ("static:excluded.png", "static"),
+    ] {
+        seed(&connection, key, key, kind);
+    }
+    set_hidden(&connection, "static:hidden.png", true).unwrap();
+    connection
+        .execute("UPDATE meta SET library_excluded = 1 WHERE key = 'static:excluded.png'", [])
+        .unwrap();
+    assert_eq!(
+        drawable_keys(&connection).unwrap(),
+        ["static:a.png", "static:b.png", "video:c.mp4", "we:7"]
+    );
 }

@@ -49,9 +49,11 @@ fn catalog_methods_dispatched() {
     )
     .expect("read connection.rs");
     let dispatched = format!("{router}{connection}");
+    let grouped =
+        if dispatched.contains("rpc::DRAWING_METHODS") { rpc::DRAWING_METHODS } else { &[] };
     let mut missing = Vec::new();
     for (name, value) in catalog_consts() {
-        if !dispatched.contains(&format!("rpc::{name}")) {
+        if !dispatched.contains(&format!("rpc::{name}")) && !grouped.contains(&value.as_str()) {
             missing.push(format!("{name} (\"{value}\")"));
         }
     }
@@ -127,7 +129,10 @@ fn rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
             if name != "tests" {
                 rust_files(&path, files);
             }
-        } else if name.ends_with(".rs") && name != "tests.rs" && !name.ends_with("_tests.rs") {
+        } else if path.extension().is_some_and(|extension| extension == "rs")
+            && name != "tests.rs"
+            && !name.ends_with("_tests.rs")
+        {
             files.push(path);
         }
     }

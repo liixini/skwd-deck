@@ -17,6 +17,7 @@ fn protocol_without_output_names_is_not_usable_detection() {
     let monitor = Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
     assert!(!monitor.snapshot().supported);
     assert!(!monitor.snapshot().maximized_supported);
+    assert!(!monitor.snapshot().focused_supported);
 }
 
 #[test]
@@ -133,4 +134,26 @@ fn maximized_windows_are_tracked_separately_and_clear_when_hidden_or_closed() {
     monitor.windows.remove(&8);
     assert!(monitor.snapshot().maximized_outputs.is_empty());
     assert_eq!(monitor.snapshot().outputs, HashSet::from(["DP-2".into()]));
+}
+
+#[test]
+fn focused_windows_are_tracked_separately_and_clear_when_hidden_or_closed() {
+    let mut monitor =
+        Monitor { backends: HashMap::from([(Backend::Wlr, 42)]), ..Monitor::default() };
+    monitor.outputs.insert(1, "DP-1".into());
+    monitor.outputs.insert(2, "DP-2".into());
+    monitor
+        .windows
+        .insert(8, Window { focused: true, outputs: HashSet::from([1]), ..Window::default() });
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-1".into()]));
+    monitor.windows.get_mut(&8).unwrap().outputs = HashSet::from([2]);
+    assert_eq!(monitor.snapshot().focused_outputs, HashSet::from(["DP-2".into()]));
+    monitor.windows.get_mut(&8).unwrap().minimized = true;
+    assert!(monitor.snapshot().focused_outputs.is_empty());
+    monitor.windows.get_mut(&8).unwrap().minimized = false;
+    monitor.windows.get_mut(&8).unwrap().focused = false;
+    assert!(monitor.snapshot().focused_outputs.is_empty());
+    monitor.windows.get_mut(&8).unwrap().focused = true;
+    monitor.remove(8);
+    assert!(monitor.snapshot().focused_outputs.is_empty());
 }

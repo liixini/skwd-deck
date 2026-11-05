@@ -98,7 +98,7 @@ fn theme_image_sources() {
     crate::testenv::write_config(serde_json::json!({"paths": {"wallpaper": library}}));
     let (state, _, _) = crate::testenv::harness();
     state.with_db(|db| db.execute(
-        "INSERT INTO meta (key, type, thumb, thumb_sm) VALUES ('static:source.png', 'static', '/thumb.webp', '/small.webp'), ('video:clip.mp4', 'video', '/frame.webp', '')", []
+        "INSERT INTO meta (key, type, thumb, thumb_sm) VALUES ('static:source.png', 'static', '/thumb.webp', '/small.webp'), ('video:theme-clip.mp4', 'video', '/frame.webp', '')", []
     )).unwrap();
     assert_eq!(theme_image(&state, ""), "");
     for source in ["/thumb.webp", "/small.webp", original.to_str().unwrap()] {
@@ -112,4 +112,6 @@ fn theme_image_sources() {
     assert_eq!(theme_image(&state, "/unknown.png"), "/unknown.png");
     std::fs::remove_file(&original).unwrap();
     assert_eq!(theme_image(&state, "/thumb.webp"), "/thumb.webp");
+    let keys = ["static:source.png".to_owned(), "video:theme-clip.mp4".to_owned()];
+    state.with_db(|db| skwd_wall_core::db::delete_entries(db, &keys)).unwrap();
 }

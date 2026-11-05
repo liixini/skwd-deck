@@ -24,7 +24,7 @@ pub(crate) fn refresh() {
 }
 pub(crate) fn status() -> Value {
     skwd_wall_core::lock(STATUS.get_or_init(|| {
-        Mutex::new(json!({"fullscreen_supported": false, "maximized_supported": false, "processes": [], "outputs": []}))
+        Mutex::new(json!({"fullscreen_supported": false, "maximized_supported": false, "focused_supported": false, "processes": [], "outputs": []}))
     }))
     .clone()
 }
@@ -85,9 +85,11 @@ async fn run(
             *enabled = observe_overview;
             changed
         });
+        let niri_focus = niri_columns::available();
+        let observe_columns = policy.full_width_pause() || policy.focused_pause() && niri_focus;
         columns_enabled.send_if_modified(|enabled| {
-            let changed = *enabled != policy.full_width_pause();
-            *enabled = policy.full_width_pause();
+            let changed = *enabled != observe_columns;
+            *enabled = observe_columns;
             changed
         });
         other_audio_enabled.send_if_modified(|enabled| {
@@ -126,11 +128,14 @@ async fn run(
         }
         let rules =
             if policy.process_pause_enabled() { policy.pause_processes() } else { String::new() };
+        let observe_toplevels = policy.fullscreen_pause()
+            || policy.maximized_pause()
+            || policy.focused_pause() && !niri_focus;
         enabled.send_if_modified(|value| {
-            if *value == (policy.fullscreen_pause() || policy.maximized_pause()) {
+            if *value == observe_toplevels {
                 false
             } else {
-                *value = policy.fullscreen_pause() || policy.maximized_pause();
+                *value = observe_toplevels;
                 true
             }
         });
@@ -147,6 +152,17 @@ async fn run(
             policy.maximized_pause() && !observation.maximized_outputs.is_empty();
         if policy.maximized_pause() {
             desired.extend(observation.maximized_outputs.iter().cloned());
+        }
+        let (focused_supported, focused_outputs) = if niri_focus {
+            (column_observation.supported, &column_observation.focused_outputs)
+        } else {
+            (observation.focused_supported, &observation.focused_outputs)
+        };
+        let window_state_backend =
+            if policy.focused_pause() && niri_focus { "niri" } else { observation.backend };
+        let focused_paused = policy.focused_pause() && !focused_outputs.is_empty();
+        if policy.focused_pause() {
+            desired.extend(focused_outputs.iter().cloned());
         }
         if policy.full_width_pause() {
             desired.extend(column_observation.outputs.iter().cloned());
@@ -184,7 +200,7 @@ async fn run(
         .await;
         let mut names: Vec<_> = outputs.into_iter().collect();
         names.sort();
-        let value = json!({"full_width_supported": column_observation.supported, "full_width_paused": full_width_paused, "fullscreen_supported": observation.supported, "maximized_supported": observation.maximized_supported, "window_state_backend": observation.backend, "maximized_paused": maximized_paused, "processes": matched,
+        let value = json!({"full_width_supported": column_observation.supported, "full_width_paused": full_width_paused, "fullscreen_supported": observation.supported, "maximized_supported": observation.maximized_supported, "focused_supported": focused_supported, "window_state_backend": window_state_backend, "maximized_paused": maximized_paused, "focused_paused": focused_paused, "processes": matched,
             "outputs": names, "all_displays": all, "automatic_paused": !held.is_empty() || overview_paused, "resume_pending": release_at.is_some(), "overview_open": overview_open, "overview_paused": overview_paused,
             "other_audio_supported": audio_observation.supported, "other_audio_playing": audio_observation.playing, "audio_ducked": audio_ducked});
         let changed = {

@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 pub struct ApplyIntent {
     scope: (String, String),
@@ -10,6 +11,65 @@ pub struct ApplyIntent {
 struct Intents {
     next: u64,
     targets: std::collections::HashMap<(String, String), u64>,
+}
+
+const LOCK_LABEL: &str = "lock_ms";
+const PREPARE_LABEL: &str = "prep_ms";
+const RECONCILE_LABEL: &str = "reconcile_total_ms";
+const CAPTURE_LABEL: &str = "capture_ms";
+const READY_LABEL: &str = "ready_ms";
+
+#[derive(Clone, Copy)]
+pub enum ApplyPhase {
+    Lock,
+    Prepare,
+    ReconcileTotal,
+    Capture,
+    Ready,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ApplyPhases {
+    lock: Duration,
+    prepare: Duration,
+    reconcile_total: Duration,
+    capture: Duration,
+    ready: Duration,
+}
+
+impl ApplyPhases {
+    fn add(&mut self, phase: ApplyPhase, elapsed: Duration) {
+        let total = match phase {
+            ApplyPhase::Lock => &mut self.lock,
+            ApplyPhase::Prepare => &mut self.prepare,
+            ApplyPhase::ReconcileTotal => &mut self.reconcile_total,
+            ApplyPhase::Capture => &mut self.capture,
+            ApplyPhase::Ready => &mut self.ready,
+        };
+        *total += elapsed;
+    }
+}
+
+impl std::fmt::Display for ApplyPhases {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fields = [
+            (LOCK_LABEL, self.lock),
+            (PREPARE_LABEL, self.prepare),
+            (RECONCILE_LABEL, self.reconcile_total),
+            (CAPTURE_LABEL, self.capture),
+            (READY_LABEL, self.ready),
+        ]
+        .map(|(label, total)| format!("{label}={}", total.as_millis()));
+        formatter.write_str(&fields.join(" "))
+    }
+}
+
+pub struct PhaseRecording<'a>(&'a Mutex<Option<ApplyPhases>>);
+
+impl Drop for PhaseRecording<'_> {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
 }
 
 #[derive(Default)]
@@ -23,6 +83,7 @@ pub struct ApplyRuntime {
     swap_slide: Mutex<Option<(String, u64)>>,
     render_fill: Mutex<String>,
     transition_source: Mutex<Option<String>>,
+    phases: Mutex<Option<ApplyPhases>>,
 }
 
 impl ApplyRuntime {
@@ -37,14 +98,6 @@ impl ApplyRuntime {
 
     pub fn generation(&self) -> u64 {
         self.generation.load(Ordering::SeqCst)
-    }
-
-    pub fn claim_generation(&self, expected: u64) -> Option<u64> {
-        let claimed = expected.saturating_add(1);
-        self.generation
-            .compare_exchange(expected, claimed, Ordering::SeqCst, Ordering::SeqCst)
-            .ok()
-            .map(|_| claimed)
     }
 
     pub fn cancel_restore(&self, activity: Option<&str>) {
@@ -132,5 +185,23 @@ impl ApplyRuntime {
     pub fn set_render_fill(&self, fill: &str) {
         *self.render_fill.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
             fill.to_string();
+    }
+
+    pub fn record_phases(&self) -> PhaseRecording<'_> {
+        *self.phases.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(ApplyPhases::default());
+        PhaseRecording(&self.phases)
+    }
+
+    pub fn note_phase(&self, phase: ApplyPhase, elapsed: Duration) {
+        if let Some(phases) =
+            self.phases.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_mut()
+        {
+            phases.add(phase, elapsed);
+        }
+    }
+
+    pub fn phases(&self) -> ApplyPhases {
+        self.phases.lock().unwrap_or_else(std::sync::PoisonError::into_inner).unwrap_or_default()
     }
 }

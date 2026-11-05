@@ -13,7 +13,7 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const PREVIEW_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const REMOTE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 fn scanner_bin() -> std::path::PathBuf {
-    skwd_wall_core::paths::sibling_bin("skwd-wall-scan")
+    skwd_wall_core::paths::sibling_bin(skwd_wall_core::paths::SCAN_BIN)
 }
 
 pub(super) fn scanner_args(debug: bool, extra: &[&str], request_id: Option<&str>) -> Vec<String> {

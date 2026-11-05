@@ -18,6 +18,11 @@ const SCAN_ITEM_KEY: &str = "key";
 const STEAM_CLIENT_BACKEND: &str = "steam";
 const WEATHER_CATEGORY_REQUIRED: &str = "category must be a weather category";
 
+pub(super) fn relay(publisher: &dyn EventPublisher, req: &Request, event: &str) -> Response {
+    publisher.publish(event, req.params.clone());
+    Response::ok(req.id, json!({"ok": true}))
+}
+
 pub(super) fn lockscreen_set(state: &Arc<WallState>, req: &Request) -> Response {
     let request: wall_proto::LockScreenSetRequest = match serde_json::from_value(req.params.clone())
     {
@@ -60,7 +65,7 @@ pub(super) fn runtime_status(ctx: &Ctx) -> Value {
     ctx.state.reload_config();
     let config = ctx.config.read().clone();
     let result = skwd_wall_core::infrastructure::paper::PaperClient::configured(&config)
-        .capabilities()
+        .capabilities(skwd_wall_core::infrastructure::paper::Startup::Allowed)
         .map_err(|error| format!("runtime renderer capabilities are unavailable: {error:#}"));
     let mut status = status_payload(result);
     status["steam_helper_available"] =
@@ -91,6 +96,17 @@ pub(super) fn wall_mirror(state: &WallState, request: &Request) -> Response {
     }
 }
 
+fn independent_paper_output(output: &str) -> anyhow::Result<bool> {
+    use skwd_wall_core::infrastructure::paper::{PaperClient, Startup};
+
+    let Some(client) = PaperClient::existing()? else { return Ok(false) };
+    Ok(client
+        .status(Startup::ExistingOnly)?
+        .assignments
+        .iter()
+        .any(|assignment| assignment.ready && assignment.outputs == [output]))
+}
+
 pub(super) fn wall_set_paused(
     state: &WallState,
     renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
@@ -98,30 +114,34 @@ pub(super) fn wall_set_paused(
 ) -> Response {
     let paused = request.params.get("paused").and_then(Value::as_bool).unwrap_or(false);
     let output = request.str_param("output", "*");
+    let _apply = state.apply().lock();
     if output != "*" {
         let known = skwd_wall_core::outputs::names().iter().any(|name| name == output)
             || skwd_wall_core::audio::read_state(&state.config().cache_dir()).get(output).is_some();
         if output.is_empty() || !known {
             return Response::err(request.id, 1, "unknown wallpaper output");
         }
-        if !state.renderers().independent_playback() {
+        let independent = independent_paper_output(output).unwrap_or_else(|error| {
+            log::warn!("Paper output status failed: {error:#}");
+            false
+        });
+        if !independent && !state.renderers().independent_playback() {
             state.renderers().set_independent_playback(true);
-            if let Err(error) = skwd_wall_core::apply::refresh_renderer_policy(state) {
+            if let Err(error) = skwd_wall_core::apply::refresh_renderer_policy_locked(state) {
                 state.renderers().set_independent_playback(false);
                 return Response::err(request.id, 1, error.to_string());
             }
         }
     }
-    let _apply = state.apply().lock();
     let _activity = match skwd_wall_core::plasma::activities::sync_current(state) {
         Ok(target) => target,
         Err(error) => return Response::err(request.id, -1, error.to_string()),
     };
-    if output == "*" {
-        renderers.set_paused(paused);
+    let paper_error = if output == "*" {
+        renderers.set_paused(paused).err()
     } else {
-        state.renderers().set_output_paused(output, paused);
-    }
+        state.renderers().set_output_paused(output, paused).err()
+    };
     if skwd_wall_core::plasma::available()
         && let Err(error) = skwd_wall_core::plasma::apply_current(state)
     {
@@ -129,6 +149,9 @@ pub(super) fn wall_set_paused(
     }
     log::info!("set_paused: {paused}");
     crate::infrastructure::playback::refresh();
+    if let Some(error) = paper_error {
+        return Response::err(request.id, 1, format!("Paper pause failed: {error:#}"));
+    }
     Response::ok(request.id, json!({"ok": true, "paused": paused, "output": output}))
 }
 
@@ -280,6 +303,7 @@ pub(super) fn scan_done(ctx: &Ctx, request: &Request) -> Response {
         .collect();
     workers.optimize_images(true, &changed_paths);
     crate::infrastructure::semantic_index::request_refresh();
+    crate::infrastructure::drawing::auto(ctx);
     Response::ok(request.id, json!({"ok": true}))
 }
 
@@ -320,10 +344,17 @@ pub(super) fn wall_retheme(
     }
 }
 
-pub(super) fn shell_preview_end(state: &Arc<WallState>, request: &Request) -> Response {
-    state.theme().bump_shell_preview();
+pub(super) fn shell_preview_end(
+    state: &Arc<WallState>,
+    request: &Request,
+    generation: Option<u64>,
+) -> Response {
+    let generation = generation.unwrap_or_else(|| state.theme().bump_shell_preview());
+    if state.theme().shell_preview_generation() != generation {
+        return super::preview_queue::superseded(request);
+    }
     for sink in &skwd_wall_core::theme_sink::SINKS {
-        (sink.preview_end)(state);
+        (sink.preview_end)(state, Some(generation));
     }
     Response::ok(request.id, json!({"ok": true}))
 }
@@ -348,25 +379,20 @@ pub(super) fn forget_monitor(state: &Arc<WallState>, request: &Request) -> Respo
 pub(super) fn task_control(ctx: &Ctx, req: &Request) -> Response {
     let id = req.str_param("id", "");
     let action = req.str_param("action", "");
-    let semantic = || {
-        let control = match action {
-            "pause" => wall_proto::TaskControl::Pause,
-            "resume" => wall_proto::TaskControl::Resume,
-            "stop" => wall_proto::TaskControl::Stop,
-            _ => return false,
-        };
-        crate::infrastructure::semantic_index::control(control)
+    let control = match action {
+        "pause" => Some(wall_proto::TaskControl::Pause),
+        "resume" => Some(wall_proto::TaskControl::Resume),
+        "stop" => Some(wall_proto::TaskControl::Stop),
+        _ => None,
     };
+    let semantic = || control.is_some_and(crate::infrastructure::semantic_index::control);
+    let drawing =
+        || control.is_some_and(|control| crate::infrastructure::drawing::control(ctx, control));
+    let done = || Response::ok(req.id, json!({"ok": true}));
     match (id, action) {
-        ("we-thumbnails", "stop") if ctx.workers.stop_scene_thumbnails() => {
-            Response::ok(req.id, json!({"ok": true}))
-        }
-        (id, "stop") if id.starts_with("tinier:") && ctx.workers.stop_tinier(id) => {
-            Response::ok(req.id, json!({"ok": true}))
-        }
-        ("semantic-index", "pause" | "resume" | "stop") if semantic() => {
-            Response::ok(req.id, json!({"ok": true}))
-        }
+        ("we-thumbnails", "stop") if ctx.workers.stop_scene_thumbnails() => done(),
+        ("semantic-index", "pause" | "resume" | "stop") if semantic() => done(),
+        (wall_proto::drawing::TASK, _) if drawing() => done(),
         ("", _) | (_, "") => Response::err(req.id, -32602, "missing task id or action"),
         _ => Response::err(req.id, -32601, "this task does not support that control"),
     }

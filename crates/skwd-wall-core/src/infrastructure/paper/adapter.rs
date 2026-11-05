@@ -4,7 +4,7 @@ use crate::backend::wallpaper::ApplyOutputRequest;
 use crate::config::Config;
 
 use super::client::PaperClient;
-use paper_control::{ApplyRequest, ApplyResult, Assignment, FillMode, Layer, Source, VideoEngine};
+use paper_control::{ApplyRequest, ApplyResult, Assignment, FillMode, Layer, Source};
 
 pub struct PaperClientAdapter {
     pub(super) client: PaperClient,
@@ -35,15 +35,7 @@ impl PaperClientAdapter {
     pub fn assignment(&self, request: ApplyOutputRequest<'_>) -> Result<Assignment> {
         let source = match request.kind {
             wall_proto::kind::STATIC => Source::static_file(request.path),
-            wall_proto::kind::VIDEO => match video_engine(&self.config.renderer().video_engine()) {
-                VideoEngine::Tinier => Source::tinier_video(
-                    request.path,
-                    request
-                        .frame_rate
-                        .ok_or_else(|| anyhow::anyhow!("tinier video has no frame rate"))?,
-                ),
-                VideoEngine::Default => Source::video(request.path, Some(VideoEngine::Default)),
-            },
+            wall_proto::kind::VIDEO => Source::video(request.path),
             wall_proto::kind::WE => {
                 if !crate::we::valid_we_id(request.we_id) {
                     bail!("invalid Wallpaper Engine id: {}", request.we_id);
@@ -54,24 +46,16 @@ impl PaperClientAdapter {
             }
             kind => bail!("unsupported Paper source kind {kind}"),
         };
-        let mute = source.effective_video_engine() == Some(VideoEngine::Tinier) || request.mute;
         let mut assignment = assignment_with_options(
             vec![request.output.to_string()],
             source,
             fill_mode(request.fill_mode),
-            mute,
+            request.mute,
             request.volume,
             Layer::Background,
         );
         assignment.background = self.config.display().background_for(request.output);
         Ok(assignment)
-    }
-}
-
-pub(super) fn video_engine(value: &str) -> VideoEngine {
-    match value {
-        "tinier" => VideoEngine::Tinier,
-        _ => VideoEngine::Default,
     }
 }
 
@@ -96,5 +80,6 @@ pub(super) fn assignment_with_options(
         volume: volume.min(100),
         layer,
         transition: None,
+        system_audio: None,
     }
 }

@@ -1,6 +1,7 @@
 pub(crate) mod activities;
 pub(crate) mod bug_report;
 pub(crate) mod dlqueue;
+pub(crate) mod drawing;
 pub(crate) mod effects_preview;
 pub(crate) mod events;
 pub(crate) mod history;
@@ -38,6 +39,7 @@ pub(crate) mod wake;
 pub(crate) mod wallhaven;
 pub(crate) mod watcher;
 pub(crate) mod weather;
+pub(crate) mod widgets;
 pub(crate) mod workspaces;
 pub(crate) mod youtube_download;
 

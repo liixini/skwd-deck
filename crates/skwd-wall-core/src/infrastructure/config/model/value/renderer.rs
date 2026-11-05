@@ -44,16 +44,6 @@ impl<'a> RendererConfig<'a> {
         .to_string()
     }
 
-    pub fn video_engine(&self) -> String {
-        if self.config.niri_stationary_active() {
-            return "vulkan".to_string();
-        }
-        match self.config.str_at(skwd_config::keys::paper::VIDEO_ENGINE, "vulkan").as_str() {
-            "tinier" => "tinier".to_string(),
-            _ => "vulkan".to_string(),
-        }
-    }
-
     pub fn engine(&self) -> String {
         if self.config.niri_stationary_active() {
             return "skwd-paper".into();

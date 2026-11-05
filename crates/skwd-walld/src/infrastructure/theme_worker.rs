@@ -14,17 +14,27 @@ struct ThemeJob {
     path: String,
     ready_at: Instant,
     weather_generation: Option<u64>,
+    clock_dark: Option<bool>,
 }
 
 impl ThemeJob {
     fn current(&self, state: &skwd_wall_core::WallState) -> bool {
-        self.weather_generation.is_none_or(|generation| {
+        let weather = self.weather_generation.is_none_or(|generation| {
             let config = state.config();
             crate::composition::runtime::outdoors::active(&config)
                 && config.outdoors_retheme()
                 && state.theme().source_generation() == generation
                 && state.theme().source().as_deref() == Some(self.path.as_str())
-        })
+        });
+        weather
+            && self.clock_dark.is_none_or(|dark| {
+                let config = skwd_wall_core::theme::profiles::configuration(state, &self.path);
+                state.theme().source().as_deref() == Some(self.path.as_str())
+                    && config.theme().backend() == wall_proto::STUDIO_ENGINE
+                    && skwd_config::studio_time::StudioMode::from_key(&config.theme().studio_mode())
+                        == skwd_config::studio_time::StudioMode::ByTime
+                    && skwd_wall_core::theme::studio::mode_dark(&config, &self.path) == dark
+            })
     }
 }
 
@@ -32,6 +42,17 @@ static THEME_TX: OnceLock<mpsc::UnboundedSender<ThemeJob>> = OnceLock::new();
 
 pub(crate) fn theme_apply_async(path: &str) {
     theme_apply_after_async(path, Duration::ZERO, None);
+}
+
+pub(crate) fn theme_apply_clock_async(path: &str, dark: bool) {
+    if let Some(sender) = THEME_TX.get() {
+        let _ = sender.send(ThemeJob {
+            path: path.to_string(),
+            ready_at: Instant::now(),
+            weather_generation: None,
+            clock_dark: Some(dark),
+        });
+    }
 }
 
 pub(crate) fn theme_apply_after_async(
@@ -45,8 +66,10 @@ pub(crate) fn theme_apply_after_async(
                 path: path.to_string(),
                 ready_at: Instant::now() + delay,
                 weather_generation,
+                clock_dark: None,
             };
             let _ = sender.send(job);
+            crate::composition::runtime::studio_clock::reload();
         }
         None => log::warn!("theme worker not started; dropping theme apply for {path}"),
     }
@@ -101,7 +124,7 @@ fn apply_theme(state: &skwd_wall_core::WallState, events: &dyn EventPublisher, j
     for sink in &skwd_wall_core::theme_sink::SINKS {
         (sink.forget)(state);
     }
-    let _serial = state.theme().lock_shell_preview();
+    let serial = state.theme().lock_shell_preview();
     state.reload_config();
     if !job.current(state) {
         return;
@@ -119,6 +142,8 @@ fn apply_theme(state: &skwd_wall_core::WallState, events: &dyn EventPublisher, j
         log::warn!("current palette snapshot failed: {error:#}");
     }
     let effective = skwd_wall_core::theme::effective_backend(&cfg);
+    drop(serial);
+    crate::infrastructure::widgets::refresh(state);
     events.publish(
         ev::THEME_DONE,
         json!({ "source": path, "ok": ok, "backend": effective, "requested": requested }),

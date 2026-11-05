@@ -40,14 +40,8 @@ impl DisplayConfig<'_> {
             None
         }
         .unwrap_or_else(|| self.fill_color());
-        let hex = color.strip_prefix('#').unwrap_or(&color);
-        let mut rgb = [0; 3];
-        if matches!(hex.len(), 6 | 8) && hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            for (index, channel) in rgb.iter_mut().enumerate() {
-                *channel = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap_or(0);
-            }
-        }
-        paper_control::Background { color: rgb, blur: mode == "blur" }
+        let color = skwd_config::parse_rgb(&color).unwrap_or_default();
+        paper_control::Background { color, blur: mode == "blur" }
     }
     pub fn fill_modes_signature(&self) -> String {
         serde_json::json!([

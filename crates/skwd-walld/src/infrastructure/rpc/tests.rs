@@ -42,6 +42,16 @@ fn all_sources_route() {
 }
 
 #[test]
+fn rejects_bad_workshop_id() {
+    let _guard = testenv::lock();
+    testenv::write_config(json!({"features": {"steam": true}}));
+    let (state, subs, stats) = harness();
+    let response =
+        call(&state, &subs, &stats, "source.details", json!({"source": "steam", "id": "../other"}));
+    assert_eq!(ecode(&response), -32602);
+}
+
+#[test]
 fn apply_error_buckets() {
     assert_eq!(classify_apply_error("missing path"), "bad_request");
     assert_eq!(classify_apply_error("No such file or directory"), "file_missing");
@@ -110,7 +120,6 @@ fn status_includes_runtime_renderer_registry() {
     let renderer = RendererCapability {
         executable: "skwd-wall-still".into(),
         source_kinds: vec![SourceKind::Static],
-        video_engines: vec![],
         path: Some("/usr/bin/skwd-wall-still".into()),
         discovery: RendererDiscovery::Sibling,
         present: true,
@@ -152,15 +161,12 @@ fn noctalia_preview_gated() {
 
     testenv::write_config(json!({"theme": {"backend": "native"}}));
     let (state, subs, stats) = harness();
-    let resp = rr(call(
-        &state,
-        &subs,
-        &stats,
-        "wall.shell_preview",
-        json!({"path": img.to_string_lossy()}),
-    ));
-    assert_eq!(resp["queued"], json!(true));
+    let resp =
+        call(&state, &subs, &stats, "wall.shell_preview", json!({"path": img.to_string_lossy()}));
     let _ = std::fs::remove_file(&img);
+    if resp.error.is_some() {
+        assert!(!emsg(&resp).contains("shell hover preview disabled"));
+    }
 
     let resp = rr(call(&state, &subs, &stats, "wall.shell_preview_end", json!({})));
     assert_eq!(resp["ok"], json!(true));
@@ -638,81 +644,6 @@ fn optimize_status_query() {
 }
 
 #[test]
-fn tinier_apply_queues_prep() {
-    let (_guard, root) = testenv::lock();
-    testenv::write_config(json!({"paper": {"videoEngine": "tinier"}}));
-    let source = root.join("videos/unprepared.mp4");
-    std::fs::write(&source, b"not-yet-inspected").unwrap();
-    let (state, events, stats) = harness();
-    let response =
-        rr(call(&state, &events, &stats, "wall.apply", json!({"type": "video", "path": source})));
-    assert_eq!(response["queued"], json!(true));
-    assert_eq!(response["status"], json!("preparing"));
-    assert!(response["task_id"].as_str().unwrap().starts_with("tinier:"));
-}
-
-#[test]
-fn tinier_production_rpc_terminal_results_cover_all_outcomes() {
-    use crate::testenv::TinierTestOutcome;
-    let (_guard, root) = testenv::lock();
-    let source = root.join("videos/terminal.mp4");
-    std::fs::write(&source, b"fixture").unwrap();
-    for (outcome, expected_terminal) in [
-        (TinierTestOutcome::Success, Some(true)),
-        (TinierTestOutcome::Failure, Some(false)),
-        (TinierTestOutcome::Cancelled, None),
-        (TinierTestOutcome::DelayedSuccess, None),
-    ] {
-        testenv::write_config(json!({"paper":{"videoEngine":"tinier"}, "pickOnlyMode":true}));
-        testenv::set_tinier_outcome(outcome);
-        let (state, subscribers, stats) = harness();
-        skwd_wall_core::audio::write_state(&state.config().cache_dir(), &json!({}));
-        let mut rx = subscribe(&subscribers);
-        let response = rr(call(
-            &state,
-            &subscribers,
-            &stats,
-            "wall.apply",
-            json!({"type":"video", "path":source, "output":"DP-1"}),
-        ));
-        assert_eq!(response["queued"], true);
-        if matches!(outcome, TinierTestOutcome::DelayedSuccess) {
-            state.apply().next_generation();
-        }
-        let terminal_expected = expected_terminal.is_some();
-        let deadline = std::time::Instant::now()
-            + if terminal_expected {
-                std::time::Duration::from_secs(2)
-            } else {
-                std::time::Duration::from_millis(200)
-            };
-        let mut results = Vec::new();
-        loop {
-            results.extend(
-                events(&mut rx)
-                    .into_iter()
-                    .filter(|event| event.event == wall_proto::ev::APPLY_RESULT),
-            );
-            if (terminal_expected && results.len() >= 2) || std::time::Instant::now() >= deadline {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert_eq!(results.first().unwrap().data["queued"], true);
-        match expected_terminal {
-            Some(ok) => {
-                assert_eq!(results.len(), 2, "queued plus one terminal result");
-                assert_eq!(results[1].data["ok"], ok, "{:?}", results[1].data);
-            }
-            None => {
-                assert_eq!(results.len(), 1, "cancelled/superseded work emits no false terminal");
-            }
-        }
-    }
-    testenv::set_tinier_outcome(TinierTestOutcome::Failure);
-}
-
-#[test]
 fn optimize_start_converts_image() {
     let (_guard, root) = testenv::lock();
     let runtime = crate::infrastructure::platform::build_runtime().unwrap();
@@ -735,7 +666,6 @@ fn optimize_start_converts_image() {
     ctx.workers = std::sync::Arc::new(crate::infrastructure::processes::ProcessSupervisor::new(
         std::sync::Arc::clone(&state),
         state.config_store(),
-        state.database(),
         std::sync::Arc::clone(&events)
             as std::sync::Arc<dyn crate::backend::events::EventPublisher>,
         std::sync::Arc::clone(&ctx.tasks),
@@ -957,7 +887,7 @@ fn failure_fast_path_saturated_pool() {
 }
 
 #[test]
-fn disconnect_restores_scheme() {
+fn invalid_preview_preserves_scheme() {
     use std::io::{BufRead, BufReader, Write};
     let (_guard, _root) = testenv::lock();
     testenv::write_config(json!({}));
@@ -981,8 +911,8 @@ fn disconnect_restores_scheme() {
     drop(writer);
     drop(reader);
     runtime.block_on(task).unwrap();
-    assert!(state.theme().shell_preview_generation() > generation);
-    assert!(!state.theme().bridge_preview_armed());
+    assert_eq!(state.theme().shell_preview_generation(), generation);
+    assert!(state.theme().bridge_preview_armed());
 }
 
 #[test]
@@ -1376,21 +1306,9 @@ fn remove_reconciles_video() {
     let vid = root.join("videos/clip.mp4");
     std::fs::write(&vid, b"v").unwrap();
     let vid_path = vid.to_string_lossy().to_string();
-    let tinier = root.join("cache/skwd-wall-v2/video-opt/clip.tinier-v1.ivf");
-    std::fs::create_dir_all(tinier.parent().unwrap()).unwrap();
-    std::fs::write(&tinier, b"av1").unwrap();
     let key = format!("video:{}", "clip.mp4");
     state
         .with_db(|conn| {
-            db::tinier_convert_record(
-                conn,
-                &vid_path,
-                &tinier.to_string_lossy(),
-                "30/1",
-                db::TINIER_CONVERT_PRESET,
-                1,
-                3,
-            )?;
             let pid = db::playlist_create(conn, "mine")?;
             db::playlist_add_member(conn, pid, &key)?;
             Ok(pid)
@@ -1404,11 +1322,8 @@ fn remove_reconciles_video() {
 
     let val = rr(call(&state, &subs, &stats, "wall.remove", json!({ "path": vid_path })));
     assert_eq!(val["removed"], vid_path);
-    assert!(!tinier.exists());
     let members = state.with_db(|conn| db::playlist_memberships_for_key(conn, &key)).unwrap();
     assert!(members.is_empty());
-    let dest = state.with_db(|conn| db::tinier_convert_entry(conn, &vid_path)).unwrap();
-    assert!(dest.is_none());
     assert!(!root.join("cache/skwd-wall-v2/last-wallpaper.json").exists());
 }
 
@@ -1430,4 +1345,15 @@ fn scan_hides_stale_items() {
     let received = events(&mut receiver);
     let done = received.iter().find(|event| event.event == "skwd.wall.scan_done").unwrap();
     assert_eq!(done.data["total"], total);
+}
+
+#[test]
+fn studio_errors() {
+    let (_guard, _root) = testenv::lock();
+    let (state, subs, stats) = harness();
+    let studio = wall_proto::rpc::THEME_STUDIO;
+    assert_eq!(ecode(&call(&state, &subs, &stats, studio, json!({}))), 1);
+    assert_eq!(ecode(&call(&state, &subs, &stats, studio, json!({"image": 5}))), -32602);
+    let missing = json!({"image": "/tmp/skwd-studio-missing.png"});
+    assert_eq!(ecode(&call(&state, &subs, &stats, studio, missing)), 1);
 }

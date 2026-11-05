@@ -2,9 +2,9 @@
 
 use super::{
     PREVIEW_MAX_DECODE_ALLOC, PREVIEW_MAX_DIMENSION, PREVIEW_MAX_ENCODED_BYTES, PREVIEW_MAX_PIXELS,
-    PreviewLimits, agent, copy_bounded, fetch_image, get_guarded, host_is_private, partial_file,
-    require_public, require_source, require_wallhaven, scheme_host, send, stream_to_dest,
-    validate_cached_preview,
+    PreviewLimits, REMOTE_PREVIEW_LIMITS, agent, copy_bounded, fetch_image, get_guarded,
+    host_is_private, partial_file, require_public, require_source, require_wallhaven, scheme_host,
+    send, stream_to_dest, validate_cached_preview,
 };
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -236,6 +236,23 @@ fn cached_preview_limits() {
     bytes.truncate(bytes.len() / 2);
     std::fs::write(&truncated, bytes).unwrap();
     assert!(validate_cached_preview(&truncated).is_err());
+}
+
+#[test]
+fn truncated_fetch_fails() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dest = tmp.path().join("preview.png");
+    let mut body = png_body(8, 8);
+    body.truncate(body.len() / 2);
+    let result = stream_to_dest(
+        std::io::Cursor::new(body),
+        &dest,
+        crate::infrastructure::sniff::Kind::Image,
+        REMOTE_PREVIEW_LIMITS,
+    );
+    assert!(result.is_err());
+    assert!(!dest.exists());
+    assert!(part_files(tmp.path()).is_empty());
 }
 
 #[test]

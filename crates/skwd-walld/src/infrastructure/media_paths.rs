@@ -3,34 +3,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use skwd_wall_core::WallState;
-use skwd_wall_core::db::{TINIER_CONVERT_MAX_BYTES, TINIER_CONVERT_PRESET};
 
 const CONVERT_POLL_INTERVAL: Duration = Duration::from_millis(80);
 const IDENTITY_KEY: &str = "key";
 const STATIC_KEY_PREFIX: &str = "static:";
-
-pub(crate) struct TinierVideo {
-    pub(crate) path: String,
-    pub(crate) frame_rate: String,
-}
-
-pub(crate) fn tinier_video(state: &Arc<WallState>, path: &str) -> Option<TinierVideo> {
-    let (destination, frame_rate, preset, original_size) = state
-        .with_db(|connection| skwd_wall_core::db::tinier_convert_entry(connection, path))
-        .ok()
-        .flatten()?;
-    let metadata = std::fs::metadata(&destination).ok()?;
-    let source_size = std::fs::metadata(path).ok()?.len() as i64;
-    if preset != TINIER_CONVERT_PRESET
-        || original_size != source_size
-        || !metadata.is_file()
-        || metadata.len() == 0
-        || metadata.len() > TINIER_CONVERT_MAX_BYTES
-    {
-        return None;
-    }
-    Some(TinierVideo { path: destination, frame_rate })
-}
 
 pub(crate) fn video_thumb(state: &Arc<WallState>, path: &str) -> Option<String> {
     state
@@ -59,14 +35,18 @@ pub(crate) fn theme_image(state: &Arc<WallState>, image: &str) -> String {
     }
 }
 
-pub(crate) fn library_path(state: &Arc<WallState>, path: &str) -> String {
-    if path.is_empty() || !path.contains("/video-opt/") {
-        return path.to_string();
-    }
+fn static_thumb(state: &Arc<WallState>, path: &str) -> Option<String> {
+    let key = state.library_key(Path::new(path))?;
     state
-        .with_db(|connection| skwd_wall_core::db::tinier_convert_src(connection, path))
+        .with_db(|connection| skwd_wall_core::db::thumb_for_key(connection, &key))
         .ok()
         .flatten()
+        .filter(|thumb| Path::new(thumb).exists())
+}
+
+pub(crate) fn studio_image(state: &Arc<WallState>, path: &str) -> String {
+    video_thumb(state, path)
+        .or_else(|| static_thumb(state, path))
         .unwrap_or_else(|| path.to_string())
 }
 
@@ -74,10 +54,10 @@ pub(crate) fn output_theme_source(state: &Arc<WallState>, output: &str) -> Optio
     let desired = skwd_wall_core::audio::read_state(&state.config().cache_dir());
     let entry = desired.get(output).or_else(|| desired.get("*"))?;
     let field = |key| entry.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
-    let path = library_path(state, field("path"));
+    let path = field("path");
     match field("type") {
-        wall_proto::kind::STATIC if !path.is_empty() => Some(path),
-        wall_proto::kind::VIDEO => video_thumb(state, &path),
+        wall_proto::kind::STATIC if !path.is_empty() => Some(path.to_string()),
+        wall_proto::kind::VIDEO => video_thumb(state, path),
         wall_proto::kind::WE if skwd_wall_core::we::valid_we_id(field("we_id")) => {
             skwd_wall_core::we::find_preview(&state.config().we_dir().join(field("we_id")))
                 .map(|preview| preview.display().to_string())

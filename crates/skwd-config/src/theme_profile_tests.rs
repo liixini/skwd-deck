@@ -11,6 +11,9 @@ fn snapshots_include_defaults_and_canonical_legacy_choices() {
     assert_eq!(snapshot[keys::theme::STYLE], "natural");
     assert_eq!(snapshot[keys::matugen::COLOR_INDEX], 0);
     assert_eq!(snapshot[keys::theme::NOCTALIA_PURE_BLACK], false);
+    assert_eq!(snapshot[keys::theme::STUDIO_METHOD], "tonal");
+    assert_eq!(snapshot[keys::theme::STUDIO_COLOUR], 1);
+    assert_eq!(snapshot[keys::theme::STUDIO_SHADES], json!([]));
 }
 
 #[test]

@@ -23,8 +23,8 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 116,
-      "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check, the real Fish terminal test and the private-audio check excluded"
+      "expectedSkips": 125,
+      "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check, the real Fish terminal test, the private-audio check, the Drawing model-pack check and the release-daemon playback socket checks excluded"
     },
     {
       "id": "deck.layers",
@@ -55,6 +55,11 @@
       "id": "deck.audio-live",
       "expectedSkips": 1,
       "coverage": "manual real-daemon detection using a private Pulse server, null sink, mpv and captured steady-tone audio"
+    },
+    {
+      "id": "deck.drawing-live",
+      "expectedSkips": 1,
+      "coverage": "real-daemon Drawing preparation on CPU with the pinned Drawing model pack and the Lens ONNX Runtime: single preparation, system pack adoption without registration, library pause/restart/resume, automatic preparation and stop, crash recovery and planning at scale; the video and Wallpaper Engine reference case needs Paper and Wallpaper Engine items and stays skipped"
     },
     {
       "id": "deck.vm",

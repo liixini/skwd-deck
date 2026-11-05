@@ -17,9 +17,11 @@ use wayland_protocols::xdg::xdg_output::zv1::client::zxdg_output_manager_v1::Zxd
 pub(crate) struct Snapshot {
     pub supported: bool,
     pub maximized_supported: bool,
+    pub focused_supported: bool,
     pub backend: &'static str,
     pub outputs: HashSet<String>,
     pub maximized_outputs: HashSet<String>,
+    pub focused_outputs: HashSet<String>,
     pub observed_outputs: HashSet<String>,
 }
 
@@ -36,6 +38,7 @@ struct Window {
     backend: Backend,
     fullscreen: bool,
     maximized: bool,
+    focused: bool,
     minimized: bool,
     sticky: bool,
     outputs: HashSet<u32>,
@@ -94,6 +97,7 @@ impl Monitor {
         Snapshot {
             supported,
             maximized_supported: supported,
+            focused_supported: supported,
             backend: match self.backend() {
                 Some(Backend::Wlr) => "wlr",
                 Some(Backend::Cosmic) => "cosmic",
@@ -101,6 +105,7 @@ impl Monitor {
             },
             outputs: self.matching_outputs(|window| window.fullscreen),
             maximized_outputs: self.matching_outputs(|window| window.maximized),
+            focused_outputs: self.matching_outputs(|window| window.focused),
             observed_outputs: self.outputs.values().cloned().collect(),
         }
     }
@@ -213,7 +218,8 @@ async fn connected(
     let qh = queue.handle();
     let registry = connection.display().get_registry(&qh, ());
     connection.display().sync(&qh, registry);
-    let fd = AsyncFd::new(connection.backend().poll_fd().as_fd().try_clone_to_owned()?)?;
+    let poll_fd = connection.backend().poll_fd().as_fd().try_clone_to_owned()?;
+    let fd = unsafe { AsyncFd::register(poll_fd) }?;
     let mut monitor = Monitor::default();
     while *enabled.borrow() {
         queue.dispatch_pending(&mut monitor)?;

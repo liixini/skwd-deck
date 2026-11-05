@@ -27,11 +27,6 @@ use super::connection::{handle_conn, peer_uid_allowed};
 #[cfg(test)]
 use super::response::classify_apply_error;
 
-fn relay(publisher: &dyn EventPublisher, req: &Request, event: &str) -> Response {
-    publisher.publish(event, req.params.clone());
-    Response::ok(req.id, json!({"ok": true}))
-}
-
 pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, events, workers, stats, .. } = ctx;
     stats.rpc(&req.method);
@@ -46,6 +41,11 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         return Response::ok(req.id, json!({"ok": true}));
     }
     match req.method.as_str() {
+        method if rpc::DRAWING_METHODS.contains(&method) => {
+            crate::infrastructure::drawing::dispatch(ctx, req)
+        }
+        rpc::WIDGETS_SCENE => crate::infrastructure::widgets::scene_rpc(state, req),
+        rpc::WIDGETS_EDIT => crate::infrastructure::widgets::edit_rpc(req),
         rpc::PLAYBACK_PROCESSES => Response::ok(
             req.id,
             json!({"processes": crate::infrastructure::playback::processes::running()}),
@@ -194,6 +194,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
         }
         rpc::THEME_PREVIEW => theme_preview(state, req),
         rpc::THEME_PREVIEWS => theme_previews(state, req),
+        rpc::THEME_STUDIO => theme_studio(state, req),
         rpc::WALL_CLEAR_DATA => clear_data(ctx, req),
         rpc::WALL_RECOMPUTE_COLORS => {
             stats.set_task("recomputing colors");
@@ -216,7 +217,9 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             Response::ok(req.id, json!({"started": started}))
         }
         rpc::OPTIMIZE_STATUS => Response::ok(req.id, workers.image_optimization_status()),
-        rpc::SOURCE_LIST | rpc::SOURCE_PREVIEW | rpc::SOURCE_DOWNLOAD => source_rpc(ctx, req),
+        rpc::SOURCE_LIST | rpc::SOURCE_DETAILS | rpc::SOURCE_PREVIEW | rpc::SOURCE_DOWNLOAD => {
+            source_rpc(ctx, req)
+        }
         rpc::WALLHAVEN_SEARCH => wallhaven_search(ctx, req),
         rpc::WALLHAVEN_COLLECTIONS => wallhaven_collections(state, req, stats),
         rpc::WALLHAVEN_PREVIEW => wallhaven_preview(req, events, stats),
@@ -275,8 +278,10 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
             crate::composition::runtime::rotation::wake();
             Response::ok(req.id, json!({"ok": true}))
         }
-        rpc::WALL_SHELL_PREVIEW => shell_preview(state, req, stats),
-        rpc::WALL_SHELL_PREVIEW_END => shell_preview_end(state, req),
+        rpc::WALL_SHELL_PREVIEW => {
+            shell_preview(state, req, stats, || Some(state.theme().bump_shell_preview()))
+        }
+        rpc::WALL_SHELL_PREVIEW_END => shell_preview_end(state, req, None),
         rpc::WALL_RELOAD_WE => wall_reload_we(ctx, req),
         rpc::WALL_SET_FAVOURITE | rpc::WALL_SET_HIDDEN => set_flag(state, req, stats),
         rpc::WALL_UPDATE_TAGS | rpc::WALL_UPDATE_ANALYSIS => update_tags(state, req, stats),

@@ -172,7 +172,10 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     }
     let scheme = config.theme().matugen_scheme_override().unwrap_or_else(dms_scheme);
     let index = config.theme().matugen_color_index();
-    let key = format!("dms\u{0}{scheme}\u{0}{index}\u{0}{image}");
+    let key = format!(
+        "dms\u{0}{scheme}\u{0}{index}\u{0}{image}\u{0}{}",
+        crate::theme::source_stamp(image).unwrap_or_default()
+    );
     let payload = if let Some(bytes) = state.theme().shell_palette_cached(&key) {
         bytes
     } else {
@@ -196,8 +199,11 @@ pub fn preview(state: &WallState, image: &str, generation: u64) -> anyhow::Resul
     Ok(())
 }
 
-pub fn preview_end(state: &WallState) {
+pub fn preview_end(state: &WallState, expected: Option<u64>) {
     let _serial = state.theme().lock_shell_preview();
+    if expected.is_some_and(|generation| state.theme().shell_preview_generation() != generation) {
+        return;
+    }
     restore_from_backup(&state.config());
 }
 

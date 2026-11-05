@@ -135,3 +135,83 @@ fn plasma_media_transition_overrides_and_failed_handoffs() {
         plasma.confirm_presentations();
     }
 }
+
+fn prepared_drawing(sandbox: &Sandbox, source: &str) {
+    let layout =
+        skwd_wall_core::config::Config::from_root(json!({"paths": {"cache": sandbox.cache()}}));
+    let source = std::path::Path::new(source).canonicalize().unwrap();
+    let digest = std::process::Command::new("sha256sum").arg(&source).output().unwrap();
+    let sha256 = String::from_utf8(digest.stdout).unwrap()[..64].to_string();
+    let metadata = std::fs::metadata(&source).unwrap();
+    let modified = metadata.modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap();
+    let directory = skwd_wall_core::infrastructure::drawing::artifacts(&layout).join(&sha256);
+    std::fs::create_dir_all(&directory).unwrap();
+    for name in ["drawing.png", "strokes.bin"] {
+        std::fs::write(directory.join(name), b"fixture").unwrap();
+    }
+    let manifest = json!({
+        "version": paper_control::DRAWING_VERSION,
+        "source": {"path": source, "size": metadata.len(), "mtime_ns": modified.as_nanos(), "sha256": sha256},
+        "width": 320, "height": 180, "texture": "drawing.png", "strokes": "strokes.bin",
+        "timing_width": 320, "timing_height": 180, "focus": [0.5, 0.5]
+    });
+    std::fs::write(
+        directory.join(skwd_wall_core::infrastructure::drawing::MANIFEST),
+        manifest.to_string(),
+    )
+    .unwrap();
+    skwd_wall_core::infrastructure::drawing::publish(
+        &layout,
+        &source,
+        &skwd_wall_core::infrastructure::drawing::CacheEntry {
+            artifact: sha256,
+            pack: String::new(),
+            recipe: skwd_wall_core::infrastructure::drawing::RECIPE.into(),
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_drawing_clears() {
+    let (sandbox, plasma) = plasma_session("plasma-drawing");
+    let old = still(&sandbox, "old.png", "red");
+    let new = still(&sandbox, "new.png", "blue");
+    prepared_drawing(&sandbox, &new);
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(sandbox.config_path()).unwrap()).unwrap();
+    config["drawing"] = json!({"enabled": true, "durationMs": 4000, "ink": "rainbow"});
+    config["transition"] = json!({"enabled": true});
+    sandbox.write_config(&config);
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    assert!(wait_until(
+        || client
+            .call("wall.list", json!({}), 2)
+            .and_then(|response| response["result"]["wallpapers"].as_array().cloned())
+            .is_some_and(|rows| rows.iter().any(|row| row["key"] == "static:new.png")),
+        Duration::from_secs(15)
+    ));
+    call(
+        &walld,
+        &mut client,
+        "wall.apply",
+        json!({"type":"static", "path":old, "no_transition":true}),
+    );
+    let before = plasma.scripts().len();
+    call(&walld, &mut client, "wall.apply", json!({"type":"static", "path":new}));
+    let scripts = plasma.scripts().split_off(before);
+    assert_eq!(scripts.len(), 2, "{}", walld.log_contents());
+    for output in ["DP-1", "DP-2"] {
+        let played = assignment(&scripts[0][output]).transition.unwrap();
+        let drawing = played.drawing.unwrap();
+        assert_eq!(drawing.ink, paper_control::DrawingInk::Rainbow);
+        assert_eq!(played.from.as_deref(), Some(old.as_str()));
+        assert_eq!(played.duration_ms, Some(4000));
+        let settled = assignment(&scripts[1][output]);
+        assert!(settled.transition.is_none());
+        assert_eq!(settled.source.path, new);
+        assert_ne!(scripts[0][output]["presentationId"], scripts[1][output]["presentationId"]);
+    }
+}

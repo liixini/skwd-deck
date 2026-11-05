@@ -12,6 +12,7 @@ use tokio::sync::watch;
 pub(super) struct Snapshot {
     pub supported: bool,
     pub outputs: HashSet<String>,
+    pub focused_outputs: HashSet<String>,
 }
 
 #[derive(Deserialize)]
@@ -20,6 +21,8 @@ struct Workspace {
     output: Option<String>,
     is_active: bool,
     #[serde(default)]
+    is_focused: bool,
+    #[serde(default)]
     active_window_id: Option<u64>,
 }
 
@@ -27,6 +30,8 @@ struct Workspace {
 struct Window {
     id: u64,
     workspace_id: Option<u64>,
+    #[serde(default)]
+    is_focused: bool,
     is_floating: bool,
     layout: Geometry,
 }
@@ -43,46 +48,83 @@ struct Monitor {
     workspaces: HashMap<u64, Workspace>,
     windows: HashMap<u64, Window>,
     outputs: HashMap<String, (f64, f64)>,
+    focused_window_id: Option<u64>,
     received_workspaces: bool,
     received_windows: bool,
 }
 
 impl Monitor {
+    fn focused_workspace_window(&self) -> Option<u64> {
+        self.workspaces
+            .values()
+            .find(|workspace| workspace.is_focused)
+            .and_then(|workspace| workspace.active_window_id)
+    }
+
     fn event(&mut self, value: &Value) -> Option<bool> {
         if let Some(event) = value.get("WorkspacesChanged") {
             let workspaces: Vec<Workspace> =
                 serde_json::from_value(event.get("workspaces")?.clone()).ok()?;
             self.workspaces = workspaces.into_iter().map(|w| (w.id, w)).collect();
+            self.focused_window_id = self.focused_workspace_window();
             self.received_workspaces = true;
             return Some(true);
         }
         if let Some(event) = value.get("WorkspaceActivated") {
             let id = event.get("id")?.as_u64()?;
+            let focused = event.get("focused")?.as_bool()?;
             let output = self.workspaces.get(&id)?.output.clone();
-            for workspace in self.workspaces.values_mut().filter(|w| w.output == output) {
-                workspace.is_active = workspace.id == id;
+            for workspace in self.workspaces.values_mut() {
+                if workspace.output == output {
+                    workspace.is_active = workspace.id == id;
+                }
+                if focused {
+                    workspace.is_focused = workspace.id == id;
+                }
+            }
+            if focused {
+                self.focused_window_id = self.focused_workspace_window();
             }
             return Some(false);
         }
         if let Some(event) = value.get("WorkspaceActiveWindowChanged") {
             let workspace = self.workspaces.get_mut(&event.get("workspace_id")?.as_u64()?)?;
             workspace.active_window_id = event.get("active_window_id")?.as_u64();
+            if workspace.is_focused {
+                self.focused_window_id = workspace.active_window_id;
+            }
             return Some(false);
         }
         if let Some(event) = value.get("WindowsChanged") {
             let windows: Vec<Window> =
                 serde_json::from_value(event.get("windows")?.clone()).ok()?;
+            self.focused_window_id = windows
+                .iter()
+                .find(|window| window.is_focused)
+                .map(|window| window.id)
+                .or_else(|| self.focused_workspace_window());
             self.windows = windows.into_iter().map(|w| (w.id, w)).collect();
             self.received_windows = true;
             return Some(true);
         }
         if let Some(event) = value.get("WindowOpenedOrChanged") {
             let window: Window = serde_json::from_value(event.get("window")?.clone()).ok()?;
+            if window.is_focused {
+                self.focused_window_id = Some(window.id);
+            }
             self.windows.insert(window.id, window);
             return Some(true);
         }
         if let Some(event) = value.get("WindowClosed") {
-            self.windows.remove(&event.get("id")?.as_u64()?);
+            let id = event.get("id")?.as_u64()?;
+            self.windows.remove(&id);
+            if self.focused_window_id == Some(id) {
+                self.focused_window_id = None;
+            }
+            return Some(false);
+        }
+        if let Some(event) = value.get("WindowFocusChanged") {
+            self.focused_window_id = event.get("id").and_then(Value::as_u64);
             return Some(false);
         }
         if let Some(event) = value.get("WindowLayoutsChanged") {
@@ -143,13 +185,27 @@ impl Monitor {
                 (visible_width >= width * 0.9 && visible_height > 0.0).then(|| output.clone())
             })
             .collect();
+        let focused_outputs = self
+            .focused_window_id
+            .and_then(|id| self.windows.get(&id))
+            .and_then(|window| self.workspaces.get(&window.workspace_id?))
+            .and_then(|workspace| workspace.output.as_ref())
+            .filter(|output| self.outputs.contains_key(*output))
+            .cloned()
+            .into_iter()
+            .collect();
         Snapshot {
             supported: self.received_windows
                 && self.received_workspaces
                 && !self.outputs.is_empty(),
             outputs,
+            focused_outputs,
         }
     }
+}
+
+pub(super) fn available() -> bool {
+    std::env::var_os("NIRI_SOCKET").is_some()
 }
 
 pub(super) async fn run(mut enabled: watch::Receiver<bool>, sender: watch::Sender<Snapshot>) {

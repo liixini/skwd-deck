@@ -21,6 +21,125 @@ fn stats() -> Arc<Stats> {
     Arc::new(Stats::new())
 }
 
+fn preview_request(refresh: bool) -> Request {
+    Request { id: 1, method: "source.preview".into(), params: json!({"refresh": refresh}) }
+}
+
+#[test]
+fn details_detached() {
+    let request = Request {
+        id: 1,
+        method: wall_proto::rpc::SOURCE_DETAILS.into(),
+        params: json!({"source": "steam", "id": "123", "generation": 4}),
+    };
+    let call = list_call(&request).unwrap().unwrap();
+    assert_eq!(call.provider, wall_proto::sources::Provider::Steam);
+    assert_eq!(call.generation, None);
+}
+
+#[test]
+fn preview_failure_emits_event() {
+    let events = Arc::new(EventHub::new(stats()));
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    events.subscribe(1, sender);
+    let directory = tempfile::tempdir().unwrap();
+    let response = handle_remote_preview(
+        &preview_request(false),
+        "steam",
+        "123",
+        "https://attacker.example/image.png".into(),
+        directory.path().join("image.png"),
+        &events,
+        |url| crate::infrastructure::http::require_source("steam", url),
+    );
+    assert_eq!(response.result.unwrap()["status"], "fetching");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let event = loop {
+        if let Ok(message) = receiver.try_recv() {
+            break serde_json::from_str::<wall_proto::Event>(&message).unwrap();
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(event.event, ev::PREVIEW_READY);
+    assert_eq!(event.data["id"], "123");
+    assert_eq!(event.data["source"], "steam");
+    assert_eq!(event.data["path"], "");
+    assert!(event.data["error"].as_str().unwrap().contains("blocked"));
+}
+
+#[test]
+fn cached_preview_is_ready() {
+    let events = Arc::new(EventHub::new(stats()));
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255])).save(&path).unwrap();
+    let response = handle_remote_preview(
+        &preview_request(false),
+        "steam",
+        "123",
+        "https://images.steamusercontent.com/image.png".into(),
+        path.clone(),
+        &events,
+        |_| Ok(()),
+    );
+    let result = response.result.unwrap();
+    assert_eq!(result["status"], "ready");
+    assert_eq!(result["path"], path.to_string_lossy().as_ref());
+}
+
+#[test]
+fn retry_discards_truncated_cache() {
+    let events = Arc::new(EventHub::new(stats()));
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    events.subscribe(1, sender);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255])).save(&path).unwrap();
+    let len = std::fs::metadata(&path).unwrap().len();
+    std::fs::OpenOptions::new().write(true).open(&path).unwrap().set_len(len - 8).unwrap();
+    assert!(crate::infrastructure::http::validate_cached_preview_header(&path).is_ok());
+    assert!(crate::infrastructure::http::validate_cached_preview(&path).is_err());
+
+    let url = "https://attacker.example/image.png";
+    let response = handle_remote_preview(
+        &preview_request(false),
+        "steam",
+        "123",
+        url.into(),
+        path.clone(),
+        &events,
+        |_| Ok(()),
+    );
+    assert_eq!(response.result.unwrap()["status"], "ready");
+    assert!(receiver.try_recv().is_ok());
+    let response = handle_remote_preview(
+        &preview_request(true),
+        "steam",
+        "123",
+        url.into(),
+        path.clone(),
+        &events,
+        |url| crate::infrastructure::http::require_source("steam", url),
+    );
+    assert_eq!(response.result.unwrap()["status"], "fetching");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while path.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut failed = false;
+    while !failed {
+        let event = receiver
+            .try_recv()
+            .ok()
+            .and_then(|message| serde_json::from_str::<wall_proto::Event>(&message).ok());
+        failed = event.is_some_and(|event| !event.data["error"].as_str().unwrap_or("").is_empty());
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn provider_list_contract_success_error_and_cancel() {
     crate::testenv::runtime().block_on(async {

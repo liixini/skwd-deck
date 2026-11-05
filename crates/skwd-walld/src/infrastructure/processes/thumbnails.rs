@@ -189,7 +189,9 @@ impl ThumbnailBatch {
         if renderer.is_none() {
             let config = self.state.config();
             let mut command = crate::infrastructure::proc::tool(config.renderer().paper_bin());
-            command.arg("capture-scenes").env("SKWD_VK_DEVICE", config.renderer().gpu_device());
+            command
+                .arg("capture-scenes")
+                .env(skwd_config::GPU_DEVICE_ENV, config.renderer().gpu_device());
             *renderer = Some(Worker::spawn(command, &control.children)?);
         }
         anyhow::ensure!(!control.cancelled.load(Ordering::Acquire), "Thumbnail capture stopped");
@@ -197,6 +199,7 @@ impl ThumbnailBatch {
             renderer.as_mut().unwrap().exchange(&paper_control::SceneThumbnailRequest {
                 source: capture.source().to_string_lossy().into_owned(),
                 destination: frame.to_string_lossy().into_owned(),
+                reference: false,
                 properties: capture.properties().clone(),
             })?;
         anyhow::ensure!(
@@ -210,7 +213,7 @@ impl ThumbnailBatch {
         anyhow::ensure!(capture.unchanged(&self.state)?, "scene changed during thumbnail capture");
         if encoder.is_none() {
             let mut command =
-                crate::infrastructure::proc::tool(paths::sibling_bin("skwd-wall-scan"));
+                crate::infrastructure::proc::tool(paths::sibling_bin(paths::SCAN_BIN));
             command.arg("--scene-thumbnail-stream");
             super::scanner::apply_scan_limits(&mut command, self.state.config().max_thumb_jobs());
             *encoder = Some(Worker::spawn(command, &control.children)?);

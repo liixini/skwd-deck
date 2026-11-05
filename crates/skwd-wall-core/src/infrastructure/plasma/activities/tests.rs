@@ -11,6 +11,7 @@ fn legacy_assignment_metadata() {
         volume: 42,
         layer: super::super::Layer::Background,
         transition: None,
+        system_audio: None,
     };
     let entry = serde_json::json!({"assignment":assignment});
     assert_eq!(

@@ -8,6 +8,166 @@ fn playback(walld: &Walld) -> Value {
 }
 
 #[test]
+#[ignore = "requires release daemon and Unix sockets"]
+fn global_pause_reaches_paper() {
+    paper_pause(false);
+}
+
+#[test]
+#[ignore = "requires release daemon and Unix sockets"]
+fn service_pause_keeps_pid() {
+    paper_pause(true);
+}
+
+fn paper_pause(independent: bool) {
+    use std::io::{BufRead, Write};
+
+    let mut sandbox =
+        Sandbox::new(if independent { "paper-output-pause" } else { "paper-global-pause" });
+    let socket = sandbox.root.join("paper.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    sandbox.set_env("SKWD_PAPER_V2_SOCKET", socket.to_str().unwrap());
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080");
+    sandbox.write_config(&json!({
+        "paths": {
+            "wallpaper": sandbox.library(),
+            "videoWallpaper": sandbox.library(),
+            "steamWorkshop": sandbox.library()
+        },
+        "restoreOnStartup": false
+    }));
+    let server = std::thread::spawn(move || {
+        let mut pauses = Vec::new();
+        loop {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            std::io::BufReader::new(stream.try_clone().unwrap()).read_line(&mut line).unwrap();
+            let request: paper_control::Request = serde_json::from_str(&line).unwrap();
+            let audio = matches!(request.params, paper_control::RequestParams::PlaybackAudio(_));
+            let response = match request.params {
+                paper_control::RequestParams::PlaybackPause(pause) => {
+                    assert_eq!(pause.outputs, ["*"]);
+                    pauses.push(if independent { pause.overrides["DP-1"] } else { pause.paused });
+                    serde_json::to_value(paper_control::Response::success(
+                        request.id,
+                        paper_control::PauseResult { paused: pause.paused },
+                    ))
+                    .unwrap()
+                }
+                paper_control::RequestParams::PlaybackAudio(audio) => {
+                    assert_eq!(audio.duck, Some(false));
+                    serde_json::to_value(paper_control::Response::success(
+                        request.id,
+                        paper_control::AudioSetResult { updated: 0, assignments: Vec::new() },
+                    ))
+                    .unwrap()
+                }
+                paper_control::RequestParams::Status(_) if independent => {
+                    let assignment = paper_control::Assignment::new(
+                        vec!["DP-1".into()],
+                        paper_control::Source::video("/wall/video.mp4"),
+                    );
+                    serde_json::to_value(paper_control::Response::success(
+                        request.id,
+                        paper_control::StatusResult {
+                            paused: false,
+                            policy: None,
+                            assignments: vec![paper_control::AssignmentStatus::from_assignment(
+                                &assignment,
+                                1,
+                                Some(123),
+                                true,
+                            )],
+                            renderers: Vec::new(),
+                        },
+                    ))
+                    .unwrap()
+                }
+                paper_control::RequestParams::Capabilities(_) => {
+                    serde_json::to_value(paper_control::Response::success(
+                        request.id,
+                        paper_control::CapabilitiesResult::current(),
+                    ))
+                    .unwrap()
+                }
+                paper_control::RequestParams::Widgets(scene) => {
+                    assert!(scene.widgets.is_empty());
+                    serde_json::to_value(paper_control::Response::success(request.id, json!({})))
+                        .unwrap()
+                }
+                other => panic!("unexpected Paper request {other:?}"),
+            };
+            writeln!(stream, "{response}").unwrap();
+            if audio && pauses.len() == 2 {
+                return pauses;
+            }
+        }
+    });
+    let walld = Walld::start(&sandbox);
+    if independent {
+        skwd_wall_core::audio::write_state(
+            sandbox.cache().to_str().unwrap(),
+            &json!({"DP-1":{"type":"video","path":"/wall/video.mp4","mute":true,"volume":100}}),
+        );
+    }
+    for paused in [true, false] {
+        let result = walld
+            .client()
+            .call(
+                "wall.set_paused",
+                json!({"paused":paused,"output":if independent { "DP-1" } else { "*" }}),
+                1,
+            )
+            .unwrap();
+        assert!(result.get("error").is_none(), "{result}");
+    }
+    assert_eq!(server.join().unwrap(), [true, false]);
+}
+
+#[test]
+#[ignore = "requires release daemon and Unix sockets"]
+fn stale_socket_pauses_video() {
+    use skwd_e2e::{child_pids, ffmpeg_video, wall_outputs};
+
+    let mut sandbox = Sandbox::new("stale-paper-pause");
+    let socket = sandbox.root.join("paper.sock");
+    sandbox.set_env("SKWD_PAPER_V2_SOCKET", socket.to_str().unwrap());
+    let stub = skwd_e2e::stub_renderer!();
+    sandbox.set_env("SKWD_WALL_PAPER_VK", &stub);
+    sandbox.set_env("SKWD_FAKE_OUTPUTS", "DP-1:1920x1080");
+    let video = sandbox.library().join("a.mp4");
+    assert!(ffmpeg_video(&video, "blue", 1.0));
+    sandbox.write_config(&json!({
+        "paths": {
+            "wallpaper": sandbox.library(),
+            "videoWallpaper": sandbox.library(),
+            "steamWorkshop": sandbox.library(),
+            "paperBin": sandbox.root.join("missing-paper")
+        },
+        "restoreOnStartup": false,
+        "general": {"randomInterval": 0},
+        "theme": {"policy": "off"},
+        "transition": {"enabled": false}
+    }));
+    let walld = Walld::start(&sandbox);
+    let mut client = walld.client();
+    let applied = client.call("wall.apply", json!({"type":"video","path":video}), 1).unwrap();
+    assert!(applied.get("error").is_none(), "{applied}");
+    assert!(wait_until(
+        || child_pids(walld.pid(), "fake_renderer").len() == 1,
+        Duration::from_secs(8)
+    ));
+
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+    let response = client.call("wall.set_paused", json!({"paused":true}), 2).unwrap();
+    assert!(response.get("error").is_some(), "{response}");
+    assert!(wall_outputs(&mut client).iter().any(|output| {
+        output["name"] == "DP-1" && output["paused"] == true && output["manual_paused"] == true
+    }));
+    assert_eq!(child_pids(walld.pid(), "fake_renderer").len(), 1);
+}
+
+#[test]
 #[ignore = "requires release daemon and process access"]
 fn process_rules_reload() {
     let sandbox = Sandbox::new("automatic-playback");
@@ -287,11 +447,11 @@ fn niri_columns_follow_visible_workspace_and_preserve_manual_pause() {
             std::thread::sleep(Duration::from_millis(10));
         }
     });
-    sandbox.write_config(&json!({"paths":{"wallpaper":sandbox.library()},"restoreOnStartup":false,"niri":{"fullWidthPause":true},"playback":{"fullscreenScope":"display","resumeDelay":0.2}}));
+    sandbox.write_config(&json!({"paths":{"wallpaper":sandbox.library()},"restoreOnStartup":false,"niri":{"fullWidthPause":true},"playback":{"focused":true,"fullscreenScope":"display","resumeDelay":0.2}}));
     let walld = Walld::start(&sandbox);
     walld.client().call("wall.apply", json!({"type":"video","path":video}), 1).unwrap();
     send.send(json!({"WorkspacesChanged":{"workspaces":[{"id":1,"output":"DP-1","is_active":true},{"id":2,"output":"DP-1","is_active":false}]}})).unwrap();
-    send.send(json!({"WindowsChanged":{"windows":[{"id":8,"workspace_id":1,"is_floating":false,"layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[1888,1048],"tile_pos_in_workspace_view":[16,16]}}]}})).unwrap();
+    send.send(json!({"WindowsChanged":{"windows":[{"id":8,"workspace_id":1,"is_focused":false,"is_floating":false,"layout":{"pos_in_scrolling_layout":[1,1],"tile_size":[1888,1048],"tile_pos_in_workspace_view":[16,16]}}]}})).unwrap();
     assert!(wait_until(|| playback(&walld)["full_width_paused"] == true, Duration::from_secs(8)));
     assert!(wait_until(
         || {
@@ -302,6 +462,18 @@ fn niri_columns_follow_visible_workspace_and_preserve_manual_pause() {
     ));
     send.send(json!({"WorkspaceActivated":{"id":2,"focused":true}})).unwrap();
     assert!(wait_until(|| playback(&walld)["resume_pending"] == true, Duration::from_secs(5)));
+    assert!(wait_until(|| playback(&walld)["automatic_paused"] == false, Duration::from_secs(5)));
+    send.send(json!({"WindowFocusChanged":{"id":8}})).unwrap();
+    assert!(wait_until(
+        || {
+            let state = playback(&walld);
+            state["focused_supported"] == true
+                && state["focused_paused"] == true
+                && state["outputs"] == json!(["DP-1"])
+        },
+        Duration::from_secs(5)
+    ));
+    send.send(json!({"WindowFocusChanged":{"id":null}})).unwrap();
     assert!(wait_until(|| playback(&walld)["automatic_paused"] == false, Duration::from_secs(5)));
     walld.client().call("wall.set_paused", json!({"paused":true}), 2).unwrap();
     send.send(json!({"WorkspaceActivated":{"id":1,"focused":true}})).unwrap();

@@ -83,7 +83,7 @@ pub fn apply_independent_video(
         transition.map_or(ReconcileIntent::PolicyRefresh, |request| ReconcileIntent::Apply {
             transition: super::transition::TransitionSelection::from(request).resolve(state),
         });
-    let result = reconcile_outputs(state, &outputs, &intent);
+    let result = reconcile_outputs(state, &outputs, &intent, super::reconcile::ReconcileScope::All);
     if result.is_err() {
         crate::audio::write_state(&cache, &previous);
     }
@@ -94,8 +94,20 @@ pub(super) fn reconcile_outputs(
     state: &WallState,
     monitors: &[String],
     intent: &ReconcileIntent,
+    scope: ReconcileScope<'_>,
 ) -> anyhow::Result<()> {
-    reconcile_outputs_inner(state, monitors, intent)
+    let started = std::time::Instant::now();
+    let result = reconcile_outputs_inner(state, monitors, intent, scope);
+    state
+        .apply()
+        .note_phase(crate::backend::wallpaper::ApplyPhase::ReconcileTotal, started.elapsed());
+    result
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ReconcileScope<'a> {
+    All,
+    Exclude(&'a [String]),
 }
 
 pub(super) enum ReconcileIntent {
@@ -121,20 +133,31 @@ fn reconcile_outputs_inner(
     state: &WallState,
     monitors: &[String],
     intent: &ReconcileIntent,
+    scope: ReconcileScope<'_>,
 ) -> anyhow::Result<()> {
     crate::plasma::require_backend()?;
     let transition = intent.transition();
     let transition = transition.filter(|plan| plan.enabled());
     let cache = state.config().cache_dir();
     let current = crate::audio::read_state(&cache);
-    let map = match current.as_object() {
+    let mut map = match current.as_object() {
         Some(object) => object.clone(),
         None => return Ok(()),
     };
+    let mut monitors = monitors.to_vec();
+    if let ReconcileScope::Exclude(excluded) = scope {
+        if let Some(wildcard) = map.remove(wall_proto::apply_fields::ALL_OUTPUTS) {
+            for output in &monitors {
+                map.entry(output.clone()).or_insert_with(|| wildcard.clone());
+            }
+        }
+        monitors.retain(|output| !excluded.contains(output));
+        map.retain(|output, _| !excluded.contains(output));
+    }
     let output_info = crate::outputs::enumerate();
     let previous_assignments = state.renderers().assignments();
     if crate::plasma::available() {
-        let targets = super::resolver::reconcile_targets(monitors, &map);
+        let targets = super::resolver::reconcile_targets(&monitors, &map);
         let primary =
             transition.and_then(|plan| transition_primary(state, &targets, plan.shader()));
         let transitions = output_info
@@ -153,6 +176,8 @@ fn reconcile_outputs_inner(
                 Some((
                     output.name.clone(),
                     crate::infrastructure::paper::TransitionPolicy {
+                        drawing: None,
+                        drawing_source: None,
                         fps: None,
                         from: Some(from),
                         effect: Some(plan.shader().to_string()),
@@ -185,29 +210,12 @@ fn reconcile_outputs_inner(
     let mut keep_still: Vec<String> = Vec::new();
     let mut we_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut pending: Vec<ReadyHandoff> = Vec::new();
-    let targets = super::resolver::reconcile_targets(monitors, &map);
-    let desired_targets = targets
-        .iter()
-        .filter(|output| {
-            map.get(*output)
-                .and_then(|entry| entry.get("type"))
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|kind| {
-                    matches!(
-                        kind,
-                        wall_proto::kind::STATIC | wall_proto::kind::VIDEO | wall_proto::kind::WE
-                    )
-                })
-        })
-        .count();
-    let reuse = if desired_targets <= 1 && super::policy::paper_policy_matches(state) {
-        ReusePolicy::WarmAllowed
-    } else {
-        ReusePolicy::ColdOnly
-    };
+    let targets = super::resolver::reconcile_targets(&monitors, &map);
+    let policy = super::policy::PolicyGate::new(state);
+    let reuse = ReusePolicy::for_changes(state, &map, &targets, &previous_assignments, &policy);
     let transition_primary =
         transition.and_then(|plan| transition_primary(state, &targets, plan.shader()));
-    warn_unlisted_targets(monitors, &targets);
+    warn_unlisted_targets(&monitors, &targets);
 
     let overlay_plans = static_overlay_plans(
         state,
@@ -224,9 +232,11 @@ fn reconcile_outputs_inner(
         StaticMultiRequest {
             map: &map,
             targets: &targets,
+            previous_assignments: &previous_assignments,
             keep_still: &mut keep_still,
             pending: &mut pending,
             reuse: static_reuse,
+            policy: &policy,
         },
     );
     let multi_video_handled = reconcile_video_multi(
@@ -290,7 +300,13 @@ fn reconcile_outputs_inner(
                 }
                 if let Some(handoff) = reconcile_static(
                     state,
-                    StaticReconcileRequest { output, path, previous, reuse: static_reuse },
+                    StaticReconcileRequest {
+                        output,
+                        path,
+                        previous,
+                        reuse: static_reuse,
+                        policy: &policy,
+                    },
                 )? {
                     pending.push(handoff);
                 }
@@ -318,17 +334,6 @@ fn reconcile_outputs_inner(
             duration_ms: plan.duration_ms(),
         });
     let prepared_we = prepare_we(state, we_groups, we_audio, scene_transition)?;
-    let mut we_assignments = Vec::new();
-    for output in &targets {
-        let Some(entry) = map.get(output) else { continue };
-        if entry.get("type").and_then(serde_json::Value::as_str) == Some(wall_proto::kind::WE) {
-            let path = entry.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
-            let we_id = entry.get("we_id").and_then(serde_json::Value::as_str).unwrap_or("");
-            we_assignments
-                .push((output.clone(), if path.is_empty() { we_id } else { path }.to_string()));
-        }
-    }
-
     let overlay_startups = overlay_plans
         .into_iter()
         .map(|plan| RendererLaunchSpec::staged_transition(&plan.output, plan.args).spawn(state))
@@ -341,9 +346,6 @@ fn reconcile_outputs_inner(
     let mut prepared_batch = prepare_batch(pending, prepared_we, overlays)?;
     prepared_batch.start_overlays()?;
     prepared_batch.finalize(state);
-    for (output, path) in we_assignments {
-        state.renderers().set_assignment(&output, &path);
-    }
     state.renderers().retain_video_papers(&keep_video);
     state.renderers().retain_output_stills(&keep_still);
     state.renderers().kill_base_still();

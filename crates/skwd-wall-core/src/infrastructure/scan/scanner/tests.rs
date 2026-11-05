@@ -9,7 +9,7 @@ use super::super::artifacts::{
 use super::super::catalog::{Row, row_item_json};
 use super::super::concurrency::{
     DECODE_MAX_CONCURRENT, DECODE_MEMORY_MIN_MIB, DecodeBudget, decode_max_concurrent,
-    decode_memory_budget_bytes, scan_threads,
+    decode_memory_budget_bytes, image_decode_weight, scan_threads,
 };
 use super::common::is_image;
 use super::delta::{changed_kind, needs_regen};
@@ -94,6 +94,30 @@ fn decode_permit_count_is_bounded() {
 }
 
 #[test]
+fn rgb_decode_weight() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("rgb.png");
+    image::RgbImage::from_pixel(3, 2, image::Rgb([20, 40, 60])).save(&source).unwrap();
+    assert_eq!(image_decode_weight(&source), 32 * 1024 * 1024 + 3 * 2 * 4);
+}
+
+#[test]
+fn high_depth_decode_weight() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("rgb16.png");
+    image::ImageBuffer::from_pixel(3, 2, image::Rgb([20_u16, 40, 60])).save(&source).unwrap();
+    assert_eq!(image_decode_weight(&source), 32 * 1024 * 1024 + 3 * 2 * 6);
+}
+
+#[test]
+fn invalid_decode_weight() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("broken.png");
+    std::fs::write(&source, b"invalid image").unwrap();
+    assert_eq!(image_decode_weight(&source), 64 * 1024 * 1024);
+}
+
+#[test]
 fn decode_gate_bytes() {
     let budget = Arc::new(DecodeBudget::new(10, 3));
     let first = budget.acquire(7);
@@ -146,8 +170,11 @@ fn scanner_parallel_image_benchmark() {
                     .acquire(super::super::concurrency::image_decode_weight(source));
                 crate::media::generate_image_thumbs(
                     source,
-                    &root.join(format!("thumb-{index}.webp")),
-                    &root.join(format!("small-{index}.webp")),
+                    crate::media::Thumbs {
+                        full: &root.join(format!("thumb-{index}.webp")),
+                        small: &root.join(format!("small-{index}.webp")),
+                        encoder: &crate::blocks::Encoder::default(),
+                    },
                 )
                 .unwrap();
             });
@@ -224,8 +251,21 @@ fn excluded_media_skips_decode() {
     let state = crate::WallState::test_new(
         serde_json::json!({"paths":{"wallpaper":directory.path()},"library":{"excludedFolders":["Sus/"]}}),
     );
-    assert_eq!(super::scan(&state, |_| panic!("excluded image")), 0);
-    assert_eq!(super::scan_videos(&state, |_| panic!("excluded video")), 0);
-    assert_eq!(super::scan_paths(&state, &[image, video], |_| panic!("excluded delta")), 0);
+    assert_eq!(
+        super::scan(&state, &crate::blocks::Encoder::default(), |_| panic!("excluded image")),
+        0
+    );
+    assert_eq!(
+        super::scan_videos(&state, &crate::blocks::Encoder::default(), |_| panic!(
+            "excluded video"
+        )),
+        0
+    );
+    assert_eq!(
+        super::scan_paths(&state, &[image, video], &crate::blocks::Encoder::default(), |_| panic!(
+            "excluded delta"
+        )),
+        0
+    );
     assert_eq!(state.with_db(crate::db::item_count).unwrap(), 0);
 }

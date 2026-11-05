@@ -76,6 +76,16 @@ impl<'a> TransitionConfig<'a> {
     }
 
     pub fn duration_ms(&self) -> u64 {
+        self.duration_for(&self.shader())
+    }
+
+    pub fn duration_for(&self, shader: &str) -> u64 {
+        if self.config.get(skwd_config::keys::transition::PRESET_TIMING).and_then(Value::as_bool)
+            != Some(false)
+            && let Some(duration) = wall_proto::transitions::preset_duration_ms(shader)
+        {
+            return duration;
+        }
         self.config
             .get(skwd_config::keys::transition::DURATION_MS)
             .and_then(Value::as_f64)

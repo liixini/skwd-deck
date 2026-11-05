@@ -709,7 +709,15 @@ async fn watch_loop(
             let workshop_changed = cfg.workshop.as_ref().is_some_and(|workshop| {
                 pending.iter().chain(&removed).any(|path| path.starts_with(workshop))
             });
+            let removals = !removed.is_empty();
             flush(state, publisher, workers, stats, &mut pending, &mut removed).await;
+            if removals {
+                let tidy_ctx = ctx.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    crate::infrastructure::drawing::tidy(&tidy_ctx);
+                })
+                .await;
+            }
             if workshop_changed {
                 cfg.refresh_manifests(watcher.as_mut(), &state.config());
             }
@@ -833,6 +841,8 @@ async fn absorb_and_hold(
             serde_json::to_value(ev::ConfigChanged { library_changed }).unwrap_or_default(),
         );
         crate::infrastructure::power::request_refresh();
+        let widget_state = Arc::clone(state);
+        tokio::task::spawn_blocking(move || crate::infrastructure::widgets::refresh(&widget_state));
         crate::infrastructure::playback::refresh();
         crate::composition::runtime::rotation::wake();
         crate::composition::runtime::weather::reload();
@@ -902,6 +912,8 @@ fn import_theme_event(
     if skwd_wall_core::theme_provider::import(&config, provider, dark) {
         let source = skwd_wall_core::theme_provider::provider_path(provider)
             .map_or_else(String::new, |path| path.to_string_lossy().into_owned());
+        let widget_state = Arc::clone(state);
+        tokio::task::spawn_blocking(move || crate::infrastructure::widgets::refresh(&widget_state));
         publisher.publish(
             ev::THEME_DONE,
             json!({

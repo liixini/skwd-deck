@@ -12,13 +12,12 @@ use super::source::VideoSource;
 
 pub fn generate_video_thumbs(
     source: &Path,
-    thumbnail: &Path,
-    small_thumbnail: &Path,
+    thumbs: super::super::Thumbs<'_>,
     seek_seconds: i64,
 ) -> anyhow::Result<ThumbResult> {
     let (image, source_width, source_height, duration_ms) =
         decode_video_thumb_frame(source, seek_seconds)?;
-    let mut result = write_thumbs(image, thumbnail, small_thumbnail)?;
+    let mut result = write_thumbs(image, thumbs)?;
     result.width = source_width;
     result.height = source_height;
     result.duration_ms = duration_ms;

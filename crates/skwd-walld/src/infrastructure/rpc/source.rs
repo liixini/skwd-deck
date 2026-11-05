@@ -3,65 +3,19 @@ use super::common::*;
 
 use crate::infrastructure::events::EventHub;
 
-use super::source_steam::{steam_download, steam_preview, steam_search};
+use super::source_steam::{steam_details, steam_download, steam_preview, steam_search};
 use super::source_wallhaven::{wallhaven_download, wallhaven_preview, wallhaven_search};
 use super::source_youtube::youtube_source_download;
 
 mod lifecycle;
+mod preview_cache;
+pub(super) use lifecycle::{DETAILS_DEADLINE, LIST_DEADLINE, ListLifecycle, list_call, run_list};
 #[cfg(test)]
 use lifecycle::{LIST_CANCELLED, LIST_TIMEOUT, ListCall};
-pub(super) use lifecycle::{LIST_DEADLINE, ListLifecycle, list_call, run_list};
+const DETAILS_VERB: &str = "details";
 
-pub(super) fn handle_remote_preview<F>(
-    req_id: u64,
-    id: &str,
-    url: String,
-    dest: std::path::PathBuf,
-    events: &Arc<EventHub>,
-    policy: F,
-) -> Response
-where
-    F: Fn(&str) -> anyhow::Result<()> + Send + 'static,
-{
-    let key = format!("preview:{}", dest.to_string_lossy());
-    if !dl_inflight_begin(&key) {
-        return Response::ok(req_id, json!({"id": id, "status": "fetching"}));
-    }
-    let Some(reservation) = crate::infrastructure::dlqueue::PREVIEWS.try_reserve() else {
-        dl_inflight_end(&key);
-        return Response::err(req_id, -32000, "preview queue is full; retry shortly");
-    };
-    let events = Arc::clone(events);
-    let id2 = id.to_string();
-    let guard = InflightGuard(key, dl_inflight_end);
-    match thread::Builder::new().name("skwd-preview".into()).spawn(move || {
-        let _guard = guard;
-        let _slot = reservation.acquire(|_| {});
-        if dest.exists() {
-            match crate::infrastructure::http::validate_cached_preview(&dest) {
-                Ok(()) => {
-                    events.publish(
-                        ev::PREVIEW_READY,
-                        json!({"id": id2, "path": dest.to_string_lossy()}),
-                    );
-                    return;
-                }
-                Err(error) => {
-                    log::warn!("discarding unsafe cached preview {}: {error}", dest.display());
-                    let _ = std::fs::remove_file(&dest);
-                }
-            }
-        }
-        match crate::infrastructure::http::fetch_image(&url, &dest, policy) {
-            Ok(()) => events
-                .publish(ev::PREVIEW_READY, json!({"id": id2, "path": dest.to_string_lossy()})),
-            Err(err) => log::warn!("preview fetch {id2} failed: {err}"),
-        }
-    }) {
-        Ok(_) => Response::ok(req_id, json!({"id": id, "status": "fetching"})),
-        Err(error) => Response::err(req_id, -1, format!("failed to start preview fetch: {error}")),
-    }
-}
+mod preview;
+pub(super) use preview::handle_remote_preview;
 
 pub(super) fn require_enabled(
     state: &Arc<WallState>,
@@ -236,7 +190,7 @@ pub(super) fn generic_source_preview(
     }
     let dest = skwd_wall_core::paths::remote_preview(source, &id, sources::ext_from_url(&url));
     let src = source.to_string();
-    handle_remote_preview(req.id, &id, url, dest, events, move |url| {
+    handle_remote_preview(req, source, &id, url, dest, events, move |url| {
         crate::infrastructure::http::require_source(&src, url)
     })
 }
@@ -413,6 +367,7 @@ pub(super) fn source_rpc(ctx: &Ctx, req: &Request) -> Response {
         },
         wall_proto::sources::Provider::Steam => match verb {
             "list" => steam_search(ctx, req),
+            DETAILS_VERB => steam_details(ctx, req),
             "preview" => steam_preview(ctx, req),
             "download" => steam_download(ctx, req),
             _ => Response::err(req.id, -32601, format!("unknown source verb '{verb}'")),

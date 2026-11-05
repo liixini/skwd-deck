@@ -1,6 +1,6 @@
 use crate::Rgb;
 
-fn linearize(channel: u8) -> f32 {
+pub(crate) fn linearize(channel: u8) -> f32 {
     let value = f32::from(channel) / 255.0;
     if value <= 0.040_45 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
 }
@@ -20,8 +20,4 @@ pub fn to_lab(color: Rgb) -> (f32, f32, f32) {
 pub fn chroma_of(color: Rgb) -> f32 {
     let (_, a, b) = to_lab(color);
     a.hypot(b)
-}
-
-pub(super) fn distance_squared(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
-    (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2) + (a.2 - b.2).powi(2)
 }
