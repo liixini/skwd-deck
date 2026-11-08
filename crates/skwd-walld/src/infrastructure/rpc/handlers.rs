@@ -96,15 +96,41 @@ pub(super) fn wall_mirror(state: &WallState, request: &Request) -> Response {
     }
 }
 
-fn independent_paper_output(output: &str) -> anyhow::Result<bool> {
-    use skwd_wall_core::infrastructure::paper::{PaperClient, Startup};
+fn independent_paper_output(state: &WallState, output: &str) -> anyhow::Result<bool> {
+    use skwd_wall_core::infrastructure::paper::{PaperClient, Startup, shares_workers};
 
-    let Some(client) = PaperClient::existing()? else { return Ok(false) };
-    Ok(client
-        .status(Startup::ExistingOnly)?
-        .assignments
-        .iter()
-        .any(|assignment| assignment.ready && assignment.outputs == [output]))
+    let Some(client) = PaperClient::existing()? else {
+        return Ok(state.renderers().independent_playback());
+    };
+    let status = client.status(Startup::ExistingOnly)?;
+    let owned = status.assignments.iter().any(|assignment| {
+        assignment.ready && assignment.outputs.iter().any(|member| member == output)
+    });
+    Ok(if owned {
+        !shares_workers(&status, &[output.to_string()])
+    } else {
+        state.renderers().independent_playback()
+    })
+}
+
+pub(super) fn independent_playback(state: &WallState, outputs: &[String]) -> anyhow::Result<()> {
+    use skwd_wall_core::infrastructure::paper::{PaperClient, Startup, shares_workers};
+
+    let previous = state.renderers().independent_playback();
+    state.renderers().set_independent_playback(true);
+    let result = skwd_wall_core::apply::refresh_renderer_policy_locked(state).and_then(|()| {
+        if let Some(client) = PaperClient::existing()? {
+            let status = client.status(Startup::ExistingOnly)?;
+            if shares_workers(&status, outputs) {
+                anyhow::bail!("Paper outputs still share a renderer");
+            }
+        }
+        Ok(())
+    });
+    if result.is_err() {
+        state.renderers().set_independent_playback(previous);
+    }
+    result
 }
 
 pub(super) fn wall_set_paused(
@@ -121,16 +147,12 @@ pub(super) fn wall_set_paused(
         if output.is_empty() || !known {
             return Response::err(request.id, 1, "unknown wallpaper output");
         }
-        let independent = independent_paper_output(output).unwrap_or_else(|error| {
+        let independent = independent_paper_output(state, output).unwrap_or_else(|error| {
             log::warn!("Paper output status failed: {error:#}");
             false
         });
-        if !independent && !state.renderers().independent_playback() {
-            state.renderers().set_independent_playback(true);
-            if let Err(error) = skwd_wall_core::apply::refresh_renderer_policy_locked(state) {
-                state.renderers().set_independent_playback(false);
-                return Response::err(request.id, 1, error.to_string());
-            }
+        if !independent && let Err(error) = independent_playback(state, &[output.to_string()]) {
+            return Response::err(request.id, 1, error.to_string());
         }
     }
     let _activity = match skwd_wall_core::plasma::activities::sync_current(state) {

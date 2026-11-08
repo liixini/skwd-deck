@@ -38,7 +38,12 @@ fn placed_caps_count() {
 #[test]
 fn palette_reads_roles() {
     assert_eq!(palette(None), FALLBACK);
-    let colors = json!({"surfaceText": "#dbe3e5", "primary": "#64a6d8", "surface": "#080e16"});
+    let colors = json!({
+        "surfaceText": "#dbe3e5",
+        "primary": "#a135ba",
+        "tertiary": "#64a6d8",
+        "surface": "#080e16"
+    });
     let read = palette(Some(&colors));
     assert_eq!(
         (read.text, read.accent, read.shade),

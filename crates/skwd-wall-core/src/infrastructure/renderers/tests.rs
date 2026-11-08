@@ -284,6 +284,65 @@ fn delayed_retirement_targets_pid() {
 }
 
 #[test]
+fn reaper_preserves_replacement() {
+    let supervisor = Arc::new(state());
+    let (exited, old_stdin) = exited_child();
+    supervisor.restore_paper((exited, old_stdin));
+    let (arrived, reached) = std::sync::mpsc::channel();
+    let (resume, proceed) = std::sync::mpsc::channel();
+    let reaper = Arc::clone(&supervisor);
+    let worker = std::thread::spawn(move || {
+        reaper.reap_paper(|| {
+            arrived.send(()).unwrap();
+            let _ = proceed.recv();
+        });
+    });
+    reached.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert!(supervisor.paper_child.try_lock().is_ok());
+
+    let dir = tempfile::tempdir().unwrap();
+    let (replacement, replacement_stdin) = capture_child(&dir.path().join("replacement"));
+    let replacement_pid = replacement.id();
+    let installer = Arc::clone(&supervisor);
+    let install = std::thread::spawn(move || {
+        installer.restore_paper((replacement, replacement_stdin));
+    });
+    resume.send(()).unwrap();
+    worker.join().unwrap();
+    install.join().unwrap();
+
+    assert_eq!(supervisor.paper_pid(), Some(replacement_pid));
+    assert!(lock(&supervisor.paper_stdin).is_some());
+    supervisor.kill_paper();
+    assert!(reaped(replacement_pid));
+}
+
+#[test]
+fn restore_holds_stdin() {
+    let supervisor = Arc::new(state());
+    let (child, stdin) = exited_child();
+    let pid = child.id();
+    let (arrived, reached) = std::sync::mpsc::channel();
+    let (resume, proceed) = std::sync::mpsc::channel();
+    let installer = Arc::clone(&supervisor);
+    let worker = std::thread::spawn(move || {
+        installer.install_paper((child, stdin), || {
+            arrived.send(()).unwrap();
+            let _ = proceed.recv();
+        });
+    });
+    reached.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert!(supervisor.paper_stdin.try_lock().is_err());
+    resume.send(()).unwrap();
+    worker.join().unwrap();
+
+    assert_eq!(supervisor.paper_pid(), Some(pid));
+    assert!(lock(&supervisor.paper_stdin).is_some());
+    supervisor.reap_exited_paper();
+    assert_eq!(supervisor.paper_pid(), None);
+}
+
+#[test]
 fn still_swap_carries_fill() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("still.stdin");

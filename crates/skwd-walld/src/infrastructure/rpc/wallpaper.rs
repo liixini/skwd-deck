@@ -581,7 +581,6 @@ pub(super) fn wall_apply(ctx: &Ctx, req: &Request) -> Response {
 pub(super) fn set_audio(
     state: &Arc<WallState>,
     renderers: &dyn skwd_wall_core::backend::renderers::RendererSupervision,
-    wallpaper: &dyn skwd_wall_core::backend::wallpaper::WallpaperApplication,
     req: &Request,
 ) -> Response {
     state.reload_config();
@@ -602,6 +601,24 @@ pub(super) fn set_audio(
         .and_then(serde_json::Value::as_array)
         .map(|arr| arr.iter().filter_map(|val| val.as_str().map(String::from)).collect());
     let filter = outputs.as_deref();
+    if let Some(outputs) = filter.filter(|outputs| !outputs.is_empty())
+        && !outputs.iter().any(|output| output == apply_fields::ALL_OUTPUTS)
+    {
+        let independent = skwd_wall_core::infrastructure::paper::PaperClient::existing()
+            .and_then(|client| {
+                client.map_or(Ok(false), |client| {
+                    let status = client
+                        .status(skwd_wall_core::infrastructure::paper::Startup::ExistingOnly)?;
+                    Ok(skwd_wall_core::infrastructure::paper::shares_workers(&status, outputs))
+                })
+            })
+            .and_then(|shared| {
+                if shared { super::handlers::independent_playback(state, outputs) } else { Ok(()) }
+            });
+        if let Err(error) = independent {
+            return Response::err(req.id, -1, error.to_string());
+        }
+    }
     renderers.send_audio(filter, mute, volume);
     let cache = state.config().cache_dir();
     if filter.is_some() {
@@ -625,9 +642,6 @@ pub(super) fn set_audio(
             default_volume,
         );
         renderers.send_shared_video_audio(shared_mute, shared_volume);
-    }
-    if let Err(err) = wallpaper.reload_we() {
-        log::warn!("set_audio: WE audio reload failed: {err}");
     }
     if skwd_wall_core::plasma::available()
         && let Err(error) = skwd_wall_core::plasma::apply_current(state)

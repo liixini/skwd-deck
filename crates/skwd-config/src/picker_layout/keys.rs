@@ -174,6 +174,8 @@ pub(super) const PATHS: &[&str] = &[
     filter_bar::SHOW_ORIENT,
     filter_bar::SHOW_DOWNLOAD,
     filter_bar::SHOW_PLAYLISTS,
+    filter_bar::SHOW_COLOUR_STUDIO,
+    filter_bar::SHOW_WIDGETS,
     filter_bar::SHOW_FOLDER,
     filter_bar::SHOW_RANDOM,
     filter_bar::SHOW_RESOLUTION,

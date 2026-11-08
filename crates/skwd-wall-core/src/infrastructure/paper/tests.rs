@@ -15,6 +15,70 @@ fn assignment(outputs: &[&str], source: Source) -> Assignment {
 }
 
 #[test]
+fn shared_pid_scope() {
+    let status = StatusResult {
+        paused: false,
+        policy: None,
+        renderers: vec![],
+        assignments: [("DP-1", 700), ("DP-2", 700), ("DP-3", 701)]
+            .map(|(output, pid)| {
+                AssignmentStatus::from_assignment(
+                    &assignment(&[output], Source::video("/wall/a.mp4")),
+                    1,
+                    Some(pid),
+                    true,
+                )
+            })
+            .into(),
+    };
+    for (outputs, expected) in [
+        (vec!["DP-1"], true),
+        (vec!["DP-1", "DP-2"], false),
+        (vec!["DP-3"], false),
+        (vec!["missing"], false),
+        (vec!["*"], false),
+        (vec![], false),
+    ] {
+        let outputs = outputs.into_iter().map(String::from).collect::<Vec<_>>();
+        assert_eq!(shares_workers(&status, &outputs), expected);
+    }
+}
+
+#[test]
+fn grouped_control_scope() {
+    for outputs in [vec!["DP-1", "DP-2"], vec!["*"]] {
+        let status = StatusResult {
+            paused: false,
+            policy: None,
+            renderers: vec![],
+            assignments: vec![AssignmentStatus::from_assignment(
+                &assignment(&outputs, Source::video("/wall/a.mp4")),
+                1,
+                Some(700),
+                true,
+            )],
+        };
+        assert!(shares_workers(&status, &["DP-1".into()]));
+        assert!(!shares_workers(&status, &["*".into()]));
+    }
+}
+
+#[test]
+fn independent_sharing_policy() {
+    let state = crate::state::WallState::test_new(json!({}));
+    let mut request = ApplyRequest {
+        assignments: vec![assignment(&["DP-1"], Source::video("/wall/a.mp4"))],
+        replace_all: true,
+        policy: Some(renderer_policy(&state.config(), &[])),
+    };
+    sharing(&state, &mut request);
+    assert_eq!(request.policy.as_ref().unwrap().shared_outputs, Some(true));
+    state.renderers().set_independent_playback(true);
+    sharing(&state, &mut request);
+    assert_eq!(request.policy.unwrap().shared_outputs, Some(false));
+}
+
+#[test]
 fn mixed_apply_golden() {
     let request = Request::new(
         7,
@@ -71,6 +135,7 @@ fn transition_policy_golden() {
         duration_ms: Some(700),
     });
     let policy = RendererPolicy {
+        shared_outputs: None,
         transition_fps: None,
         load_timeout_ms: None,
         surface: None,
@@ -499,6 +564,7 @@ fn composition_renderer_policy() {
         "weRender": {"fps": 144, "disableParticles": true}
     }));
     let policy = renderer_policy(&config, &[output("DP-1", 59_997), output("DP-2", 144_001)]);
+    assert_eq!(policy.shared_outputs, Some(true));
     assert_eq!(policy.idle_seconds, Some(17));
     assert_eq!(policy.transitions_enabled, Some(false));
     assert_eq!(policy.output_fps.get("DP-1"), Some(&60));

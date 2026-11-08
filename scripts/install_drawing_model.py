@@ -38,6 +38,9 @@ DRAWING_HOME = "usr/share/skwd-deck/models/drawing"
 DEVICES = ("auto", "cpu", "cuda", "webgpu")
 HOME_ENV = "SKWD_DRAWING_HOME"
 PACK_ENV = "SKWD_TEST_DRAWING_PACK"
+TOKEN_ENV = "SKWD_RELEASE_TOKEN"
+AUTH_HEADER = "Authorization"
+AUTH_SCHEME = "token"
 DOWNLOAD_TIMEOUT = 60
 DOWNLOAD_ATTEMPTS = 2
 PIN_DIGEST = re.compile(r"[0-9a-f]{64}")
@@ -71,8 +74,13 @@ def pinned(path: Path) -> str:
 
 
 def download(archive: Archive, releases: str, partial: Path, expected: str) -> None:
-    print(f"downloading {archive.url(releases)}", file=sys.stderr, flush=True)
-    with urllib.request.urlopen(archive.url(releases), timeout=DOWNLOAD_TIMEOUT) as response:
+    url = archive.url(releases)
+    print(f"downloading {url}", file=sys.stderr, flush=True)
+    request = urllib.request.Request(url)
+    token = os.environ.get(TOKEN_ENV)
+    if token:
+        request.add_unredirected_header(AUTH_HEADER, f"{AUTH_SCHEME} {token}")
+    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response:
         with partial.open("wb") as output:
             shutil.copyfileobj(response, output, CHUNK)
     actual = sha256(partial)

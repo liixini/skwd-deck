@@ -809,3 +809,68 @@ fn native_output_stays_native() {
     assert!(!changed.contains_key("DP-2"));
     assert!(sandbox.outputs_json().get("DP-2").is_none());
 }
+
+fn submit(walld: &Walld, path: &str) -> Client {
+    let mut client = walld.client();
+    client.send("wall.apply", json!({"type":"static","path":path}), 1);
+    let fence = client.call("status", json!({}), 2).expect("status fence");
+    assert_eq!(fence["id"], 2, "{fence}");
+    client
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_burst_coalesces() {
+    let (sandbox, plasma) = plasma_session("plasma-burst");
+    let stills: Vec<String> = [("held", "red"), ("b", "green"), ("c", "blue"), ("last", "white")]
+        .iter()
+        .map(|(name, color)| still(&sandbox, &format!("{name}.png"), color))
+        .collect();
+    let walld = Walld::start(&sandbox);
+    let prior = plasma.scripts().len();
+    plasma.hold_presentations();
+    let mut held = submit(&walld, &stills[0]);
+    assert!(
+        wait_until(|| plasma.scripts().len() > prior, Duration::from_secs(5)),
+        "{}",
+        walld.log_contents()
+    );
+    let mut burst: Vec<Client> = stills[1..].iter().map(|path| submit(&walld, path)).collect();
+    let mut last = burst.pop().expect("last apply");
+    for client in &mut burst {
+        let reply = client.recv(Duration::from_secs(5)).expect("superseded reply");
+        assert_eq!(reply["result"]["superseded"], true, "{reply}");
+    }
+    plasma.release_presentations();
+    for (client, path) in [(&mut held, &stills[0]), (&mut last, &stills[3])] {
+        let reply = client.recv(Duration::from_secs(10)).expect("apply reply");
+        assert_eq!(reply["result"]["applied"], path.as_str(), "{reply}\n{}", walld.log_contents());
+    }
+    let scripts = plasma.scripts();
+    assert_eq!(scripts.len(), prior + 2, "{}", walld.log_contents());
+    assert_eq!(source(&scripts[prior]["DP-1"]), (SourceKind::Static, stills[0].clone()));
+    assert_eq!(source(&scripts[prior + 1]["DP-1"]), (SourceKind::Static, stills[3].clone()));
+    assert!(walld.responsive());
+}
+
+#[test]
+#[ignore = "e2e: cargo test -p skwd-e2e --release -- --ignored"]
+fn plasma_sequential_applies_run() {
+    let (sandbox, plasma) = plasma_session("plasma-sequential");
+    let stills: Vec<String> = [("a", "red"), ("b", "green"), ("c", "blue")]
+        .iter()
+        .map(|(name, color)| still(&sandbox, &format!("{name}.png"), color))
+        .collect();
+    let walld = Walld::start(&sandbox);
+    let prior = plasma.scripts().len();
+    for path in &stills {
+        let mut client = walld.client();
+        let reply = call(&walld, &mut client, "wall.apply", json!({"type":"static","path":path}));
+        assert_eq!(reply["result"]["applied"], path.as_str(), "{reply}");
+    }
+    let applied: Vec<(SourceKind, String)> =
+        plasma.scripts()[prior..].iter().map(|script| source(&script["DP-1"])).collect();
+    let expected: Vec<(SourceKind, String)> =
+        stills.iter().map(|path| (SourceKind::Static, path.clone())).collect();
+    assert_eq!(applied, expected, "{}", walld.log_contents());
+}

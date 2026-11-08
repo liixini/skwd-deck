@@ -305,3 +305,20 @@ pub fn paper_socket_path() -> PathBuf {
 pub fn socket_at(runtime: &Path) -> PathBuf {
     runtime.join(SOCKET_DIRECTORY).join(SOCKET_FILE)
 }
+
+pub fn shares_workers(status: &StatusResult, outputs: &[String]) -> bool {
+    let all = wall_proto::apply_fields::ALL_OUTPUTS;
+    if outputs.is_empty() || outputs.iter().any(|output| output == all) {
+        return false;
+    }
+    status.assignments.iter().any(|assignment| {
+        assignment.ready
+            && assignment.pid.is_some()
+            && (assignment.outputs.iter().any(|output| output == all)
+                || (assignment.outputs.iter().any(|output| outputs.contains(output))
+                    && status.assignments.iter().any(|other| {
+                        other.pid == assignment.pid
+                            && other.outputs.iter().any(|output| !outputs.contains(output))
+                    })))
+    })
+}

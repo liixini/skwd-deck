@@ -19,7 +19,7 @@ pub struct FakePlugin {
 
 fn present(root: &Path, line: &Value) {
     if let Some(id) = line["entry"]["presentationId"].as_str() {
-        let _ = std::fs::write(root.join(format!("{id}.json")), r#"{"state":"ready"}"#);
+        let _ = std::fs::write(root.join(format!("{id}.json")), crate::plasma::PRESENTATION_READY);
     }
 }
 
@@ -42,7 +42,7 @@ impl FakePlugin {
         let reader = stream.try_clone().expect("window-state reader");
         let lines = Arc::new(Mutex::new(Vec::new()));
         let received = Arc::clone(&lines);
-        let root = sandbox.root.join("runtime/skwd-paper-plasma");
+        let root = sandbox.presentations();
         let reader = std::thread::spawn(move || {
             for line in BufReader::new(reader).lines() {
                 let Some(value) = line.ok().and_then(|line| serde_json::from_str(&line).ok())

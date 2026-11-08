@@ -155,6 +155,7 @@ pub(super) fn plan(
     else {
         anyhow::bail!("Paper policy refresh has no desired assignments");
     };
+    crate::infrastructure::paper::sharing(state, &mut request);
     for assignment in &mut request.assignments {
         if let Some(previous) = status.assignments.iter().find(|previous| {
             previous.source.path == assignment.source.path

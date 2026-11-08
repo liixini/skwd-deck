@@ -1,10 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use wall_proto::{LightPhase, OutdoorMatch, OutdoorSeason, WallpaperItem};
 
 const DIRECTORY: &str = "outdoors";
 const THUMB_EXTENSION: &str = "thumb.jpg";
+const WEBP_EXTENSION: &str = "thumb.webp";
 const SOURCES_FILE: &str = "sources.json";
 const SOURCES: &[u8] = include_bytes!("../../assets/outdoors/sources.json");
 const MANIFEST: &str = include_str!("../../assets/outdoors/manifest.json");
@@ -42,11 +43,21 @@ impl Entry {
             && (self.weather.is_empty() || self.weather.contains(&context.category))
     }
 
+    fn source(&self, cache: &str) -> PathBuf {
+        PathBuf::from(cache).join(DIRECTORY).join(&self.file)
+    }
+
     pub(crate) fn item(&self, cache: &str) -> WallpaperItem {
-        let path = PathBuf::from(cache).join(DIRECTORY).join(&self.file);
-        let thumb = path.with_extension(THUMB_EXTENSION);
-        let thumb =
-            if thumb.is_file() { thumb } else { path.clone() }.to_string_lossy().into_owned();
+        let path = self.source(cache);
+        let jpeg = path.with_extension(THUMB_EXTENSION);
+        let thumb = if prepared(&path) {
+            path.with_extension(WEBP_EXTENSION)
+        } else if jpeg.is_file() {
+            jpeg
+        } else {
+            path.clone()
+        };
+        let thumb = thumb.to_string_lossy().into_owned();
         let path = path.to_string_lossy().into_owned();
         WallpaperItem {
             key: Some(format!("{}:{path}", wall_proto::kind::STATIC)),
@@ -91,6 +102,35 @@ pub(crate) fn items(config: &skwd_wall_core::config::Config) -> Vec<WallpaperIte
         .collect()
 }
 
+fn prepared(source: &Path) -> bool {
+    let Some(stamp) = modified(source) else {
+        return false;
+    };
+    let thumb = source.with_extension(WEBP_EXTENSION);
+    let (near, far) = skwd_wall_core::paths::thumbnail_blocks(&thumb.to_string_lossy());
+    [thumb, near, far].iter().all(|path| modified(path).is_some_and(|time| time >= stamp))
+}
+
+fn modified(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+}
+
+pub(crate) fn missing_thumbs(cache: &str) -> Vec<(PathBuf, PathBuf)> {
+    entries(cache)
+        .unwrap_or_default()
+        .iter()
+        .map(|entry| entry.source(cache))
+        .filter(|source| !prepared(source))
+        .map(|source| {
+            let thumb = source.with_extension(WEBP_EXTENSION);
+            (source, thumb)
+        })
+        .collect()
+}
+
 pub(crate) fn credits(cache: &str) -> String {
     PathBuf::from(cache).join(DIRECTORY).join(SOURCES_FILE).to_string_lossy().into_owned()
 }
+
+#[cfg(test)]
+mod tests;

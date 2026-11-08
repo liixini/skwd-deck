@@ -44,6 +44,7 @@ pub fn same(left: &Path, right: &Path) -> bool {
 // Scanners and watchers must never surface anything below this as a wallpaper.
 pub const INTERNAL_LIBRARY_DIR: &str = ".skwd-wall-v2";
 pub const SCAN_BIN: &str = "skwd-wall-scan";
+pub const SCAN_THUMBS_FLAG: &str = "--thumbs";
 pub const DRAW_BIN: &str = "skwd-wall-draw";
 const PAPER_BIN_NAME: &str = "skwd-paper-v2";
 

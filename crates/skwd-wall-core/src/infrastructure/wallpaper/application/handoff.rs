@@ -151,6 +151,7 @@ fn plan(
     else {
         anyhow::bail!("Paper composition has no assignments");
     };
+    let cohort = sharing_cohort(state, &apply, status, &selected);
     apply.replace_all = status
         .assignments
         .iter()
@@ -173,11 +174,13 @@ fn plan(
     if !apply.replace_all {
         apply
             .assignments
-            .retain(|assignment| assignment.outputs.iter().any(|output| selected.contains(output)));
+            .retain(|assignment| assignment.outputs.iter().any(|output| cohort.contains(output)));
     }
     for assignment in &mut apply.assignments {
-        if transitioning && assignment.outputs.iter().any(|output| selected.contains(output)) {
-            if request.kind == wall_proto::kind::VIDEO {
+        if transitioning && assignment.outputs.iter().any(|output| cohort.contains(output)) {
+            if request.kind == wall_proto::kind::VIDEO
+                && assignment.outputs.iter().any(|output| selected.contains(output))
+            {
                 assignment.mute = assignment
                     .outputs
                     .first()
@@ -197,6 +200,51 @@ fn plan(
     }
     apply.validate().map_err(anyhow::Error::msg)?;
     Ok((apply, candidate, selected))
+}
+
+fn sharing_cohort(
+    state: &WallState,
+    apply: &ApplyRequest,
+    status: &StatusResult,
+    selected: &[String],
+) -> Vec<String> {
+    let mut cohort = selected.to_vec();
+    if status.policy.as_ref().and_then(|policy| policy.shared_outputs) != Some(true)
+        || crate::apply::independent_playback(state)
+    {
+        return cohort;
+    }
+    let config = state.config();
+    for assignment in &apply.assignments {
+        let matching = apply.assignments.iter().any(|target| {
+            target.outputs.iter().any(|output| selected.contains(output))
+                && target.source == assignment.source
+                && target.fill_mode == assignment.fill_mode
+                && target.layer == assignment.layer
+        });
+        if !matching {
+            continue;
+        }
+        for output in &assignment.outputs {
+            if config.display().output_locked(output) || cohort.contains(output) {
+                continue;
+            }
+            let owned = status.assignments.iter().any(|owned| {
+                owned.ready
+                    && owned.pid.is_some()
+                    && owned.outputs.contains(output)
+                    && owned.source == assignment.source
+                    && owned.fill_mode == assignment.fill_mode
+                    && owned.background == assignment.background
+                    && owned.layer == assignment.layer
+                    && owned.system_audio == assignment.system_audio
+            });
+            if owned {
+                cohort.push(output.clone());
+            }
+        }
+    }
+    cohort
 }
 
 fn effective_audio_state(

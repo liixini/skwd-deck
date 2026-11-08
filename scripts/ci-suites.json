@@ -23,7 +23,7 @@
     },
     {
       "id": "deck.tests",
-      "expectedSkips": 125,
+      "expectedSkips": 127,
       "coverage": "workspace tests; process cases, including Wallpaper Engine transition requests, bug report collection and configurable wallpaper load readiness, run separately, with manual media benchmarks, a live compositor check, the real Fish terminal test, the private-audio check, the Drawing model-pack check and the release-daemon playback socket checks excluded"
     },
     {

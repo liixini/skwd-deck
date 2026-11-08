@@ -191,8 +191,8 @@ fn apply(socket: &Path, mut args: Vec<String>) -> Result<(), CliError> {
     if let Some(volume) = volume.and_then(|argument| argument.parse::<u32>().ok()) {
         params["volume"] = json!(volume.min(100));
     }
-    call(socket, rpc::WALL_APPLY, &params)?;
-    println!("applied: {target}");
+    let response = call(socket, rpc::WALL_APPLY, &params)?;
+    println!("{}", apply_outcome(&response, &target));
     Ok(())
 }
 
@@ -215,9 +215,16 @@ fn random(socket: &Path, mut args: Vec<String>) -> Result<(), CliError> {
     let item = candidates[index];
     let params = apply_params_for_item(item, &config.wallpaper_dir(), &config.video_dir(), &output)
         .ok_or_else(|| CliError::NotFound("cannot resolve random wallpaper".into()))?;
-    call(socket, rpc::WALL_APPLY, &params)?;
-    println!("applied: {}", item.name.as_deref().unwrap_or("?"));
+    let response = call(socket, rpc::WALL_APPLY, &params)?;
+    println!("{}", apply_outcome(&response, item.name.as_deref().unwrap_or("?")));
     Ok(())
+}
+
+pub(super) fn apply_outcome(response: &Value, name: &str) -> String {
+    if response[wall_proto::apply_fields::SUPERSEDED] == true {
+        return format!("superseded by a newer apply: {name}");
+    }
+    format!("applied: {name}")
 }
 
 fn profile(args: &[String]) -> Result<(), CliError> {

@@ -2,6 +2,9 @@ use std::io::{BufRead, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
+const CAPTURE_ERROR_SUFFIX: &str = ".error";
+const CAPTURE_REFUSAL: &str = "fake renderer has no frames";
+
 fn ppid() -> Option<u32> {
     let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
     stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()
@@ -29,6 +32,15 @@ fn is_swap_command(line: &str) -> bool {
     })
 }
 
+fn refuse_capture(line: &str) {
+    let Ok(command) = serde_json::from_str::<paper_control::PaperCommand>(line) else {
+        return;
+    };
+    if let Some(path) = command.snapshot.map(|snapshot| snapshot.path).or(command.freeze) {
+        let _ = std::fs::write(format!("{path}{CAPTURE_ERROR_SUFFIX}"), CAPTURE_REFUSAL);
+    }
+}
+
 fn acknowledge_swaps(pid: u32, held: bool) {
     let delay = std::env::var("SKWD_FAKE_SWAP_DELAY_MS")
         .ok()
@@ -38,6 +50,7 @@ fn acknowledge_swaps(pid: u32, held: bool) {
         .and_then(|path| std::fs::File::options().create(true).append(true).open(path).ok());
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { return };
+        refuse_capture(&line);
         let value: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
         if value["reveal"] == true {
             signal_ready(pid);

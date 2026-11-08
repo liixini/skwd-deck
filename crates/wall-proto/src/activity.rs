@@ -26,6 +26,7 @@ pub mod apply_fields {
     pub const MUTE: &str = "mute";
     pub const VOLUME: &str = "volume";
     pub const APPLIED: &str = "applied";
+    pub const SUPERSEDED: &str = "superseded";
     pub const VISIBLE: &str = "visible";
     pub const REQUEST_ID: &str = "request_id";
     pub const OK: &str = "ok";

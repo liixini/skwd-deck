@@ -17,7 +17,7 @@ use crate::infrastructure::stats::Stats;
 const WRITER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_SOURCE_TASKS_PER_CONNECTION: usize = 8;
-const INLINE_METHODS: [&str; 5] = [
+pub(super) const INLINE_METHODS: [&str; 5] = [
     rpc::PAPER_READY,
     rpc::PAPER_FAILED,
     rpc::SUBSCRIBE,

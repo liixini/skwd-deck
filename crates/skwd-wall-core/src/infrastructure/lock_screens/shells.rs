@@ -21,7 +21,6 @@ const LOCKSCREEN: &str = "lockscreen";
 const WALLPAPER: &str = "wallpaper";
 const BLURRED_DESKTOP: &str = "blurred_desktop";
 const FIRST_SUPPORTED_VERSION: i64 = 0;
-const LAST_SUPPORTED_VERSION: i64 = 14;
 const RECEIPT_VERSION: u32 = 1;
 
 #[derive(Deserialize, Serialize)]
@@ -216,9 +215,9 @@ fn noctalia_at(config: &Value, image: Option<&Path>, root: &Path, path: &Path) -
     let text = original_text.unwrap_or_default();
     let mut settings: DocumentMut = text.parse().context("Invalid Noctalia settings.toml")?;
     ensure!(
-        settings.get(CONFIG_VERSION).is_none_or(|version| version.as_integer().is_some_and(
-            |version| { (FIRST_SUPPORTED_VERSION..=LAST_SUPPORTED_VERSION).contains(&version) }
-        )),
+        settings.get(CONFIG_VERSION).is_none_or(|version| version
+            .as_integer()
+            .is_some_and(|version| version >= FIRST_SUPPORTED_VERSION)),
         "Unsupported Noctalia settings schema"
     );
     let section = settings.get(LOCKSCREEN);

@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,6 +6,8 @@ use std::process::Command;
 use crate::paths::target_bin;
 
 const CPU_SCANNER: (&str, &str) = ("SKWD_SCAN_GPU", "0");
+const LEGACY_RENDERERS: [&str; 2] = ["SKWD_WALL_PAPER_STILL", "SKWD_WALL_PAPER_VK"];
+const MISSING_PAPER: &str = "missing-paper";
 
 pub struct Sandbox {
     pub root: PathBuf,
@@ -37,6 +39,10 @@ impl Sandbox {
 
     pub fn socket(&self) -> PathBuf {
         self.root.join("runtime/skwd-wall-v2/wall.sock")
+    }
+
+    pub fn presentations(&self) -> PathBuf {
+        self.root.join("runtime/skwd-paper-plasma")
     }
 
     pub fn config_path(&self) -> PathBuf {
@@ -74,8 +80,24 @@ impl Sandbox {
     }
 
     pub fn write_config(&self, cfg: &Value) {
-        std::fs::write(self.config_path(), serde_json::to_string_pretty(cfg).expect("config json"))
-            .expect("write config");
+        let mut config = cfg.clone();
+        if self.extra_env.iter().any(|(key, _)| LEGACY_RENDERERS.contains(&key.as_str())) {
+            let (section, field) =
+                skwd_config::keys::paths::PAPER_BIN.split_once('.').expect("paper binary key");
+            if let Some(root) = config.as_object_mut() {
+                let paths = root.entry(section).or_insert_with(|| Value::Object(Map::default()));
+                if let Some(paths) = paths.as_object_mut() {
+                    paths.entry(field).or_insert_with(|| {
+                        Value::String(self.root.join(MISSING_PAPER).to_string_lossy().into_owned())
+                    });
+                }
+            }
+        }
+        std::fs::write(
+            self.config_path(),
+            serde_json::to_string_pretty(&config).expect("config json"),
+        )
+        .expect("write config");
     }
 
     pub fn env(&self) -> Vec<(String, String)> {
@@ -89,7 +111,7 @@ impl Sandbox {
             ("SKWD_PAPER_V2_SOCKET".into(), dir("runtime/paper.sock")),
             (
                 skwd_wall_core::plasma::PRESENTATION_DIRECTORY_ENV.into(),
-                dir("runtime/skwd-paper-plasma"),
+                self.presentations().to_string_lossy().into_owned(),
             ),
             ("SKWD_WALLD_NO_REAP".into(), "1".into()),
             ("SKWD_WALL_LOG".into(), "info".into()),
@@ -100,6 +122,8 @@ impl Sandbox {
     }
 
     pub fn walld_command(&self) -> Command {
+        let scanner = target_bin(skwd_wall_core::paths::SCAN_BIN);
+        assert!(scanner.is_file(), "scanner not built: {}", scanner.display());
         let mut cmd = Command::new(target_bin("skwd-walld"));
         for stale in ["SKWD_WALL_CONFIG", "SKWD_WALL_V2_CONFIG", "SKWD_WALL_V2_CACHE"] {
             cmd.env_remove(stale);
@@ -149,28 +173,4 @@ fn set_mode(path: &Path, mode: u32) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{CPU_SCANNER, Sandbox};
-
-    #[test]
-    fn isolates_ipc() {
-        let sandbox = Sandbox::new("runtime-env");
-        let environment = sandbox.env();
-        let paper = sandbox.root.join("runtime/paper.sock").to_string_lossy().into_owned();
-        let plasma = sandbox.root.join("runtime/skwd-paper-plasma").to_string_lossy().into_owned();
-        assert!(!environment.iter().any(|(key, _)| key == "XDG_RUNTIME_DIR"));
-        assert!(
-            environment
-                .iter()
-                .any(|(key, value)| { key == CPU_SCANNER.0 && value == CPU_SCANNER.1 })
-        );
-        assert!(
-            environment
-                .iter()
-                .any(|(key, path)| { key == "SKWD_PAPER_V2_SOCKET" && path == &paper })
-        );
-        assert!(environment.iter().any(|(key, path)| {
-            key == skwd_wall_core::plasma::PRESENTATION_DIRECTORY_ENV && path == &plasma
-        }));
-    }
-}
+mod tests;

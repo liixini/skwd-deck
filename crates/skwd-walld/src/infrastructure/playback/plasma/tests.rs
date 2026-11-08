@@ -286,3 +286,57 @@ fn subscription_frames_are_strict() {
         matches!(Frame::decode(observation.to_string().as_bytes()), Ok(Frame::Observation(value)) if value.focused == Some(true))
     );
 }
+
+#[tokio::test]
+async fn widgets_replay_and_clear() {
+    skwd_wall_core::plasma::channel::set_notifier(assignments_published);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("window-state.sock");
+    let (sender, receiver) = watch::channel(Snapshot::default());
+    let (_policies, policy_receiver) =
+        watch::channel(HashMap::from([("WIDGET-DP-1".to_owned(), false)]));
+    let task_path = path.clone();
+    let task = tokio::spawn(async move { serve(&task_path, sender, policy_receiver).await });
+    let mut scene: paper_control::WidgetScene = serde_json::from_value(serde_json::json!({
+        "widgets": [{"face": {"kind": "clock", "style": "aperture"},
+            "pin": {"anchor": [0.5, 0.5], "offset": [0, 0]}, "output": "WIDGET-DP-1"}],
+        "palette": {"text": [1, 2, 3], "accent": [4, 5, 6], "shade": [7, 8, 9]},
+        "labels": {"days": vec![""; 7], "day_names": vec![""; 7],
+            "months": vec![""; 12], "month_names": vec![""; 12]}
+    }))
+    .unwrap();
+    skwd_wall_core::plasma::channel::publish_widgets(scene.clone());
+    for _ in 0..2 {
+        let mut stream = connect(&path).await;
+        observe(&mut stream, "WIDGET-DP-1", false, false).await;
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        tokio::time::timeout(Duration::from_secs(3), stream.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        let frame: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(frame["widgets"], serde_json::to_value(&scene).unwrap());
+    }
+    let mut stream = connect(&path).await;
+    observe(&mut stream, "WIDGET-DP-1", false, false).await;
+    let mut stream = BufReader::new(stream);
+    policy_line(&mut stream).await;
+    scene.widgets.clear();
+    skwd_wall_core::plasma::channel::publish_widgets(scene.clone());
+    let mut line = String::new();
+    tokio::time::timeout(Duration::from_secs(3), stream.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    let frame: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(frame["widgets"], serde_json::to_value(&scene).unwrap());
+    skwd_wall_core::plasma::channel::publish_widgets(scene);
+    line.clear();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), stream.read_line(&mut line)).await.is_err()
+    );
+    drop(stream);
+    drop(receiver);
+    task.await.unwrap().unwrap();
+}

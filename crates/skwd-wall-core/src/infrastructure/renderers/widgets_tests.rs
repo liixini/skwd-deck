@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, Weak};
 
 use paper_control::{
-    ClockStyle, Depth, Face, Labels, Palette, Pin, StillCommand, Widget, WidgetScene,
+    ClockStyle, Depth, Face, Labels, Palette, PaperCommand, Pin, StillCommand, Widget, WidgetScene,
 };
 
 use super::{RendererSupervisor, WidgetSource};
@@ -198,4 +198,57 @@ fn scene_lock_order() {
     let (mut child, stdin) = supervisor.take_base_still().unwrap();
     drop(stdin);
     let _ = child.wait();
+}
+
+#[test]
+fn video_widgets_follow_changes() {
+    for key in ["DP-1", "DP-1,DP-2", "multi", "*"] {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("video.stdin");
+        let (supervisor, source) = supervised(vec![clock()]);
+        let (child, stdin) = capture_child(&out);
+        supervisor.set_video_paper(key, child, stdin);
+        supervisor.greet_dynamic(Some(key));
+        source.widgets.lock().unwrap()[0].pin.offset = [12.0, 0.0];
+        supervisor.refresh_widgets().unwrap();
+        supervisor.refresh_widgets().unwrap();
+        supervisor.widget_editor(true);
+        supervisor.refresh_widgets().unwrap();
+        let (mut child, stdin) = supervisor.take_video_paper(key).unwrap();
+        drop(stdin);
+        let _ = child.wait();
+        let commands: Vec<PaperCommand> = std::fs::read_to_string(&out)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let scenes: Vec<_> =
+            commands.iter().filter_map(|command| command.widgets.as_ref()).collect();
+        assert_eq!(scenes.len(), 3);
+        assert_eq!(scenes[0].widgets, [clock()]);
+        assert_eq!(scenes[1].widgets[0].pin.offset, [12.0, 0.0]);
+        assert!(scenes[2].widgets.is_empty());
+    }
+}
+
+#[test]
+fn transition_widgets_follow_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("transition.stdin");
+    let (supervisor, source) = supervised(vec![clock()]);
+    let (child, stdin) = capture_child(&out);
+    supervisor.restore_paper((child, stdin));
+    supervisor.greet_dynamic(None);
+    source.widgets.lock().unwrap().clear();
+    supervisor.refresh_widgets().unwrap();
+    let (mut child, stdin) = supervisor.take_paper().unwrap();
+    drop(stdin);
+    let _ = child.wait();
+    let commands: Vec<PaperCommand> = std::fs::read_to_string(&out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(commands[0].widgets.as_ref().unwrap().widgets, [clock()]);
+    assert!(commands[1].widgets.as_ref().unwrap().widgets.is_empty());
 }

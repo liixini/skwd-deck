@@ -93,6 +93,12 @@ pub fn stationary_wallpaper(config: &Config) -> bool {
     config.niri_stationary_active()
 }
 
+pub(crate) fn sharing(state: &crate::state::WallState, request: &mut ApplyRequest) {
+    if let Some(policy) = &mut request.policy {
+        policy.shared_outputs = Some(!crate::apply::independent_playback(state));
+    }
+}
+
 pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolicy {
     let performance_mode = config.renderer().performance_mode();
     let configured_fps = config.renderer().we_fps();
@@ -112,6 +118,7 @@ pub fn renderer_policy(config: &Config, outputs: &[OutputInfo]) -> RendererPolic
         .map(|output| (output.name.clone(), output_policy_fps(configured_fps, output.refresh_mhz)))
         .collect();
     RendererPolicy {
+        shared_outputs: Some(true),
         load_timeout_ms: Some(config.renderer().load_timeout().as_millis() as u64),
         surface: stationary_wallpaper(config).then(|| {
             Box::new(paper_control::SurfacePolicy {

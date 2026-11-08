@@ -151,7 +151,7 @@ fn main() {
         saved[&target][output] = entry.clone();
     }
     std::fs::write(dir.join(ASSIGNMENTS_FILE), saved.to_string()).unwrap();
-    if !current {
+    if !current || dir.join(skwd_e2e::HOLD_FILE).exists() {
         return;
     }
     let Ok(root) = skwd_wall_core::plasma::presentation_directory() else {

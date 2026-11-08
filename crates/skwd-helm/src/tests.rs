@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use super::args::{first_positional, take_flag, take_option as take_opt};
-use super::commands::run as run_verb;
+use super::commands::{apply_outcome, run as run_verb};
 use super::entry::VERBS;
 use super::error::CliError as CliErr;
 use super::look::{asset_present, sanitize_name};
@@ -345,6 +345,15 @@ fn apply_unknown_key() {
     let first = daemon.reqs.recv().expect("list requested");
     assert_eq!(first["method"], "wall.list");
     assert!(matches!(daemon.reqs.try_recv(), Err(mpsc::TryRecvError::Empty)));
+}
+
+#[test]
+fn apply_reports_superseded() {
+    assert_eq!(
+        apply_outcome(&json!({"applied": "", "superseded": true}), "b.png"),
+        "superseded by a newer apply: b.png"
+    );
+    assert_eq!(apply_outcome(&json!({"applied": "/w/a.png"}), "a.png"), "applied: a.png");
 }
 
 #[test]

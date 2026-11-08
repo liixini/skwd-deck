@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -176,6 +177,33 @@ class InstallDrawingModelTests(unittest.TestCase):
                     len(calls), failures + 1 if succeeds else install_drawing_model.DOWNLOAD_ATTEMPTS
                 )
                 self.assertEqual(list(cache.glob("*.partial")), [])
+
+    def test_sends_token_header(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pin, _ = fixture(root)
+            archive = install_drawing_model.Archive(
+                "skwd-drawing-model", "1.0.0", pin, "drawing", root / "target"
+            )
+            releases = (root / "releases").as_uri()
+            real = urllib.request.urlopen
+            for token, expected in (("secret", "token secret"), (None, None)):
+                headers = []
+
+                def spy(request, timeout):
+                    headers.append(request.get_header(install_drawing_model.AUTH_HEADER))
+                    self.assertNotIn(install_drawing_model.AUTH_HEADER, request.headers)
+                    return real(request, timeout=timeout)
+
+                with mock.patch.dict(os.environ):
+                    os.environ.pop(install_drawing_model.TOKEN_ENV, None)
+                    if token:
+                        os.environ[install_drawing_model.TOKEN_ENV] = token
+                    with mock.patch.object(install_drawing_model.urllib.request, "urlopen", spy):
+                        install_drawing_model.download(
+                            archive, releases, root / "partial", install_drawing_model.pinned(pin)
+                        )
+                self.assertEqual(headers, [expected])
 
 
 if __name__ == "__main__":

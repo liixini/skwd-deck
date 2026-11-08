@@ -406,6 +406,16 @@ impl RendererLaunchSpec {
         let pid = child.id();
         let stdin = child.stdin.take();
         let detached = target.install(state, child, stdin);
+        match &target {
+            RendererTarget::SharedVideo => {
+                state.renderers().greet_dynamic(Some(wall_proto::apply_fields::ALL_OUTPUTS));
+            }
+            RendererTarget::VideoPaper { output, .. } => {
+                state.renderers().greet_dynamic(Some(output));
+            }
+            RendererTarget::Paper => state.renderers().greet_dynamic(None),
+            _ => {}
+        }
         if let RendererTarget::OutputStill(output) = &target {
             super::still_policy::record_still_background(state, output);
         }

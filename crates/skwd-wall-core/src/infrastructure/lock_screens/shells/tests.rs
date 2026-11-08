@@ -236,14 +236,14 @@ fn noctalia_rejects_schema() {
     let path = dir.path().join("state/settings.toml");
     let root = dir.path().join("receipts");
     let image = dir.path().join("first.png");
-    for text in ["{broken", "config_version = 15\n"] {
+    for text in ["{broken", "config_version = -1\n", "config_version = 'one'\n"] {
         setup(&path, text);
         assert!(noctalia_at(&noctalia_config(), Some(&image), &root, &path).is_err());
         assert!(!root.join(NOCTALIA_RECEIPT).exists());
     }
     setup(&path, "config_version = 1\n[lockscreen]\nblurred_desktop = 'bad'\n");
     assert!(noctalia_at(&noctalia_config(), Some(&image), &root, &path).is_err());
-    setup(&path, "config_version = 14\n[lockscreen]\nblurred_desktop = true\n");
+    setup(&path, "config_version = 16\n[lockscreen]\nblurred_desktop = true\n");
     noctalia_at(&noctalia_config(), Some(&image), &root, &path).unwrap();
     let result: DocumentMut = std::fs::read_to_string(&path).unwrap().parse().unwrap();
     assert_eq!(result[LOCKSCREEN][BLURRED_DESKTOP].as_bool(), Some(false));

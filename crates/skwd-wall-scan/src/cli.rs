@@ -13,6 +13,7 @@ pub(crate) enum Command {
     RemoteThumb { source: String },
     Preview { key: String, video: String },
     Tall { source: String, thumb: String, video: bool },
+    Thumbs { jobs: Vec<(PathBuf, PathBuf)> },
     Stream { video: String },
     StreamPersist,
     Paths { changed: Vec<PathBuf>, request_id: Option<String> },
@@ -93,6 +94,12 @@ pub(crate) fn parse(arguments: &[String]) -> Command {
             source: arguments.get(position + 1).cloned().unwrap_or_default(),
             thumb: arguments.get(position + 2).cloned().unwrap_or_default(),
             video: has(arguments, "--video"),
+        };
+    }
+    if let Some(position) = position(arguments, skwd_wall_core::paths::SCAN_THUMBS_FLAG) {
+        let values = path_values(arguments, position + 1);
+        return Command::Thumbs {
+            jobs: values.chunks_exact(2).map(|pair| (pair[0].clone(), pair[1].clone())).collect(),
         };
     }
     if let Some(position) = position(arguments, "--stream") {

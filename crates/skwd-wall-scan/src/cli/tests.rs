@@ -119,3 +119,19 @@ fn studio_area() {
     assert!(area("0.1,0.2,0.6").is_none());
     assert!(area("a,b,c,d").is_none());
 }
+
+#[test]
+fn thumbs_pairs() {
+    let Command::Thumbs { jobs } =
+        parse(&arguments(&["scan", "--thumbs", "/c/a.jpg", "/c/a.webp", "/c/b.jpg", "/c/b.webp"]))
+    else {
+        panic!("expected thumbs command");
+    };
+    assert_eq!(
+        jobs,
+        [
+            (PathBuf::from("/c/a.jpg"), PathBuf::from("/c/a.webp")),
+            (PathBuf::from("/c/b.jpg"), PathBuf::from("/c/b.webp")),
+        ]
+    );
+}

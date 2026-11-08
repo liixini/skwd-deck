@@ -766,6 +766,8 @@ const STATIC_SPECS: &[SettingSpec] = &[
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_ORIENT, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_DOWNLOAD, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_PLAYLISTS, true),
+    SettingSpec::boolean(crate::keys::filter_bar::SHOW_COLOUR_STUDIO, false),
+    SettingSpec::boolean(crate::keys::filter_bar::SHOW_WIDGETS, false),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_RANDOM, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_RESOLUTION, true),
     SettingSpec::boolean(crate::keys::filter_bar::SHOW_SWATCH, true),
@@ -1229,6 +1231,9 @@ pub fn value_kind(path: &str) -> Option<ValueKind> {
 }
 
 pub fn boolean_default(path: &str) -> Option<bool> {
+    if let Some(SettingSpec { default: DefaultValue::Boolean(value), .. }) = find(path) {
+        return Some(*value);
+    }
     if path.starts_with("display.outputLocks.") {
         return Some(false);
     }

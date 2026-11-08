@@ -15,6 +15,7 @@ fn colour_config_changes_keep_renderer_policy_and_rpc_responsive() {
         "theme": {"policy": "fixed", "mode": "dark", "staticTheme": "nord"}
     });
     sandbox.write_config(&config);
+    config = serde_json::from_slice(&std::fs::read(sandbox.config_path()).unwrap()).unwrap();
     let walld = Walld::start(&sandbox);
     let mut client = walld.client();
     let applied = client.call("wall.apply", json!({"type": "static", "path": image}), 1).unwrap();

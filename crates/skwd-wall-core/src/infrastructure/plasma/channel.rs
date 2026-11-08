@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 struct Channel {
     subscribers: HashMap<String, usize>,
     entries: Map<String, Value>,
+    widgets: Option<paper_control::WidgetScene>,
 }
 
 static CHANNEL: OnceLock<Mutex<Channel>> = OnceLock::new();
@@ -59,6 +60,21 @@ pub fn publish(entries: &Map<String, Value>) {
         for (output, entry) in entries {
             channel.entries.insert(output.clone(), entry.clone());
         }
+    }
+    notify();
+}
+
+pub fn widgets() -> Option<paper_control::WidgetScene> {
+    crate::lock(channel()).widgets.clone()
+}
+
+pub fn publish_widgets(scene: paper_control::WidgetScene) {
+    {
+        let mut channel = crate::lock(channel());
+        if channel.widgets.as_ref() == Some(&scene) {
+            return;
+        }
+        channel.widgets = Some(scene);
     }
     notify();
 }

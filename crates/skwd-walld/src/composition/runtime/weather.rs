@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -759,6 +760,7 @@ pub(crate) fn start(ctx: Ctx) {
                 {
                     refresh(&task, false, false);
                 }
+                prepare_outdoor_thumbs(&task.state);
                 enabled
             })
             .await
@@ -775,6 +777,28 @@ pub(crate) fn start(ctx: Ctx) {
             }
         }
     });
+}
+
+fn prepare_outdoor_thumbs(state: &Arc<WallState>) {
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    let cache = {
+        let config = state.config();
+        if config.weather_source() != WeatherSource::Outdoors {
+            return;
+        }
+        config.cache_dir()
+    };
+    let jobs = crate::infrastructure::outdoors::missing_thumbs(&cache);
+    if jobs.is_empty() || REQUESTED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let mut arguments = vec![skwd_wall_core::paths::SCAN_THUMBS_FLAG.to_owned()];
+    for (source, thumb) in &jobs {
+        arguments.push(source.to_string_lossy().into_owned());
+        arguments.push(thumb.to_string_lossy().into_owned());
+    }
+    let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    crate::infrastructure::processes::spawn_scan(state, false, &arguments, None, None);
 }
 
 #[cfg(test)]

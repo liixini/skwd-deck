@@ -22,7 +22,7 @@ use crate::infrastructure::rpc::{HANDLER_FAILED, INVALID_PARAMS};
 
 const OUTPUT_SEPARATOR: char = ',';
 const TEXT_ROLE: &str = "surfaceText";
-const ACCENT_ROLE: &str = "primary";
+const ACCENT_ROLE: &str = "tertiary";
 const SHADE_ROLE: &str = "surface";
 const FALLBACK: Palette =
     Palette { text: [236, 235, 231], accent: [157, 184, 255], shade: [18, 19, 22] };
@@ -108,6 +108,7 @@ pub(crate) fn install(ctx: &Ctx) {
     let (wanted, missing) = channel();
     let desktop = Desktop { state: Arc::downgrade(&ctx.state), outlines: Mutex::default(), wanted };
     ctx.state.renderers().set_widget_source(Arc::new(desktop));
+    refresh(&ctx.state);
     let ctx = ctx.clone();
     std::thread::spawn(move || {
         for source in missing {

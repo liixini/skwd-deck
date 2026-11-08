@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use super::connection::ResponseSink;
-use wall_proto::{Request, Response};
+use wall_proto::{Request, Response, apply_fields};
 
 use crate::composition::context::Ctx;
 
@@ -60,7 +60,7 @@ impl QueueState {
             }
             earlier.reply(&Response::ok(
                 earlier.request.id,
-                serde_json::json!({"applied": "", "superseded": true}),
+                serde_json::json!({(apply_fields::APPLIED): "", (apply_fields::SUPERSEDED): true}),
             ));
             false
         });

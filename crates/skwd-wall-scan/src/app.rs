@@ -155,6 +155,16 @@ async fn report_jobs(
             tokio::task::spawn_blocking(move || media_jobs::generate_tall(&source, &thumb, video))
                 .await?;
         }
+        Command::Thumbs { jobs } => {
+            let policy = jobs
+                .iter()
+                .fold(storage_policy(&state.config()), |policy, (source, _)| policy.read(source));
+            sandbox::restrict_decode(&policy)?;
+            tokio::task::spawn_blocking(move || {
+                media_jobs::generate_thumbs(&jobs, &encoder.encoder);
+            })
+            .await?;
+        }
         Command::Preview { key, video } => {
             sandbox::restrict_decode(&storage_policy(&state.config()).read(&video))?;
             let worker = reporter.clone();
@@ -275,6 +285,7 @@ fn command_deadline(command: &Command) -> std::time::Duration {
         Command::SceneThumbnail { .. }
         | Command::Preview { .. }
         | Command::Tall { .. }
+        | Command::Thumbs { .. }
         | Command::Stream { .. }
         | Command::StreamPersist
         | Command::Theme { .. }

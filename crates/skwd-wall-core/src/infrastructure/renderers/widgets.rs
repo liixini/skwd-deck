@@ -3,7 +3,7 @@ use std::process::ChildStdin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use paper_control::{StillCommand, WidgetScene};
+use paper_control::{PaperCommand, StillCommand, WidgetScene};
 
 use super::RendererSupervisor;
 use crate::infrastructure::paper::PaperClient;
@@ -75,6 +75,21 @@ impl RendererSupervisor {
         }
     }
 
+    pub(crate) fn greet_dynamic(&self, output: Option<&str>) {
+        let Some(scene) = self.placed_scene(None) else { return };
+        let line = video_scene_line(scene);
+        let sent = match output {
+            None => lock(&self.paper_stdin).as_mut().map(|stdin| send(stdin, &line)),
+            Some(output) => lock(&self.video_papers)
+                .get_mut(output)
+                .and_then(|(_, stdin)| stdin.as_mut())
+                .map(|stdin| send(stdin, &line)),
+        };
+        if let Some(Err(error)) = sent {
+            log::warn!("widgets: dynamic renderer did not take the scene: {error}");
+        }
+    }
+
     pub fn refresh_widgets(&self) -> anyhow::Result<()> {
         let mut last = lock(&self.widget_sync);
         let Some(scene) = self.widget_scene(None) else {
@@ -84,6 +99,7 @@ impl RendererSupervisor {
         if last.as_ref() == Some(&scene) || (bare && scene.widgets.is_empty()) {
             return Ok(());
         }
+        crate::plasma::channel::publish_widgets(scene.clone());
         let mut failure = None;
         match PaperClient::existing() {
             Ok(Some(client)) => failure = client.set_widgets(scene.clone()).err(),
@@ -91,6 +107,12 @@ impl RendererSupervisor {
             Err(error) => log::debug!("widgets: paper socket unreadable: {error:#}"),
         }
         let line = scene_line(scene.clone());
+        let video_line = video_scene_line(scene.clone());
+        if let Some(stdin) = lock(&self.paper_stdin).as_mut()
+            && let Err(error) = send(stdin, &video_line)
+        {
+            failure = Some(error.into());
+        }
         if let Some(stdin) = lock(&self.still_stdin).as_mut()
             && let Err(error) = send(stdin, &line)
         {
@@ -99,6 +121,11 @@ impl RendererSupervisor {
         for stdin in lock(&self.output_stills).values_mut().filter_map(|(_, stdin)| stdin.as_mut())
         {
             if let Err(error) = send(stdin, &line) {
+                failure = Some(error.into());
+            }
+        }
+        for stdin in lock(&self.video_papers).values_mut().filter_map(|(_, stdin)| stdin.as_mut()) {
+            if let Err(error) = send(stdin, &video_line) {
                 failure = Some(error.into());
             }
         }
@@ -119,6 +146,12 @@ pub(super) fn paper_widgets(client: &PaperClient, scene: WidgetScene) {
 fn scene_line(scene: WidgetScene) -> String {
     let mut command = StillCommand::new("");
     command.widgets = Some(scene);
+    command.line()
+}
+
+fn video_scene_line(scene: WidgetScene) -> String {
+    let mut command = PaperCommand::audio(None, None);
+    command.widgets = Some(Box::new(scene));
     command.line()
 }
 

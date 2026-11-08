@@ -52,6 +52,43 @@ fn request() -> ApplyOutputRequest<'static> {
 }
 
 #[test]
+fn sharing_cohort_rejoins() {
+    for (shared, locked, independent, count) in [
+        (true, false, false, 2),
+        (false, false, false, 1),
+        (true, true, false, 1),
+        (true, false, true, 1),
+    ] {
+        let state = WallState::test_new(json!({
+            "display": {"outputLocks": {"DP-2": locked}}
+        }));
+        state.renderers().set_independent_playback(independent);
+        let outputs = ["DP-1", "DP-2"]
+            .map(|name| crate::outputs::OutputInfo { name: name.into(), ..Default::default() });
+        let previous = json!({
+            "DP-1": crate::audio::entry("static", "/wall/old.png", "", true, 50),
+            "DP-2": crate::audio::entry("static", "/wall/new.png", "", true, 50)
+        });
+        let mut status = status();
+        status.policy = Some(paper_control::RendererPolicy {
+            shared_outputs: Some(shared),
+            ..Default::default()
+        });
+        let mut second = status.assignments[0].clone();
+        second.outputs = vec!["DP-2".into()];
+        second.source = Source::static_file("/wall/new.png");
+        second.pid = Some(124);
+        status.assignments.push(second);
+        let (apply, candidate, selected) =
+            plan(&state, &outputs, &previous, &status, request(), &[]).unwrap();
+        assert_eq!(selected, ["DP-1"]);
+        assert_eq!(apply.assignments.len(), count);
+        assert!(apply.assignments.iter().all(|assignment| assignment.transition.is_some()));
+        assert_eq!(candidate["DP-2"], previous["DP-2"]);
+    }
+}
+
+#[test]
 fn retains_other_output() {
     let state = WallState::test_new(json!({}));
     let outputs = ["DP-1", "DP-2"]

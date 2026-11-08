@@ -15,6 +15,7 @@ const LEGACY_TABLE: &str = "CREATE TABLE tinier_convert(
 fn legacy_rows(state: &skwd_wall_core::WallState, rows: &[(&Path, &Path)]) {
     state
         .with_db(|connection| {
+            skwd_wall_core::db::drop_tinier_converts(connection)?;
             connection.execute_batch(LEGACY_TABLE)?;
             for (source, dest) in rows {
                 connection.execute(
@@ -122,6 +123,7 @@ fn keeps_foreign_files() {
 fn absent_table_noop() {
     let (_guard, root) = testenv::lock();
     let (state, _, _) = testenv::harness();
+    state.with_db(skwd_wall_core::db::drop_tinier_converts).unwrap();
     let dest = artifact(&root, "legacy/video-opt/orphan.ivf");
     assert!(table_gone(&state));
     retire_tinier(&state);

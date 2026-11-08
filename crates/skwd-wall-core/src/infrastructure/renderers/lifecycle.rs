@@ -139,6 +139,10 @@ impl RendererSupervisor {
     }
 
     pub fn restore_paper(&self, renderer: HeldRenderer) {
+        self.install_paper(renderer, || {});
+    }
+
+    pub(super) fn install_paper(&self, renderer: HeldRenderer, first_locked: impl FnOnce()) {
         let (child, mut stdin) = renderer;
         let pause = lock(&self.pause);
         if pause.effective() {
@@ -149,17 +153,26 @@ impl RendererSupervisor {
             }
         }
         self.duck_installed(stdin.as_mut());
-        *lock(&self.paper_stdin) = stdin;
-        *lock(&self.paper_child) = Some(child);
+        let mut installed_stdin = lock(&self.paper_stdin);
+        first_locked();
+        let mut installed_child = lock(&self.paper_child);
+        *installed_stdin = stdin;
+        *installed_child = Some(child);
     }
 
     pub fn reap_exited_paper(&self) {
+        self.reap_paper(|| {});
+    }
+
+    pub(super) fn reap_paper(&self, first_locked: impl FnOnce()) {
+        let mut stdin = lock(&self.paper_stdin);
+        first_locked();
         let mut child = lock(&self.paper_child);
         if let Some(process) = child.as_mut()
             && !matches!(process.try_wait(), Ok(None))
         {
             *child = None;
-            *lock(&self.paper_stdin) = None;
+            *stdin = None;
         }
     }
 

@@ -34,14 +34,20 @@ fn sandboxed_full_scan_reads_library_and_writes_deck_state() {
     let root = std::env::temp_dir().join(format!("skwd-sandboxed-scan-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let wallpaper = root.join("wallpaper");
+    let workshop = root.join("workshop");
     let config = root.join("config/skwd-wall-v2");
     std::fs::create_dir_all(&wallpaper).unwrap();
+    std::fs::create_dir_all(&workshop).unwrap();
     std::fs::create_dir_all(&config).unwrap();
     std::fs::create_dir_all(root.join("runtime")).unwrap();
     write_bmp(&wallpaper.join("ok.bmp"));
     std::fs::write(
         config.join("config.json"),
-        format!(r#"{{"paths":{{"wallpaper":"{}"}}}}"#, wallpaper.display()),
+        format!(
+            r#"{{"paths":{{"wallpaper":"{}","steamWorkshop":"{}"}}}}"#,
+            wallpaper.display(),
+            workshop.display()
+        ),
     )
     .unwrap();
 
@@ -70,15 +76,21 @@ fn fallback_completes_cache() {
     let gpu = tempfile::Builder::new().prefix("gpu-").tempdir_in(&root).unwrap();
     for root in [cpu.path(), gpu.path()] {
         let wallpaper = root.join("wallpaper");
+        let workshop = root.join("workshop");
         let config = root.join("config/skwd-wall-v2");
         std::fs::create_dir_all(&wallpaper).unwrap();
+        std::fs::create_dir_all(&workshop).unwrap();
         std::fs::create_dir_all(&config).unwrap();
         for name in IMAGE_NAMES {
             write_bmp(&wallpaper.join(name));
         }
         std::fs::write(
             config.join("config.json"),
-            format!(r#"{{"paths":{{"wallpaper":"{}"}}}}"#, wallpaper.display()),
+            format!(
+                r#"{{"paths":{{"wallpaper":"{}","steamWorkshop":"{}"}}}}"#,
+                wallpaper.display(),
+                workshop.display()
+            ),
         )
         .unwrap();
     }

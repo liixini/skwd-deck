@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use crate::sandbox::Sandbox;
 
 pub const EVALUATE_SCRIPT: &str = "org.kde.PlasmaShell.evaluateScript";
+pub const HOLD_FILE: &str = "hold";
+pub const PRESENTATION_READY: &str = r#"{"state":"ready"}"#;
 
 pub fn script_assignments(script: &str) -> Option<Map<String, Value>> {
     let payload = script.strip_prefix("var a=")?.split_once(";var encoded=")?.0;
@@ -12,6 +14,7 @@ pub fn script_assignments(script: &str) -> Option<Map<String, Value>> {
 
 pub struct FakePlasma {
     dir: PathBuf,
+    presentations: PathBuf,
     _wayland: crate::FakeWayland,
 }
 
@@ -37,7 +40,7 @@ impl FakePlasma {
         sandbox.set_env("XDG_CURRENT_DESKTOP", "KDE");
         sandbox.set_env("SKWD_E2E_PLASMA", &dir.to_string_lossy());
         let wayland = crate::FakeWayland::start(sandbox, &["org_kde_plasma_shell"]);
-        Self { dir, _wayland: wayland }
+        Self { dir, presentations: sandbox.presentations(), _wayland: wayland }
     }
 
     pub fn calls(&self) -> Vec<Vec<String>> {
@@ -62,5 +65,20 @@ impl FakePlasma {
 
     pub fn confirm_presentations(&self) {
         let _ = std::fs::remove_file(self.dir.join("failure"));
+    }
+
+    pub fn hold_presentations(&self) {
+        std::fs::write(self.dir.join(HOLD_FILE), b"").expect("presentation hold");
+    }
+
+    pub fn release_presentations(&self) {
+        std::fs::remove_file(self.dir.join(HOLD_FILE)).expect("presentation hold");
+        let held: Vec<PathBuf> = std::fs::read_dir(&self.presentations)
+            .expect("presentation dir")
+            .map(|entry| entry.expect("presentation entry").path())
+            .collect();
+        for path in held {
+            std::fs::write(path, PRESENTATION_READY).expect("presentation ready");
+        }
     }
 }

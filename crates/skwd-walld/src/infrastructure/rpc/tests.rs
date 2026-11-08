@@ -112,6 +112,27 @@ fn status_answers_ok() {
 }
 
 #[test]
+fn subscribe_skips_reap() {
+    let (_guard, _root) = testenv::lock();
+    let runtime = crate::infrastructure::platform::build_runtime().unwrap();
+    let _runtime = runtime.enter();
+    testenv::write_config(json!({}));
+    let (state, events, stats) = harness();
+    let mut child = std::process::Command::new("true").spawn().unwrap();
+    let pid = child.id();
+    child.wait().unwrap();
+    state.renderers().restore_paper((child, None));
+
+    let response = call(&state, &events, &stats, wall_proto::rpc::SUBSCRIBE, json!({}));
+    assert!(response.error.is_none());
+    assert_eq!(state.renderers().paper_pid(), Some(pid));
+
+    let response = call(&state, &events, &stats, wall_proto::rpc::STATUS, json!({}));
+    assert!(response.error.is_none());
+    assert_eq!(state.renderers().paper_pid(), None);
+}
+
+#[test]
 fn status_includes_runtime_renderer_registry() {
     use skwd_wall_core::infrastructure::paper::{
         CapabilitiesResult, RendererCapability, RendererDiscovery, SourceKind,

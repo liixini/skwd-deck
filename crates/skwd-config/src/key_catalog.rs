@@ -163,6 +163,8 @@ pub mod keys {
         pub const SHOW_ORIENT: &str = "filterBar.show.orient";
         pub const SHOW_DOWNLOAD: &str = "filterBar.show.download";
         pub const SHOW_PLAYLISTS: &str = "filterBar.show.playlists";
+        pub const SHOW_COLOUR_STUDIO: &str = "filterBar.show.colourStudio";
+        pub const SHOW_WIDGETS: &str = "filterBar.show.widgets";
         pub const SHOW_FOLDER: &str = "filterBar.show.folder";
         pub const SHOW_RANDOM: &str = "filterBar.show.random";
         pub const SHOW_RESOLUTION: &str = "filterBar.show.resolution";

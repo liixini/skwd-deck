@@ -1,11 +1,13 @@
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::json;
 use skwd_wall_core::{media, paths};
 use wall_proto::rpc;
 
 use crate::reporter::Reporter;
+
+const SMALL_EXTENSION: &str = "sm.webp";
 
 pub(crate) fn stream_persist() {
     set_preview_process_name();
@@ -61,6 +63,20 @@ pub(crate) fn generate_preview(key: &str, video: &str, reporter: &Reporter) {
             );
         }
         Err(error) => log::warn!("preview failed for {key}: {error}"),
+    }
+}
+
+pub(crate) fn generate_thumbs(
+    jobs: &[(PathBuf, PathBuf)],
+    encoder: &skwd_wall_core::blocks::Encoder,
+) {
+    for (source, thumb) in jobs {
+        let small = thumb.with_extension(SMALL_EXTENSION);
+        let thumbs = media::Thumbs { full: thumb, small: &small, encoder };
+        match media::generate_image_thumbs(source, thumbs) {
+            Ok(_) => log::info!("thumb: {}", thumb.display()),
+            Err(error) => log::warn!("thumb failed for {}: {error:#}", source.display()),
+        }
     }
 }
 

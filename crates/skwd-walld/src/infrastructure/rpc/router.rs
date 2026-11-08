@@ -31,7 +31,9 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
     let Ctx { state, events, workers, stats, .. } = ctx;
     stats.rpc(&req.method);
     log::debug!("rpc {} id={}", req.method, req.id);
-    ctx.renderers.reap_exited();
+    if !super::connection::INLINE_METHODS.contains(&req.method.as_str()) {
+        ctx.renderers.reap_exited();
+    }
     if req.method == rpc::PAPER_READY {
         signal_ready(ctx.renderers.as_ref(), req);
         return Response::ok(req.id, json!({"ok": true}));
@@ -269,9 +271,7 @@ pub(crate) fn dispatch(ctx: &Ctx, req: &Request) -> Response {
                 .collect();
             Response::ok(req.id, json!({ "outputs": outputs }))
         }
-        rpc::WALL_SET_AUDIO => {
-            set_audio(state, ctx.renderers.as_ref(), ctx.wallpaper.as_ref(), req)
-        }
+        rpc::WALL_SET_AUDIO => set_audio(state, ctx.renderers.as_ref(), req),
         rpc::WALL_MONITORS => monitors(req),
         rpc::WALL_FORGET_MONITOR => forget_monitor(state, req),
         rpc::WALL_ROTATION_WAKE => {

@@ -32,6 +32,7 @@ jobs:
       TEMP: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
       RUNNER_TEMP: /var/tmp/skwd-verify-tmp-${{ github.run_id }}-${{ github.run_attempt }}
       SKWD_MODEL_CACHE: /var/tmp/skwd-deck-models-${{ github.run_id }}-${{ github.run_attempt }}
+      SKWD_MODEL_RELEASES: ${{ github.server_url }}/liixini
     defaults:
       run:
         working-directory: skwd-deck
@@ -61,7 +62,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-paper
-          ref: 37eb0bc1925c969c867c1db099e0d30b3f868822
+          ref: 4f485c2c6307f2dfe30a095e85f4ff9cbd6bf057
           path: skwd-paper
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -70,7 +71,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-lens
-          ref: 16d60523a70a1a2cb2406f6b6a26de583a8d6164
+          ref: 0cb154b063ce6ff022864edeedd3bd06b3468876
           path: skwd-lens
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -79,7 +80,7 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: liixini/skwd-verify
-          ref: 062e18087cfcb6045a42afbc8c3e0909f5c30ed1
+          ref: caa56c33c26917d9e9713ce8cee35ec2b0697e97
           path: skwd-verify
           token: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
           persist-credentials: false
@@ -183,7 +184,9 @@ jobs:
         id: drawing-pack
         if: steps.release.outcome == 'success'
         continue-on-error: true
-        run: python3 scripts/install_drawing_model.py "$SKWD_MODEL_CACHE" "$TMPDIR/drawing-install" --device cpu >> "$GITHUB_ENV"
+        env:
+          SKWD_RELEASE_TOKEN: ${{ secrets.SKWD_SUITE_READ_TOKEN }}
+        run: python3 scripts/install_drawing_model.py "$SKWD_MODEL_CACHE" "$TMPDIR/drawing-install" --releases "$SKWD_MODEL_RELEASES" --device cpu >> "$GITHUB_ENV"
 
       - name: Drawing E2E
         if: steps.tests.outcome == 'success' && steps.release.outcome == 'success' && steps.drawing-pack.outcome == 'success'

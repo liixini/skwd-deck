@@ -439,6 +439,16 @@ fn optional_filter_controls_have_enabled_boolean_defaults() {
 }
 
 #[test]
+fn studio_controls_start_hidden() {
+    for path in [crate::keys::filter_bar::SHOW_COLOUR_STUDIO, crate::keys::filter_bar::SHOW_WIDGETS]
+    {
+        assert_eq!(find(path).map(|spec| spec.kind), Some(ValueKind::Boolean));
+        assert_eq!(boolean_default(path), Some(false));
+        assert_eq!(normalize_value(path, &json!(true)), Some(json!(true)));
+    }
+}
+
+#[test]
 fn weather_mapping_defaults() {
     use crate::keys::weather;
     assert_eq!(boolean_default(weather::ENABLED), Some(false));

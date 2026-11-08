@@ -490,6 +490,7 @@ fn plan(
     if let Some(policy) = &mut apply.policy {
         policy.transition_fps = policy.transition_fps.filter(|fps| *fps > 0);
     }
+    crate::infrastructure::paper::sharing(state, &mut apply);
     Ok((apply, candidate, selected))
 }
 

@@ -12,6 +12,8 @@ use tokio::task::JoinSet;
 
 use super::fullscreen::Snapshot;
 
+const WIDGETS_KEY: &str = "widgets";
+
 static POLICY: OnceLock<watch::Sender<HashMap<String, bool>>> = OnceLock::new();
 static PUBLISHED: OnceLock<watch::Sender<u64>> = OnceLock::new();
 
@@ -177,6 +179,7 @@ async fn receive(
     let mut previous = None;
     let mut subscription = None;
     let mut delivered = None;
+    let mut drawn = None;
 
     let mut bytes = Vec::new();
     loop {
@@ -207,7 +210,9 @@ async fn receive(
             .filter(|_| !scoped)
             .and_then(|_| skwd_wall_core::plasma::channel::entry(&output))
             .filter(|entry| delivered.as_ref() != Some(entry));
-        if previous == Some(paused) && entry.is_none() {
+        let widgets = skwd_wall_core::plasma::channel::widgets()
+            .filter(|scene| drawn.as_ref() != Some(scene));
+        if previous == Some(paused) && entry.is_none() && widgets.is_none() {
             continue;
         }
         let capabilities = if scoped { vec!["focused"] } else { vec!["assignments", "focused"] };
@@ -216,11 +221,17 @@ async fn receive(
         if let Some(entry) = &entry {
             line["entry"] = entry.clone();
         }
+        if let Some(scene) = &widgets {
+            line[WIDGETS_KEY] = serde_json::to_value(scene)?;
+        }
         let mut text = line.to_string();
         text.push('\n');
         tokio::time::timeout(std::time::Duration::from_secs(2), write.write_all(text.as_bytes()))
             .await??;
         previous = Some(paused);
+        if widgets.is_some() {
+            drawn = widgets;
+        }
         if entry.is_some() {
             delivered = entry;
         }
