@@ -28,7 +28,7 @@ ureq = { version = "2", default-features = false, features = ["tls", "gzip"] }
 dhat = { workspace = true, optional = true }
 
 [dev-dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
 tokio = { version = "1", default-features = false, features = ["macros"] }
 
 [features]

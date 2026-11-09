@@ -62,7 +62,8 @@ fn typed_settings_defaults() {
     assert_eq!(read_text(&json!({}), crate::keys::noctalia::THEME_MODE).as_deref(), Some("follow"));
     assert_eq!(setting::general::MAX_FPS.read(&json!({})), 120.0);
     assert_eq!(setting::general::MAX_FPS.read(&json!({"general": {"maxFps": 90}})), 90.0);
-    assert!(setting::general::FILTER_BAR_ALWAYS_VISIBLE.read(&json!({})));
+    assert_eq!(setting::general::FILTER_BAR_VISIBILITY.read(&json!({})), "always");
+    assert!(!setting::general::SEARCH_ALWAYS_VISIBLE.read(&json!({})));
     assert_eq!(setting::filter_bar::VISUAL_STYLE.read(&json!({})), "match");
     assert_eq!(setting::filter_bar::ORIENTATION.read(&json!({})), "horizontal");
     assert_eq!(setting::selector::SLICE_STAGE_X.read(&json!({})), 0.0);

@@ -1,3 +1,8 @@
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
+use crate::FilterBarVisibility;
 use crate::keys::{filter_bar, general, selector};
 
 pub(super) const PATHS: &[&str] = &[
@@ -185,7 +190,7 @@ pub(super) const PATHS: &[&str] = &[
     filter_bar::SHOW_THEME,
     filter_bar::STICKY,
     filter_bar::VISUAL_STYLE,
-    general::FILTER_BAR_ALWAYS_VISIBLE,
+    general::FILTER_BAR_VISIBILITY,
     "filterBar.show.type.all",
     "filterBar.show.type.static",
     "filterBar.show.type.video",
@@ -213,6 +218,15 @@ fn corners() -> impl Iterator<Item = &'static str> {
     crate::corners::ALL
         .iter()
         .flat_map(|keys| [keys.style, keys.same, keys.all].into_iter().chain(keys.values))
+}
+
+pub(super) fn retire(values: &mut BTreeMap<String, Option<Value>>) {
+    let Some(old) = values.remove(general::LEGACY_FILTER_BAR_ALWAYS_VISIBLE) else { return };
+    let pinned = old.as_ref().and_then(Value::as_bool).unwrap_or(true);
+    let mode = if pinned { FilterBarVisibility::Always } else { FilterBarVisibility::Hover };
+    values
+        .entry(general::FILTER_BAR_VISIBILITY.to_owned())
+        .or_insert_with(|| Some(Value::String(mode.key().to_owned())));
 }
 
 pub(super) fn paths() -> impl Iterator<Item = &'static str> {

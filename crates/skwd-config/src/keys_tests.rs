@@ -46,10 +46,13 @@ fn wire_strings_pinned() {
     assert_eq!(keys::filter_bar::SWATCH_POSITION_X, "filterBar.swatchPositionX");
     assert_eq!(keys::filter_bar::SWATCH_POSITION_Y, "filterBar.swatchPositionY");
     assert_eq!(keys::filter_bar::STICKY, "filterBar.sticky");
+    assert_eq!(keys::filter_bar::PREFIX, "filterBar.");
     assert_eq!(keys::filter_bar::VISUAL_STYLE, "filterBar.visualStyle");
     assert_eq!(keys::general::CLOSE_ON_SELECTION, "general.closeOnSelection");
     assert_eq!(keys::general::HOVER_SELECTS, "general.hoverSelects");
-    assert_eq!(keys::general::FILTER_BAR_ALWAYS_VISIBLE, "general.filterBarAlwaysVisible");
+    assert_eq!(keys::general::FILTER_BAR_VISIBILITY, "general.filterBarVisibility");
+    assert_eq!(keys::general::LEGACY_FILTER_BAR_ALWAYS_VISIBLE, "general.filterBarAlwaysVisible");
+    assert_eq!(keys::general::SEARCH_ALWAYS_VISIBLE, "general.searchAlwaysVisible");
     assert_eq!(keys::general::LOCALE, "general.locale");
     assert_eq!(keys::general::MAX_FPS, "general.maxFps");
     assert_eq!(keys::general::NOTIFY_ON_WALLPAPER_CHANGE, "general.notifyOnWallpaperChange");

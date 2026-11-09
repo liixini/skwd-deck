@@ -256,8 +256,10 @@ pub mod setting {
             Setting::boolean(keys::general::APPLY_ON_PICKER_MONITOR, false);
         pub const CLOSE_ON_SELECTION: Setting<bool> =
             Setting::boolean(keys::general::CLOSE_ON_SELECTION, false);
-        pub const FILTER_BAR_ALWAYS_VISIBLE: Setting<bool> =
-            Setting::boolean(keys::general::FILTER_BAR_ALWAYS_VISIBLE, true);
+        pub const FILTER_BAR_VISIBILITY: Setting<String> = Setting::text(
+            keys::general::FILTER_BAR_VISIBILITY,
+            crate::FilterBarVisibility::Always.key(),
+        );
         pub const HOVER_SELECTS: Setting<bool> =
             Setting::boolean(keys::general::HOVER_SELECTS, true);
         pub const MAX_FPS: Setting<f64> =
@@ -266,6 +268,8 @@ pub mod setting {
             Setting::bounded_number(keys::general::OPEN_FADE_FROM, 0.0, 0.0, 100.0);
         pub const RANDOM_INTERVAL: Setting<f64> =
             Setting::number(keys::general::RANDOM_INTERVAL, 300.0);
+        pub const SEARCH_ALWAYS_VISIBLE: Setting<bool> =
+            Setting::boolean(keys::general::SEARCH_ALWAYS_VISIBLE, false);
         pub const SETTINGS_STYLE: Setting<String> =
             Setting::text(keys::general::SETTINGS_STYLE, "editorial");
         pub const UI_SCALE: Setting<f64> =
@@ -624,11 +628,12 @@ const STATIC_SPECS: &[SettingSpec] = &[
     setting::filter_bar::VISUAL_STYLE.spec(),
     setting::general::APPLY_ON_PICKER_MONITOR.spec(),
     setting::general::CLOSE_ON_SELECTION.spec(),
-    setting::general::FILTER_BAR_ALWAYS_VISIBLE.spec(),
+    setting::general::FILTER_BAR_VISIBILITY.spec(),
     setting::general::HOVER_SELECTS.spec(),
     setting::general::MAX_FPS.spec(),
     setting::general::OPEN_FADE_FROM.spec(),
     setting::general::RANDOM_INTERVAL.spec(),
+    setting::general::SEARCH_ALWAYS_VISIBLE.spec(),
     setting::general::SETTINGS_STYLE.spec(),
     setting::general::UI_SCALE.spec(),
     setting::motion::REDUCED.spec(),

@@ -21,7 +21,7 @@ skwd-config = { path = "../skwd-config" }
 skwd-log = { path = "../skwd-log", features = ["alloc", "clock", "proc"] }
 skwd-palette = { path = "../skwd-palette", optional = true }
 log = "0.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }

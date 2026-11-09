@@ -133,6 +133,7 @@ pub mod keys {
         pub const WALLHAVEN: &str = "features.wallhaven";
     }
     pub mod filter_bar {
+        pub const PREFIX: &str = "filterBar.";
         pub const BUTTON_ORDER: &str = "filterBar.buttonOrder";
         pub const HIDDEN_BUTTONS: &str = "filterBar.hiddenButtons";
         pub const DEFAULT_FOLDER: &str = "filterBar.defaultFolder";
@@ -178,7 +179,8 @@ pub mod keys {
     pub mod general {
         pub const APPLY_ON_PICKER_MONITOR: &str = "general.applyOnPickerMonitor";
         pub const CLOSE_ON_SELECTION: &str = "general.closeOnSelection";
-        pub const FILTER_BAR_ALWAYS_VISIBLE: &str = "general.filterBarAlwaysVisible";
+        pub const FILTER_BAR_VISIBILITY: &str = "general.filterBarVisibility";
+        pub const LEGACY_FILTER_BAR_ALWAYS_VISIBLE: &str = "general.filterBarAlwaysVisible";
         pub const HOVER_SELECTS: &str = "general.hoverSelects";
         pub const LOCALE: &str = "general.locale";
         pub const LANGUAGE: &str = "general.language";
@@ -191,6 +193,7 @@ pub mod keys {
         pub const RANDOM_INCLUDE_WE: &str = "general.randomIncludeWE";
         pub const RANDOM_INTERVAL: &str = "general.randomInterval";
         pub const RANDOM_ROTATE: &str = "general.randomRotate";
+        pub const SEARCH_ALWAYS_VISIBLE: &str = "general.searchAlwaysVisible";
         pub const SETTINGS_STYLE: &str = "general.settingsStyle";
         pub const UI_SCALE: &str = "general.uiScale";
         pub const WEATHER_MATCH: &str = "general.weatherMatch";

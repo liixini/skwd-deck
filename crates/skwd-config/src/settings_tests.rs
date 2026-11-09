@@ -246,3 +246,31 @@ fn legacy_backdrop_blur_splits_per_wallpaper_type() {
     assert!(!canonicalize_backdrop_blur(&mut json!({})));
     assert!(!canonicalize_backdrop_blur(&mut json!({"niri": {"backdropDim": 10}})));
 }
+
+#[test]
+fn bar_visibility_migrates() {
+    for (root, mode) in [
+        (json!({}), FilterBarVisibility::Always),
+        (json!({"general": {"filterBarAlwaysVisible": true}}), FilterBarVisibility::Always),
+        (json!({"general": {"filterBarAlwaysVisible": false}}), FilterBarVisibility::Hover),
+        (
+            json!({"general": {"filterBarAlwaysVisible": false, "filterBarVisibility": "hidden"}}),
+            FilterBarVisibility::Hidden,
+        ),
+        (
+            json!({"general": {"filterBarAlwaysVisible": true, "filterBarVisibility": "hover"}}),
+            FilterBarVisibility::Hover,
+        ),
+        (json!({"general": {"filterBarVisibility": "sometimes"}}), FilterBarVisibility::Always),
+    ] {
+        assert_eq!(filter_bar_visibility(&root), mode, "{root}");
+    }
+}
+
+#[test]
+fn bar_keys_round_trip() {
+    for mode in FilterBarVisibility::ALL {
+        assert_eq!(FilterBarVisibility::from_key(mode.key()), Some(mode));
+    }
+    assert_eq!(FilterBarVisibility::Hover.key(), "hover");
+}

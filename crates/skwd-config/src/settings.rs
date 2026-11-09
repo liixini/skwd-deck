@@ -5,6 +5,9 @@ use crate::{bool_true_unless_false, str_at};
 
 const DRAWING_MEMORY_MIN_MIB: u64 = 512;
 const DRAWING_MEMORY_MAX_MIB: u64 = 64 * 1024;
+const FILTER_BAR_ALWAYS: &str = "always";
+const FILTER_BAR_HOVER: &str = "hover";
+const FILTER_BAR_HIDDEN: &str = "hidden";
 
 pub fn wallpaper_dir(root: &Value) -> String {
     let dir = str_at(root, crate::keys::paths::WALLPAPER, "");
@@ -46,6 +49,42 @@ pub fn canonicalize_paper_engine(root: &mut Value) -> bool {
     }
     *engine = Value::String("skwd-paper".to_string());
     true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterBarVisibility {
+    Always,
+    Hover,
+    Hidden,
+}
+
+impl FilterBarVisibility {
+    pub const ALL: [Self; 3] = [Self::Always, Self::Hover, Self::Hidden];
+
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Always => FILTER_BAR_ALWAYS,
+            Self::Hover => FILTER_BAR_HOVER,
+            Self::Hidden => FILTER_BAR_HIDDEN,
+        }
+    }
+
+    pub fn from_key(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.key() == value)
+    }
+}
+
+pub fn filter_bar_visibility(root: &Value) -> FilterBarVisibility {
+    let chosen = crate::value::get(root, crate::keys::general::FILTER_BAR_VISIBILITY)
+        .and_then(Value::as_str)
+        .and_then(FilterBarVisibility::from_key);
+    chosen.unwrap_or_else(|| {
+        if bool_true_unless_false(root, crate::keys::general::LEGACY_FILTER_BAR_ALWAYS_VISIBLE) {
+            FilterBarVisibility::Always
+        } else {
+            FilterBarVisibility::Hover
+        }
+    })
 }
 
 pub fn locale(root: &Value) -> String {

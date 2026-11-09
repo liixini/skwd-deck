@@ -182,12 +182,13 @@ impl Layouts {
         let Some(value) = document.get(ROOT) else {
             return Ok(Self { version: VERSION, outputs: BTreeMap::new() });
         };
-        let layouts: Self =
+        let mut layouts: Self =
             serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
         if layouts.version != VERSION {
             return Err(UNSUPPORTED_LAYOUT_VERSION.to_owned());
         }
-        for (output, profile) in &layouts.outputs {
+        for (output, profile) in &mut layouts.outputs {
+            keys::retire(&mut profile.values);
             if output.trim().is_empty() {
                 return Err(MISSING_LAYOUT_OUTPUT.to_owned());
             }

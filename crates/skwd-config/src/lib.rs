@@ -36,12 +36,12 @@ pub use profile::{
     library_profile, library_profiles, profile_state,
 };
 pub use settings::{
-    cache_dir_of, canonicalize_backdrop_blur, canonicalize_paper_engine, canonicalize_we_renderer,
-    drawing_device, drawing_device_invalid, drawing_enabled, drawing_memory_limit_invalid,
-    drawing_memory_limit_mib, locale, paper_engine, pexels_api_key, steam_enabled, theme_authority,
-    theme_backend, theme_engine, theme_mode, theme_policy, unsplash_access_key, video_dir,
-    video_preview_delay_ms, video_preview_enabled, wallhaven_enabled, wallpaper_dir,
-    wallpaper_mute, wallpaper_volume,
+    FilterBarVisibility, cache_dir_of, canonicalize_backdrop_blur, canonicalize_paper_engine,
+    canonicalize_we_renderer, drawing_device, drawing_device_invalid, drawing_enabled,
+    drawing_memory_limit_invalid, drawing_memory_limit_mib, filter_bar_visibility, locale,
+    paper_engine, pexels_api_key, steam_enabled, theme_authority, theme_backend, theme_engine,
+    theme_mode, theme_policy, unsplash_access_key, video_dir, video_preview_delay_ms,
+    video_preview_enabled, wallhaven_enabled, wallpaper_dir, wallpaper_mute, wallpaper_volume,
 };
 pub use value::{
     arr_ref, bool_at, bool_false_unless_true, bool_true_unless_false, f64_ref, get, i64_ref,

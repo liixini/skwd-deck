@@ -214,3 +214,22 @@ fn legacy_profile_drops_corners() {
     let hand = crate::corners::HAND.read(&document);
     assert_eq!((hand.style, hand.sizes()), (crate::corners::CornerStyle::Round, [12.0; 4]));
 }
+
+#[test]
+fn retired_bar_flag_reads() {
+    for (old, mode) in [
+        (json!(false), crate::FilterBarVisibility::Hover),
+        (Value::Null, crate::FilterBarVisibility::Always),
+    ] {
+        let layouts = json!({"pickerLayouts":{"version":1,"outputs":{"DP-1":{
+            "viewport":{"width":1280.0,"height":720.0},
+            "values":{"general.filterBarAlwaysVisible":old},
+            "positions":{}
+        }}}});
+        let mut document = json!({"general": {"filterBarVisibility": "hidden"}});
+        Layouts::read(&layouts).unwrap().outputs["DP-1"].apply(&mut document);
+        assert_eq!(crate::filter_bar_visibility(&document), mode);
+        let legacy = crate::keys::general::LEGACY_FILTER_BAR_ALWAYS_VISIBLE;
+        assert!(crate::get(&document, legacy).is_none());
+    }
+}
